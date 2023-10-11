@@ -279,3 +279,10 @@ const float Plot3D_TriShape::fresnelPoly3_Water[4] =
   -1.30214688f,  3.32294874f, -2.87825095f,  1.00000000f
 };
 
+// fixed function for Fallout 4 specular, refractive index = 1.666667
+
+const float Plot3D_TriShape::fresnelPoly3_FO4[4] =
+{
+  -1.17236654f,  2.95903735f, -2.53667081f,  1.00000000f
+};
+
