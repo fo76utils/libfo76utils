@@ -345,7 +345,11 @@ FileBuffer::~FileBuffer()
 bool FileBuffer::getDefaultDataPath(std::string& dataPath)
 {
   dataPath.clear();
+#ifdef BUILD_CE2UTILS
   const char  *s = std::getenv("CE2UTILS_DATAPATH");
+#else
+  const char  *s = std::getenv("FO76UTILS_DATAPATH");
+#endif
   if (!s)
     return false;
   if (!(s[0] == '.' || s[0] == '/'

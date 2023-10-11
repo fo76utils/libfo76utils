@@ -23,7 +23,11 @@ bool StringDB::loadFile(const BA2File& ba2File, const char *stringsPrefix)
   std::vector< std::string >  fileNames;
   std::string tmpName;
   if (!stringsPrefix)
+#ifdef BUILD_CE2UTILS
     stringsPrefix = "strings/starfield_en";
+#else
+    stringsPrefix = "strings/seventysix_en";
+#endif
   for (int k = 0; k < 3; k++)
   {
     static const char *stringsSuffixTable[3] =
@@ -108,7 +112,11 @@ bool StringDB::loadFile(const char *archivePath, const char *stringsPrefix)
   std::vector< std::string >  fileNames;
   std::string tmpName;
   if (!stringsPrefix)
+#ifdef BUILD_CE2UTILS
     stringsPrefix = "strings/starfield_en";
+#else
+    stringsPrefix = "strings/seventysix_en";
+#endif
   for (int k = 0; k < 3; k++)
   {
     static const char *stringsSuffixTable[3] =
