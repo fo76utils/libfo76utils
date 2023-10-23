@@ -761,11 +761,11 @@ void DDSTexture::loadTexture(FileBuffer& buf, int mipOffset)
       {
         FloatVector4  tmp(FloatVector4::convertFloat16(
                               FileBuffer::readUInt64Fast(srcPtr + i), true));
-        avgLevel += (tmp * tmp);
+        avgLevel += tmp.maxValues(FloatVector4(0.0f));
       }
       avgLevel /= float(int(srcDataSize >> 3));
-      float   tmp = float(std::sqrt(avgLevel[0] + avgLevel[1] + avgLevel[2]));
-      tmp = 16777216.0f / std::min(std::max(tmp * 1.125f, 1.0f), 65536.0f);
+      float   tmp = avgLevel[0] + avgLevel[1] + avgLevel[2];
+      tmp = 16777216.0f / std::min(std::max(tmp * 5.0f, 1.0f), 65536.0f);
       scale = std::uint32_t(roundFloat(tmp));
     }
     memsetUInt32(textureDataBuf, scale, totalDataSize / sizeof(std::uint32_t));
