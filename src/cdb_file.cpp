@@ -9,12 +9,14 @@ void CDBFile::readStringTable()
   {
     errorMessage("invalid CDB file header");
   }
-  if (readUInt32() != 4U)
+  if (readUInt32Fast() != 4U)
     errorMessage("unsupported CDB file version");
-  if (readUInt32() < 2U || readUInt32() != 0x54525453U) // "STRT"
+  chunksRemaining = readUInt32Fast();
+  if (chunksRemaining < 2U || readUInt32Fast() != ChunkType_STRT)
     errorMessage("missing string table in CDB file");
+  chunksRemaining = chunksRemaining - 2U;
   // create string table
-  unsigned int  n = readUInt32();
+  unsigned int  n = readUInt32Fast();
   if ((filePos + std::uint64_t(n)) > fileBufSize)
     errorMessage("unexpected end of CDB file");
   stringMap.resize(n, std::int16_t(-1));
