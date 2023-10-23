@@ -1,4 +1,7 @@
 
+#ifndef FRTABLE_CPP_INCLUDED
+#define FRTABLE_CPP_INCLUDED
+
 // a3 = fresnelRoughTable[smoothness * 4]
 // a2 = fresnelRoughTable[smoothness * 4 + 1]
 // a1 = fresnelRoughTable[smoothness * 4 + 2]
@@ -7,7 +10,7 @@
 // fresnel(nDotV) =
 //     (((nDotV * a3 + a2) * nDotV + a1) * nDotV + a0)^2 * (1.0 - f0) + f0
 
-const float Plot3D_TriShape::fresnelRoughTable[1024] =
+static const float fresnelRoughTable[1024] =
 {
   -0.09895954f,  0.24340016f, -0.38221373f,  0.26654899f,       // r = 0.96875
   -0.09940225f,  0.24497621f, -0.38512123f,  0.26824765f,
@@ -269,20 +272,22 @@ const float Plot3D_TriShape::fresnelRoughTable[1024] =
 
 // normalized function for general PBR materials
 
-const float Plot3D_TriShape::fresnelPoly3N_Glass[4] =
+static const float fresnelPoly3N_Glass[4] =
 {
   -1.14821728f,  2.88290570f, -2.73468842f,  1.00000000f
 };
 
-const float Plot3D_TriShape::fresnelPoly3_Water[4] =
+static const float fresnelPoly3_Water[4] =
 {
   -1.30214688f,  3.32294874f, -2.87825095f,  1.00000000f
 };
 
 // fixed function for Fallout 4 specular, refractive index = 1.666667
 
-const float Plot3D_TriShape::fresnelPoly3_FO4[4] =
+static const float fresnelPoly3_FO4[4] =
 {
   -1.17236654f,  2.95903735f, -2.53667081f,  1.00000000f
 };
+
+#endif
 
