@@ -78,6 +78,9 @@ struct FloatVector4
   // if noInfNaN is true, Inf and NaN values are never returned
   static inline FloatVector4 convertFloat16(std::uint64_t n,
                                             bool noInfNaN = false);
+  // v[N] is converted if mask bit N is set, otherwise the output for v[N]
+  // is zero if mask < 15 or undetermined if mask > 15
+  inline std::uint64_t convertToFloat16(unsigned int mask = 15U) const;
   inline float& operator[](size_t n)
   {
     return v[n];
@@ -113,11 +116,13 @@ struct FloatVector4
   inline float dotProduct3(const FloatVector4& r) const;
   // dot product of first two elements
   inline float dotProduct2(const FloatVector4& r) const;
+  inline FloatVector4 crossProduct3(const FloatVector4& r) const;
   inline FloatVector4& squareRoot();
   inline FloatVector4& squareRootFast();
   inline FloatVector4& rsqrtFast();     // elements must be positive
   static inline float squareRootFast(float x);
   static inline float log2Fast(float x);
+  inline FloatVector4& log2V();
   // ((x * p[0] + p[1]) * x + p[2]) * x + p[3]
   static inline float polynomial3(const float *p, float x);
   static inline float exp2Fast(float x);
@@ -240,6 +245,37 @@ inline FloatVector4 FloatVector4::convertFloat16(std::uint64_t n, bool noInfNaN)
   __asm__ ("vpminud %1, %0, %0" : "+x" (v) : "x" (tmp2));
 #endif
   return FloatVector4(v);
+}
+
+inline std::uint64_t FloatVector4::convertToFloat16(unsigned int mask) const
+{
+#if ENABLE_X86_64_AVX2
+  XMM_UInt64  tmp;
+  if (mask < 15U)
+  {
+    __asm__ ("vmovd %1, %0" : "=x" (tmp) : "r" (mask * 0x10204080U));
+    __asm__ ("vpmovsxbd %0, %0" : "+x" (tmp));
+    __asm__ ("vpsrad $0x1f, %0, %0" : "+x" (tmp));
+    __asm__ ("vpand %1, %0, %0" : "+x" (tmp) : "xm" (v));
+    __asm__ ("vcvtps2ph $0x00, %0, %0" : "+x" (tmp));
+  }
+  else
+  {
+    __asm__ ("vcvtps2ph $0x00, %1, %0" : "=x" (tmp) : "x" (v));
+  }
+  return tmp[0];
+#else
+  std::uint64_t r = 0U;
+  if (mask & 1U)
+    r = ::convertToFloat16(v[0]);
+  if (mask & 2U)
+    r = r | (std::uint64_t(::convertToFloat16(v[1])) << 16);
+  if (mask & 4U)
+    r = r | (std::uint64_t(::convertToFloat16(v[2])) << 32);
+  if (mask & 8U)
+    r = r | (std::uint64_t(::convertToFloat16(v[3])) << 48);
+  return r;
+#endif
 }
 
 inline FloatVector4& FloatVector4::operator+=(const FloatVector4& r)
@@ -409,6 +445,22 @@ inline float FloatVector4::dotProduct2(const FloatVector4& r) const
   return tmp1[0];
 }
 
+inline FloatVector4 FloatVector4::crossProduct3(const FloatVector4& r) const
+{
+  XMM_Float tmp1, tmp2;
+  __asm__ ("vshufps $0xc9, %1, %1, %0" : "=x" (tmp1) : "x" (v));
+  __asm__ ("vshufps $0xc9, %1, %1, %0" : "=x" (tmp2) : "x" (r.v));
+  __asm__ ("vmulps %1, %0, %0" : "+x" (tmp1) : "x" (r.v));
+#if ENABLE_X86_64_AVX2
+  __asm__ ("vfmsub231ps %2, %1, %0" : "+x" (tmp1) : "x" (tmp2), "x" (v));
+#else
+  __asm__ ("vmulps %1, %0, %0" : "+x" (tmp2) : "x" (v));
+  __asm__ ("vsubps %0, %1, %0" : "+x" (tmp1) : "x" (tmp2));
+#endif
+  __asm__ ("vshufps $0xc9, %0, %0, %0" : "+x" (tmp1));
+  return FloatVector4(tmp1);
+}
+
 inline FloatVector4& FloatVector4::squareRoot()
 {
   XMM_Float tmp = { 0.0f, 0.0f, 0.0f, 0.0f };
@@ -459,6 +511,23 @@ inline float FloatVector4::log2Fast(float x)
   FloatVector4  tmp2(m, m2, m * m2, m2 * m2);
   FloatVector4  tmp3(4.05608897f, -2.10465275f, 0.63728021f, -0.08021013f);
   return (tmp2.dotProduct(tmp3) + e - (127.0f + 2.50847106f));
+}
+
+inline FloatVector4& FloatVector4::log2V()
+{
+  XMM_Float e, m, tmp;
+  __asm__ ("vpsrld $0x17, %1, %0" : "=x" (e) : "x" (v));
+  __asm__ ("vmovd %1, %0" : "=x" (tmp) : "r" (0x3F800000U));
+  __asm__ ("vpslld $0x17, %1, %0" : "=x" (m) : "x" (e));
+  __asm__ ("vcvtdq2ps %0, %0" : "+x" (e));
+  __asm__ ("vpshufd $0x00, %0, %0" : "+x" (tmp));
+  __asm__ ("vpxor %1, %0, %0" : "+x" (m) : "x" (v));
+  __asm__ ("vpor %1, %0, %0" : "+x" (m) : "x" (tmp));
+  XMM_Float m2 = m * m;
+  tmp = m * 4.05608897f - (127.0f + 2.50847106f);
+  tmp = tmp + (((m2 * -0.08021013f) + (m * 0.63728021f) - 2.10465275f) * m2);
+  v = tmp + e;
+  return (*this);
 }
 
 inline float FloatVector4::polynomial3(const float *p, float x)
@@ -761,6 +830,20 @@ inline FloatVector4 FloatVector4::convertFloat16(std::uint64_t n, bool noInfNaN)
                       ::convertFloat16(std::uint16_t((n >> 48) & 0xFFFFU)));
 }
 
+inline std::uint64_t FloatVector4::convertToFloat16(unsigned int mask) const
+{
+  std::uint64_t r = 0U;
+  if (mask & 1U)
+    r = ::convertToFloat16(v[0]);
+  if (mask & 2U)
+    r = r | (std::uint64_t(::convertToFloat16(v[1])) << 16);
+  if (mask & 4U)
+    r = r | (std::uint64_t(::convertToFloat16(v[2])) << 32);
+  if (mask & 8U)
+    r = r | (std::uint64_t(::convertToFloat16(v[3])) << 48);
+  return r;
+}
+
 inline FloatVector4& FloatVector4::operator+=(const FloatVector4& r)
 {
   v[0] += r.v[0];
@@ -947,6 +1030,13 @@ inline float FloatVector4::dotProduct2(const FloatVector4& r) const
   return ((v[0] * r.v[0]) + (v[1] * r.v[1]));
 }
 
+inline FloatVector4 FloatVector4::crossProduct3(const FloatVector4& r) const
+{
+  return FloatVector4((v[1] * r.v[2]) - (v[2] * r.v[1]),
+                      (v[2] * r.v[0]) - (v[0] * r.v[2]),
+                      (v[0] * r.v[1]) - (v[1] * r.v[0]), 0.0f);
+}
+
 inline FloatVector4& FloatVector4::squareRoot()
 {
   maxValues(FloatVector4(0.0f));
@@ -986,6 +1076,15 @@ inline float FloatVector4::squareRootFast(float x)
 inline float FloatVector4::log2Fast(float x)
 {
   return float(std::log2(x));
+}
+
+inline FloatVector4& FloatVector4::log2V()
+{
+  v[0] = float(std::log2(v[0]));
+  v[1] = float(std::log2(v[1]));
+  v[2] = float(std::log2(v[2]));
+  v[3] = float(std::log2(v[3]));
+  return (*this);
 }
 
 inline float FloatVector4::polynomial3(const float *p, float x)
