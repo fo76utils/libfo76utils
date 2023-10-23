@@ -4,10 +4,6 @@
 
 #include <bit>
 
-#ifndef ENABLE_CDB_DEBUG
-#  define ENABLE_CDB_DEBUG  0
-#endif
-
 inline bool CE2MaterialDB::ComponentInfo::getFieldNumber(
     unsigned int& n, unsigned int nMax, bool isDiff)
 {
@@ -171,6 +167,15 @@ bool CE2MaterialDB::ComponentInfo::readEnum(unsigned char& n, const char *t)
   return true;
 }
 
+unsigned int CE2MaterialDB::ComponentInfo::readChunk(FileBuffer& chunkBuf)
+{
+  unsigned int  chunkType = cdbBuf.readChunk(chunkBuf, 0);
+#if ENABLE_CDB_DEBUG
+  std::fputc('\n', stdout);
+#endif
+  return chunkType;
+}
+
 static inline bool parseLayerNumber(unsigned char& n, const std::string& s)
 {
   if (s.length() == 16 && s.starts_with("MATERIAL_LAYER_"))
@@ -227,9 +232,8 @@ static inline bool parseBlenderNumber(unsigned char& n, const std::string& s)
 void CE2MaterialDB::ComponentInfo::readLayeredEmissivityComponent(
     ComponentInfo& p, bool isDiff)
 {
-  CE2Material *m = (CE2Material *) 0;
-  CE2Material::LayeredEmissiveSettings  *sp =
-      (CE2Material::LayeredEmissiveSettings *) 0;
+  CE2Material *m = nullptr;
+  CE2Material::LayeredEmissiveSettings  *sp = nullptr;
   if (BRANCH_LIKELY(p.o->type == 1))
   {
     m = static_cast< CE2Material * >(p.o);
@@ -408,7 +412,7 @@ void CE2MaterialDB::ComponentInfo::readLayeredEmissivityComponent(
 void CE2MaterialDB::ComponentInfo::readAlphaBlenderSettings(
     ComponentInfo& p, bool isDiff)
 {
-  CE2Material *m = (CE2Material *) 0;
+  CE2Material *m = nullptr;
   if (BRANCH_LIKELY(p.o->type == 1))
     m = static_cast< CE2Material * >(p.o);
   for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 8U, isDiff); )
@@ -493,8 +497,8 @@ void CE2MaterialDB::ComponentInfo::readBSFloatCurve(
 void CE2MaterialDB::ComponentInfo::readEmissiveSettingsComponent(
     ComponentInfo& p, bool isDiff)
 {
-  CE2Material *m = (CE2Material *) 0;
-  CE2Material::EmissiveSettings *sp = (CE2Material::EmissiveSettings *) 0;
+  CE2Material *m = nullptr;
+  CE2Material::EmissiveSettings *sp = nullptr;
   if (BRANCH_LIKELY(p.o->type == 1))
   {
     m = static_cast< CE2Material * >(p.o);
@@ -656,8 +660,8 @@ void CE2MaterialDB::ComponentInfo::readUVStreamID(
 void CE2MaterialDB::ComponentInfo::readDecalSettingsComponent(
     ComponentInfo& p, bool isDiff)
 {
-  CE2Material *m = (CE2Material *) 0;
-  CE2Material::DecalSettings  *sp = (CE2Material::DecalSettings *) 0;
+  CE2Material *m = nullptr;
+  CE2Material::DecalSettings  *sp = nullptr;
   if (BRANCH_LIKELY(p.o->type == 1))
   {
     m = static_cast< CE2Material * >(p.o);
@@ -872,8 +876,8 @@ bool CE2MaterialDB::ComponentInfo::readXMFLOAT4(
 void CE2MaterialDB::ComponentInfo::readEffectSettingsComponent(
     ComponentInfo& p, bool isDiff)
 {
-  CE2Material *m = (CE2Material *) 0;
-  CE2Material::EffectSettings *sp = (CE2Material::EffectSettings *) 0;
+  CE2Material *m = nullptr;
+  CE2Material::EffectSettings *sp = nullptr;
   if (BRANCH_LIKELY(p.o->type == 1))
   {
     m = static_cast< CE2Material * >(p.o);
@@ -1101,7 +1105,7 @@ void CE2MaterialDB::ComponentInfo::readMaterialPropertyNode(
 void CE2MaterialDB::ComponentInfo::readProjectedDecalSettings(
     ComponentInfo& p, bool isDiff)
 {
-  CE2Material::DecalSettings  *sp = (CE2Material::DecalSettings *) 0;
+  CE2Material::DecalSettings  *sp = nullptr;
   if (BRANCH_LIKELY(p.o->type == 1))
   {
     CE2Material *m = static_cast< CE2Material * >(p.o);
@@ -1220,7 +1224,7 @@ bool CE2MaterialDB::ComponentInfo::readColorValue(
 void CE2MaterialDB::ComponentInfo::readColor(
     ComponentInfo& p, bool isDiff)
 {
-  CE2Material::Material *m = (CE2Material::Material *) 0;
+  CE2Material::Material *m = nullptr;
   if (BRANCH_LIKELY(p.o->type == 4))
     m = static_cast< CE2Material::Material * >(p.o);
   for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
@@ -1318,9 +1322,8 @@ void CE2MaterialDB::ComponentInfo::readFlowSettingsComponent(
 void CE2MaterialDB::ComponentInfo::readDetailBlenderSettings(
     ComponentInfo& p, bool isDiff)
 {
-  CE2Material *m = (CE2Material *) 0;
-  CE2Material::DetailBlenderSettings  *sp =
-      (CE2Material::DetailBlenderSettings *) 0;
+  CE2Material *m = nullptr;
+  CE2Material::DetailBlenderSettings  *sp = nullptr;
   if (BRANCH_LIKELY(p.o->type == 1))
   {
     m = static_cast< CE2Material * >(p.o);
@@ -1495,7 +1498,7 @@ void CE2MaterialDB::ComponentInfo::readMultiplex(
 void CE2MaterialDB::ComponentInfo::readOpacityComponent(
     ComponentInfo& p, bool isDiff)
 {
-  CE2Material *m = (CE2Material *) 0;
+  CE2Material *m = nullptr;
   if (BRANCH_LIKELY(p.o->type == 1))
   {
     m = static_cast< CE2Material * >(p.o);
@@ -1667,7 +1670,7 @@ void CE2MaterialDB::ComponentInfo::readFloat2DLerpController(
 const CE2MaterialObject * CE2MaterialDB::ComponentInfo::readBSComponentDB2ID(
     ComponentInfo& p, bool isDiff, unsigned char typeRequired)
 {
-  const CE2MaterialObject *o = (CE2MaterialObject *) 0;
+  const CE2MaterialObject *o = nullptr;
   for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
   {
     std::uint32_t objectID;
@@ -1697,7 +1700,7 @@ const CE2MaterialObject * CE2MaterialDB::ComponentInfo::readBSComponentDB2ID(
                       (unsigned int) objectID,
                       int(o->type & 0xFF), int(typeRequired));
 #endif
-          o = (CE2MaterialObject *) 0;
+          o = nullptr;
         }
       }
     }
@@ -1712,8 +1715,8 @@ const CE2MaterialObject * CE2MaterialDB::ComponentInfo::readBSComponentDB2ID(
 void CE2MaterialDB::ComponentInfo::readTextureReplacement(
     ComponentInfo& p, bool isDiff)
 {
-  CE2Material::Blender  *blender = (CE2Material::Blender *) 0;
-  CE2Material::TextureSet *txtSet = (CE2Material::TextureSet *) 0;
+  CE2Material::Blender  *blender = nullptr;
+  CE2Material::TextureSet *txtSet = nullptr;
   if (BRANCH_LIKELY(p.o->type == 5 &&
                     p.componentIndex
                     < CE2Material::TextureSet::maxTexturePaths))
@@ -1784,11 +1787,82 @@ void CE2MaterialDB::ComponentInfo::readBlendModeComponent(
 void CE2MaterialDB::ComponentInfo::readLayeredEdgeFalloffComponent(
     ComponentInfo& p, bool isDiff)
 {
-  (void) isDiff;
+  CE2Material *m = nullptr;
+  CE2Material::LayeredEdgeFalloff *sp = nullptr;
   if (BRANCH_LIKELY(p.o->type == 1))
   {
-    static_cast< CE2Material * >(p.o)->setFlags(
-        CE2Material::Flag_LayeredEdgeFalloff, true);
+    m = static_cast< CE2Material * >(p.o);
+    sp = reinterpret_cast< CE2Material::LayeredEdgeFalloff * >(
+             p.cdb.allocateSpace(sizeof(CE2Material::LayeredEdgeFalloff),
+                                 m->layeredEdgeFalloff));
+    if (!m->layeredEdgeFalloff)
+    {
+      sp->falloffStartAngles[0] = 0.0f;
+      sp->falloffStartAngles[1] = 0.0f;
+      sp->falloffStartAngles[2] = 0.0f;
+      sp->falloffStopAngles[0] = 0.0f;
+      sp->falloffStopAngles[1] = 0.0f;
+      sp->falloffStopAngles[2] = 0.0f;
+      sp->falloffStartOpacities[0] = 0.0f;
+      sp->falloffStartOpacities[1] = 0.0f;
+      sp->falloffStartOpacities[2] = 0.0f;
+      sp->falloffStopOpacities[0] = 0.0f;
+      sp->falloffStopOpacities[1] = 0.0f;
+      sp->falloffStopOpacities[2] = 0.0f;
+      sp->activeLayersMask = 0;
+      sp->useRGBFalloff = false;
+    }
+    m->layeredEdgeFalloff = sp;
+    m->setFlags(CE2Material::Flag_LayeredEdgeFalloff, true);
+  }
+  FileBuffer  listBuf;
+  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 5U, isDiff); )
+  {
+    if (n <= 3U)
+    {
+      if (p.readChunk(listBuf) != CDBFile::ChunkType_LIST)
+      {
+        errorMessage("unexpected chunk type for "
+                     "BSMaterial::LayeredEdgeFalloffComponent");
+      }
+      if (listBuf.size() < 8 || !sp ||
+          p.cdbBuf.findString(listBuf.readUInt32Fast())
+          != CDBFile::String_Float)
+      {
+        continue;
+      }
+      unsigned int  listSize = listBuf.readUInt32Fast();
+      for (unsigned int i = 0U;
+           i < listSize && i < 3U &&
+           (listBuf.getPosition() + 4ULL) <= listBuf.size(); i++)
+      {
+        float   tmp = listBuf.readFloat();
+        if (n == 0U)
+          sp->falloffStartAngles[i] = tmp;
+        else if (n == 1U)
+          sp->falloffStopAngles[i] = tmp;
+        else if (n == 2U)
+          sp->falloffStartOpacities[i] = tmp;
+        else
+          sp->falloffStopOpacities[i] = tmp;
+      }
+    }
+    else if (n == 4U)
+    {
+      if (BRANCH_UNLIKELY(p.buf.getPosition() >= p.buf.size()))
+        break;
+      unsigned char tmp = p.buf.readUInt8Fast();
+      if (sp)
+        sp->activeLayersMask = tmp & 7;
+    }
+    else
+    {
+      bool    tmp;
+      if (!p.readBool(tmp))
+        break;
+      if (sp)
+        sp->useRGBFalloff = tmp;
+    }
   }
 }
 
@@ -1804,8 +1878,8 @@ void CE2MaterialDB::ComponentInfo::readLayeredEdgeFalloffComponent(
 void CE2MaterialDB::ComponentInfo::readVegetationSettingsComponent(
     ComponentInfo& p, bool isDiff)
 {
-  CE2Material *m = (CE2Material *) 0;
-  CE2Material::VegetationSettings *sp = (CE2Material::VegetationSettings *) 0;
+  CE2Material *m = nullptr;
+  CE2Material::VegetationSettings *sp = nullptr;
   if (BRANCH_LIKELY(p.o->type == 1))
   {
     m = static_cast< CE2Material * >(p.o);
@@ -1978,7 +2052,7 @@ void CE2MaterialDB::ComponentInfo::readColorChannelTypeComponent(
 void CE2MaterialDB::ComponentInfo::readAlphaSettingsComponent(
     ComponentInfo& p, bool isDiff)
 {
-  CE2Material *m = (CE2Material *) 0;
+  CE2Material *m = nullptr;
   if (BRANCH_LIKELY(p.o->type == 1))
     m = static_cast< CE2Material * >(p.o);
   for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 4U, isDiff); )
@@ -2075,7 +2149,7 @@ void CE2MaterialDB::ComponentInfo::readTextureFile(
   }
   if (p.componentType != 0x0076U)       // "BSMaterial::DecalSettingsComponent"
     return;
-  CE2Material::DecalSettings  *sp = (CE2Material::DecalSettings *) 0;
+  CE2Material::DecalSettings  *sp = nullptr;
   if (BRANCH_LIKELY(p.o->type == 1))
   {
     CE2Material *m = static_cast< CE2Material * >(p.o);
@@ -2106,8 +2180,7 @@ void CE2MaterialDB::ComponentInfo::readTextureFile(
 void CE2MaterialDB::ComponentInfo::readTranslucencySettings(
     ComponentInfo& p, bool isDiff)
 {
-  CE2Material::TranslucencySettings *sp =
-      (CE2Material::TranslucencySettings *) 0;
+  CE2Material::TranslucencySettings *sp = nullptr;
   if (BRANCH_LIKELY(p.o->type == 1))
   {
     CE2Material *m = static_cast< CE2Material * >(p.o);
@@ -2205,9 +2278,8 @@ void CE2MaterialDB::ComponentInfo::readDistortionComponent(
 void CE2MaterialDB::ComponentInfo::readDetailBlenderSettingsComponent(
     ComponentInfo& p, bool isDiff)
 {
-  CE2Material *m = (CE2Material *) 0;
-  CE2Material::DetailBlenderSettings  *sp =
-      (CE2Material::DetailBlenderSettings *) 0;
+  CE2Material *m = nullptr;
+  CE2Material::DetailBlenderSettings  *sp = nullptr;
   if (BRANCH_LIKELY(p.o->type == 1))
   {
     m = static_cast< CE2Material * >(p.o);
@@ -2220,7 +2292,7 @@ void CE2MaterialDB::ComponentInfo::readDetailBlenderSettingsComponent(
       sp->textureReplacementEnabled = false;
       sp->textureReplacement = 0xFFFFFFFFU;
       sp->texturePath = p.cdb.stringBuffers.front().data();
-      sp->uvStream = (CE2Material::UVStream *) 0;
+      sp->uvStream = nullptr;
     }
     m->detailBlenderSettings = sp;
   }
@@ -2303,9 +2375,8 @@ void CE2MaterialDB::ComponentInfo::readBSFloat3DCurve(
 void CE2MaterialDB::ComponentInfo::readTranslucencySettingsComponent(
     ComponentInfo& p, bool isDiff)
 {
-  CE2Material *m = (CE2Material *) 0;
-  CE2Material::TranslucencySettings *sp =
-      (CE2Material::TranslucencySettings *) 0;
+  CE2Material *m = nullptr;
+  CE2Material::TranslucencySettings *sp = nullptr;
   if (BRANCH_LIKELY(p.o->type == 1))
   {
     m = static_cast< CE2Material * >(p.o);
@@ -2449,7 +2520,7 @@ void CE2MaterialDB::ComponentInfo::readControllers(
 void CE2MaterialDB::ComponentInfo::readEmittanceSettings(
     ComponentInfo& p, bool isDiff)
 {
-  CE2Material::EmissiveSettings *sp = (CE2Material::EmissiveSettings *) 0;
+  CE2Material::EmissiveSettings *sp = nullptr;
   if (BRANCH_LIKELY(p.o->type == 1))
   {
     CE2Material *m = static_cast< CE2Material * >(p.o);
@@ -2671,7 +2742,7 @@ void CE2MaterialDB::ComponentInfo::readHairSettingsComponent(
     ComponentInfo& p, bool isDiff)
 {
   (void) isDiff;
-  CE2Material *m = (CE2Material *) 0;
+  CE2Material *m = nullptr;
   if (BRANCH_LIKELY(p.o->type == 1))
   {
     m = static_cast< CE2Material * >(p.o);
@@ -2782,7 +2853,7 @@ void CE2MaterialDB::ComponentInfo::readTerrainSettingsComponent(
     ComponentInfo& p, bool isDiff)
 {
   (void) isDiff;
-  CE2Material *m = (CE2Material *) 0;
+  CE2Material *m = nullptr;
   if (BRANCH_LIKELY(p.o->type == 1))
   {
     m = static_cast< CE2Material * >(p.o);

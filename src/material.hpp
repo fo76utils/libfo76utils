@@ -303,6 +303,15 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     const std::string *texturePath;
     const UVStream  *uvStream;
   };
+  struct LayeredEdgeFalloff
+  {
+    float   falloffStartAngles[3];
+    float   falloffStopAngles[3];
+    float   falloffStartOpacities[3];
+    float   falloffStopOpacities[3];
+    unsigned char activeLayersMask;
+    bool    useRGBFalloff;
+  };
   static const char *materialFlagNames[32];
   static const char *shaderModelNames[64];
   std::uint32_t flags;
@@ -342,6 +351,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
   const DecalSettings   *decalSettings;
   const VegetationSettings  *vegetationSettings;
   const DetailBlenderSettings *detailBlenderSettings;
+  const LayeredEdgeFalloff  *layeredEdgeFalloff;
   inline void setFlags(std::uint32_t m, bool n)
   {
     flags = (flags & ~m) | ((0U - std::uint32_t(n)) & m);
@@ -542,6 +552,8 @@ class CE2MaterialDB
     inline bool readAndStoreString(const std::string*& s, int type);
     // t = sequence of strings with length prefix (e.g. "\005False\004True")
     bool readEnum(unsigned char& n, const char *t);
+    // returns chunk type (e.g. 0x5453494C for "LIST")
+    unsigned int readChunk(FileBuffer& chunkBuf);
   };
   enum
   {
@@ -568,7 +580,8 @@ class CE2MaterialDB
                       size_t alignBytes = 16);
   CE2MaterialObject *allocateObject(
       std::vector< CE2MaterialObject * >& objectTable,
-      std::uint32_t objectID, std::uint32_t baseObjID);
+      std::uint32_t objectID, std::uint32_t baseObjID,
+      std::uint64_t h, std::uint32_t e);
   // type = 0: general string (stored without conversion)
   // type = 1: DDS file name (prefix = "textures/", suffix = ".dds")
   const std::string *readStringParam(std::string& stringBuf, FileBuffer& buf,

@@ -6,7 +6,8 @@ static const size_t indentTabSize = 2;
 
 static const char *objectTypeStrings[7] =
 {
-  "", "MaterialFile", "Blender", "Layer", "Material", "TextureSet", "UVStream"
+  "", "LayeredMaterial", "Blender", "Layer",
+  "Material", "TextureSet", "UVStream"
 };
 
 const char * CE2Material::materialFlagNames[32] =
@@ -378,6 +379,35 @@ void CE2Material::printObjectInfo(
     }
     printToStringBuf(buf, indentCnt, "Effect depth bias: %d\n",
                      effectSettings->depthBias);
+  }
+  if ((flags & Flag_LayeredEdgeFalloff) && layeredEdgeFalloff)
+  {
+    printToStringBuf(buf, indentCnt,
+                     "Layered edge falloff start angles: %f, %f, %f\n",
+                     layeredEdgeFalloff->falloffStartAngles[0],
+                     layeredEdgeFalloff->falloffStartAngles[1],
+                     layeredEdgeFalloff->falloffStartAngles[2]);
+    printToStringBuf(buf, indentCnt,
+                     "Layered edge falloff stop angles: %f, %f, %f\n",
+                     layeredEdgeFalloff->falloffStopAngles[0],
+                     layeredEdgeFalloff->falloffStopAngles[1],
+                     layeredEdgeFalloff->falloffStopAngles[2]);
+    printToStringBuf(buf, indentCnt,
+                     "Layered edge falloff start opacities: %f, %f, %f\n",
+                     layeredEdgeFalloff->falloffStartOpacities[0],
+                     layeredEdgeFalloff->falloffStartOpacities[1],
+                     layeredEdgeFalloff->falloffStartOpacities[2]);
+    printToStringBuf(buf, indentCnt,
+                     "Layered edge falloff stop opacities: %f, %f, %f\n",
+                     layeredEdgeFalloff->falloffStopOpacities[0],
+                     layeredEdgeFalloff->falloffStopOpacities[1],
+                     layeredEdgeFalloff->falloffStopOpacities[2]);
+    printToStringBuf(buf, indentCnt,
+                     "Layered edge falloff active layers mask: 0x%02X\n",
+                     (unsigned int) layeredEdgeFalloff->activeLayersMask);
+    printToStringBuf(buf, indentCnt,
+                     "Layered edge falloff: use RGB falloff: %s\n",
+                     (!layeredEdgeFalloff->useRGBFalloff ? "False" : "True"));
   }
   if ((flags & Flag_Glow) && emissiveSettings && emissiveSettings->isEnabled)
   {
