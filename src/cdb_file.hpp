@@ -51,6 +51,37 @@ class CDBFile : public FileBuffer
     String_BSComponentDB2_DBFileIndex_ObjectInfo = 152,
     String_BSResource_ID = 227
   };
+  class CDBChunk : public FileBuffer
+  {
+   public:
+    inline CDBChunk()
+      : FileBuffer()
+    {
+    }
+    inline void setData(const unsigned char *fileData, size_t fileSize,
+                        size_t filePosition = 0)
+    {
+      fileBuf = fileData;
+      fileBufSize = fileSize;
+      filePos = filePosition;
+      fileStream = std::uintptr_t(-1);
+    }
+    inline std::uint32_t readUInt32()
+    {
+      return FileBuffer::readUInt32();
+    }
+    // the following functions return false on end of chunk
+    inline bool getFieldNumber(unsigned int& n, unsigned int nMax, bool isDiff);
+    inline bool readBool(bool& n);
+    inline bool readUInt8(unsigned char& n);
+    inline bool readUInt16(std::uint16_t& n);
+    inline bool readUInt32(std::uint32_t& n);
+    inline bool readFloat(float& n);
+    inline bool readFloat0To1(float& n);
+    inline bool readString(std::string& stringBuf);
+    // t = sequence of strings with length prefix (e.g. "\005False\004True")
+    bool readEnum(unsigned char& n, const char *t);
+  };
   static const char *stringTable[1141];
   static int findString(const char *s);
   unsigned int  chunksRemaining;
@@ -70,36 +101,157 @@ class CDBFile : public FileBuffer
   }
   size_t findString(unsigned int strtOffs) const;
   // returns chunk type (ChunkType_BETH, etc.), or 0 on end of file
-  inline unsigned int readChunk(FileBuffer& chunkBuf, size_t startPos = 0)
-  {
-    if (BRANCH_UNLIKELY(!chunksRemaining))
-      return 0U;
-    chunksRemaining--;
-    if ((filePos + 8ULL) > fileBufSize)
-      errorMessage("unexpected end of CDB file");
-    unsigned int  chunkType = readUInt32Fast();
-    unsigned int  chunkSize = readUInt32Fast();
-    if ((filePos + std::uint64_t(chunkSize)) > fileBufSize)
-      errorMessage("unexpected end of CDB file");
-#if ENABLE_CDB_DEBUG
-    char    chunkTypeStr[8];
-    chunkTypeStr[0] = char(chunkType & 0x7FU);
-    chunkTypeStr[1] = char((chunkType >> 8) & 0x7FU);
-    chunkTypeStr[2] = char((chunkType >> 16) & 0x7FU);
-    chunkTypeStr[3] = char((chunkType >> 24) & 0x7FU);
-    chunkTypeStr[4] = '\0';
-    size_t  t = String_Unknown;
-    if (chunkSize >= 4U)
-      t = findString(FileBuffer::readUInt32Fast(fileBuf + filePos));
-    std::printf("%s (%s) at 0x%08X, size = %u bytes",
-                chunkTypeStr, stringTable[t],
-                (unsigned int) filePos - 8U, chunkSize);
-#endif
-    (void) new(&chunkBuf) FileBuffer(fileBuf + filePos, chunkSize, startPos);
-    filePos = filePos + chunkSize;
-    return chunkType;
-  }
+  inline unsigned int readChunk(CDBChunk& chunkBuf, size_t startPos = 0);
 };
+
+inline bool CDBFile::CDBChunk::getFieldNumber(
+    unsigned int& n, unsigned int nMax, bool isDiff)
+{
+  if (!isDiff) [[unlikely]]
+  {
+    n++;
+    return (n <= nMax);
+  }
+  if ((filePos + 2ULL) > fileBufSize) [[unlikely]]
+  {
+    filePos = fileBufSize;
+    return false;
+  }
+  n = readUInt16Fast();
+  if (std::int16_t(n) <= std::int16_t(nMax)) [[likely]]
+    return (std::int16_t(n) >= 0);
+#if ENABLE_CDB_DEBUG
+  std::printf("Warning: unrecognized DIFF field number, skipping data\n");
+#endif
+  filePos = fileBufSize;
+  return false;
+}
+
+inline bool CDBFile::CDBChunk::readBool(bool& n)
+{
+  if (filePos < fileBufSize) [[likely]]
+  {
+    n = bool(readUInt8Fast());
+    return true;
+  }
+  return false;
+}
+
+inline bool CDBFile::CDBChunk::readUInt8(unsigned char& n)
+{
+  if (filePos < fileBufSize) [[likely]]
+  {
+    n = readUInt8Fast();
+    return true;
+  }
+  return false;
+}
+
+inline bool CDBFile::CDBChunk::readUInt16(std::uint16_t& n)
+{
+  if ((filePos + 2ULL) > fileBufSize) [[unlikely]]
+  {
+    filePos = fileBufSize;
+    return false;
+  }
+  n = readUInt16Fast();
+  return true;
+}
+
+inline bool CDBFile::CDBChunk::readUInt32(std::uint32_t& n)
+{
+  if ((filePos + 4ULL) > fileBufSize) [[unlikely]]
+  {
+    filePos = fileBufSize;
+    return false;
+  }
+  n = readUInt32Fast();
+  return true;
+}
+
+inline bool CDBFile::CDBChunk::readFloat(float& n)
+{
+  if ((filePos + 4ULL) > fileBufSize) [[unlikely]]
+  {
+    filePos = fileBufSize;
+    return false;
+  }
+#if defined(__i386__) || defined(__x86_64__) || defined(__x86_64)
+  std::uint32_t tmp = readUInt32Fast();
+  if (!((tmp + 0x00800000U) & 0x7F000000U))
+    tmp = 0U;
+  n = std::bit_cast< float, std::uint32_t >(tmp);
+#else
+  n = readFloat();
+#endif
+  return true;
+}
+
+inline bool CDBFile::CDBChunk::readFloat0To1(float& n)
+{
+  if ((filePos + 4ULL) > fileBufSize) [[unlikely]]
+  {
+    filePos = fileBufSize;
+    return false;
+  }
+#if defined(__i386__) || defined(__x86_64__) || defined(__x86_64)
+  std::uint32_t tmp = readUInt32Fast();
+  if (!((tmp + 0x00800000U) & 0x7F000000U))
+    tmp = 0U;
+  n = std::bit_cast< float, std::uint32_t >(tmp);
+#else
+  n = readFloat();
+#endif
+  n = std::min(std::max(n, 0.0f), 1.0f);
+  return true;
+}
+
+inline bool CDBFile::CDBChunk::readString(std::string& stringBuf)
+{
+  if ((filePos + 2ULL) > fileBufSize) [[unlikely]]
+  {
+    filePos = fileBufSize;
+    return false;
+  }
+  unsigned int  len = readUInt16Fast();
+  if ((filePos + std::uint64_t(len)) > fileBufSize) [[unlikely]]
+  {
+    filePos = fileBufSize;
+    return false;
+  }
+  FileBuffer::readString(stringBuf, len);
+  return true;
+}
+
+inline unsigned int CDBFile::readChunk(CDBChunk& chunkBuf, size_t startPos)
+{
+  if (!chunksRemaining) [[unlikely]]
+    return 0U;
+  chunksRemaining--;
+  if ((filePos + 8ULL) > fileBufSize)
+    errorMessage("unexpected end of CDB file");
+  unsigned int  chunkType = readUInt32Fast();
+  unsigned int  chunkSize = readUInt32Fast();
+  if ((filePos + std::uint64_t(chunkSize)) > fileBufSize)
+    errorMessage("unexpected end of CDB file");
+#if ENABLE_CDB_DEBUG
+  char    chunkTypeStr[8];
+  chunkTypeStr[0] = char(chunkType & 0x7FU);
+  chunkTypeStr[1] = char((chunkType >> 8) & 0x7FU);
+  chunkTypeStr[2] = char((chunkType >> 16) & 0x7FU);
+  chunkTypeStr[3] = char((chunkType >> 24) & 0x7FU);
+  chunkTypeStr[4] = '\0';
+  size_t  t = String_Unknown;
+  if (chunkSize >= 4U)
+    t = findString(FileBuffer::readUInt32Fast(fileBuf + filePos));
+  std::printf("%s (%s) at 0x%08X, size = %u bytes",
+              chunkTypeStr, stringTable[t],
+              (unsigned int) filePos - 8U, chunkSize);
+#endif
+  chunkBuf.setData(fileBuf + filePos, chunkSize, startPos);
+  filePos = filePos + chunkSize;
+  return chunkType;
+}
 
 #endif
 

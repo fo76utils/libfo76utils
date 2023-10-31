@@ -67,6 +67,41 @@ size_t CDBFile::findString(unsigned int strtOffs) const
   return size_t(std::min(n, 18U));
 }
 
+bool CDBFile::CDBChunk::readEnum(unsigned char& n, const char *t)
+{
+  if ((filePos + 2ULL) > fileBufSize) [[unlikely]]
+  {
+    filePos = fileBufSize;
+    return false;
+  }
+  unsigned int  len = readUInt16Fast();
+  if ((filePos + std::uint64_t(len)) > fileBufSize) [[unlikely]]
+  {
+    filePos = fileBufSize;
+    return false;
+  }
+  const char  *s = reinterpret_cast< const char * >(fileBuf + filePos);
+  filePos = filePos + len;
+  while (len > 0U && s[len - 1U] == '\0')
+    len--;
+  for (unsigned int i = 0U; *t; i++)
+  {
+    unsigned int  len2 = (unsigned char) *t;
+    const char  *s2 = t + 1;
+    t = s2 + len2;
+    if (len2 != len)
+      continue;
+    for (unsigned int j = 0U; len2 && s2[j] == s[j]; j++, len2--)
+      ;
+    if (!len2)
+    {
+      n = (unsigned char) i;
+      break;
+    }
+  }
+  return true;
+}
+
 const char * CDBFile::stringTable[1141] =
 {
   "None",                                               //    0
