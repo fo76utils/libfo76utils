@@ -21,7 +21,7 @@ extern "C"
 
 inline void FileBuffer::closeFileStream()
 {
-  if (BRANCH_UNLIKELY(std::intptr_t(fileStream) >= 0L))
+  if (std::intptr_t(fileStream) >= 0L) [[unlikely]]
   {
     munmap((void *) fileBuf, fileBufSize);
 #if defined(_WIN32) || defined(_WIN64)
@@ -185,7 +185,7 @@ void FileBuffer::readString(std::string& s, size_t n)
   }
   else
   {
-    if (BRANCH_UNLIKELY(((unsigned long long) filePos + n) > fileBufSize))
+    if (((unsigned long long) filePos + n) > fileBufSize) [[unlikely]]
       errorMessage("end of input file");
     p = fileBuf + filePos;
     filePos = filePos + n;
@@ -200,7 +200,7 @@ void FileBuffer::readString(std::string& s, size_t n)
   do
   {
     unsigned char c = *p;
-    if (BRANCH_LIKELY(c >= 0x20))
+    if (c >= 0x20) [[likely]]
       *t = char(c);
     t++;
   }
@@ -279,7 +279,7 @@ void FileBuffer::setBuffer(const unsigned char *fileData, size_t fileSize)
 }
 
 FileBuffer::FileBuffer()
-  : fileBuf((unsigned char *) 0),
+  : fileBuf(nullptr),
     fileBufSize(0),
     filePos(0),
     fileStream(std::uintptr_t(-1))
@@ -422,6 +422,33 @@ std::uintptr_t FileBuffer::openFileInDataPath(const char *fileName)
   return f;
 }
 
+void FileBuffer::printHexData(std::string& s, const unsigned char *p, size_t n,
+                              size_t bytesPerLine)
+{
+  for (size_t i = 0; i < n; i++)
+  {
+    size_t  column = i % bytesPerLine;
+    if (!column)
+      printToString(s, "%08X", (unsigned int) i);
+    printToString(s, "%s%02X",
+                  (!(column & 7) ? "  " : " "), (unsigned int) p[i]);
+    if (column != (bytesPerLine - 1) && (i + 1) < n)
+      continue;
+    for (size_t j = column; ++j < bytesPerLine; )
+      printToString(s, "%s", (!(j & 7) ? "    " : "   "));
+    printToString(s, "  |");
+    do
+    {
+      unsigned char c = p[i - column];
+      if (c < 0x20 || c >= 0x7F)
+        c = 0x2E;
+      s += char(c);
+    }
+    while (column--);
+    printToString(s, "|\n");
+  }
+}
+
 void OutputFile::flushBuffer()
 {
   unsigned int  n = bufWritePos;
@@ -430,7 +457,7 @@ void OutputFile::flushBuffer()
 }
 
 OutputFile::OutputFile(const char *fileName, size_t bufSize)
-  : buf((unsigned char *) 0),
+  : buf(nullptr),
     bufferSize(bufSize),
     bufWritePos(0)
 {

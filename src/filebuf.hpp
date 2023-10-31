@@ -99,6 +99,9 @@ class FileBuffer
   // on other systems: returns int from open()
   // a negative value cast to std::uintptr_t is returned on error
   static std::uintptr_t openFileInDataPath(const char *fileName);
+ public:
+  static void printHexData(std::string& s, const unsigned char *p, size_t n,
+                           size_t bytesPerLine = 16);
 };
 
 inline std::uint32_t FileBuffer::swapUInt32(unsigned int n)
@@ -207,7 +210,7 @@ class DDSInputFile : public FileBuffer
  protected:
   size_t  ddsHeaderSize;
   void readDDSHeader(int& width, int& height, int& pixelFormat,
-                     unsigned int *hdrReserved = (unsigned int *) 0);
+                     unsigned int *hdrReserved = nullptr);
  public:
   enum
   {
@@ -262,10 +265,10 @@ class DDSInputFile : public FileBuffer
   //         or default land level if the image is a height map
   DDSInputFile(const unsigned char *fileData, size_t fileSize,
                int& width, int& height, int& pixelFormat,
-               unsigned int *hdrReserved = (unsigned int *) 0);
+               unsigned int *hdrReserved = nullptr);
   DDSInputFile(const char *fileName,
                int& width, int& height, int& pixelFormat,
-               unsigned int *hdrReserved = (unsigned int *) 0);
+               unsigned int *hdrReserved = nullptr);
   virtual ~DDSInputFile();
   inline const unsigned char *getDDSHeader() const
   {
@@ -280,7 +283,7 @@ class DDSOutputFile : public OutputFile
   // to the reserved part of the header from file offset 32 to 75.
   DDSOutputFile(const char *fileName,
                 int width, int height, int pixelFormat,
-                const unsigned int *hdrReserved = (unsigned int *) 0,
+                const unsigned int *hdrReserved = nullptr,
                 size_t bufSize = 16384);
   virtual ~DDSOutputFile();
   // pixelFormatIn must be either pixelFormatRGBA32 or pixelFormatA2R10G10B10
