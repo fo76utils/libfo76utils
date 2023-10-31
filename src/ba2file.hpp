@@ -29,7 +29,7 @@ class BA2File
   {
     fileDeclBufShift = 12,
     fileDeclBufMask = 0x0FFF,
-    nameHashMask = 0x000FFFFF
+    nameHashMask = 0x001FFFFF
   };
   std::vector< std::int32_t >   fileMap;        // nameHashMask + 1 elements
   std::vector< std::vector< FileDeclaration > > fileDeclBufs;
