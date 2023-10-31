@@ -5,7 +5,14 @@
 #include <new>
 
 #if ENABLE_CDB_DEBUG > 1
-static void printHexData(const unsigned char *p, size_t n);
+static void printHexData(const unsigned char *p, size_t n)
+{
+  if (n < 1)
+    return;
+  std::string s;
+  FileBuffer::printHexData(s, p, n);
+  std::fwrite(s.c_str(), sizeof(char), s.length(), stdout);
+}
 #endif
 
 std::uint32_t CE2MaterialDB::calculateHash(
@@ -88,13 +95,13 @@ void CE2MaterialDB::initializeObject(
 {
   std::uint32_t baseObjID = ~(std::uint32_t(o->type)) >> 8;
   o->type = o->type & 0xFF;
-  if (BRANCH_LIKELY(baseObjID))
+  if (baseObjID) [[likely]]
   {
     // initialize from base object
     const CE2MaterialObject *t = findObject(objectTable, baseObjID);
     if (!t)
       errorMessage("invalid base object in material database");
-    if (BRANCH_UNLIKELY(t->type < 0))
+    if (t->type < 0) [[unlikely]]
       initializeObject(const_cast< CE2MaterialObject * >(t), objectTable);
     if (o->type != t->type)
       errorMessage("invalid base object in material database");
@@ -160,6 +167,7 @@ void CE2MaterialDB::initializeObject(
         p->opacityBlender2 = 1;         // "BLEND_LAYER_1"
         p->opacityBlender2Mode = 0;     // "Lerp"
         p->specularOpacityOverride = 0.0f;
+        p->physicsMaterialType = 0;
         for (size_t i = 0; i < CE2Material::maxBlenders; i++)
           p->blenders[i] = nullptr;
         for (size_t i = 0; i < CE2Material::maxLODMaterials; i++)
@@ -172,6 +180,7 @@ void CE2MaterialDB::initializeObject(
         p->vegetationSettings = nullptr;
         p->detailBlenderSettings = nullptr;
         p->layeredEdgeFalloff = nullptr;
+        p->waterSettings = nullptr;
       }
       break;
     case 2:
@@ -201,6 +210,10 @@ void CE2MaterialDB::initializeObject(
         CE2Material::Material *p = static_cast< CE2Material::Material * >(o);
         p->color = FloatVector4(1.0f);
         p->colorMode = 0;               // "Multiply"
+        p->flipbookFlags = 0;
+        p->flipbookColumns = 1;
+        p->flipbookRows = 1;
+        p->flipbookFPS = 30.0f;
         p->textureSet = nullptr;
       }
       break;
@@ -240,7 +253,7 @@ void * CE2MaterialDB::allocateSpace(
   std::uintptr_t  alignMask = std::uintptr_t(alignBytes - 1);
   addr = (addr + alignMask) & ~alignMask;
   std::uintptr_t  bytesRequired = (nBytes + alignMask) & ~alignMask;
-  if (BRANCH_UNLIKELY((endAddr - addr) < bytesRequired))
+  if ((endAddr - addr) < bytesRequired) [[unlikely]]
   {
     std::uintptr_t  bufBytes = 65536U;
     if (bytesRequired > bufBytes)
@@ -252,7 +265,7 @@ void * CE2MaterialDB::allocateSpace(
   }
   objectBuffers.back().resize(size_t((addr + bytesRequired) - addr0));
   unsigned char *p = reinterpret_cast< unsigned char * >(addr);
-  if (BRANCH_UNLIKELY(copySrc))
+  if (copySrc) [[unlikely]]
     std::memcpy(p, copySrc, nBytes);
   return p;
 }
@@ -265,13 +278,13 @@ CE2MaterialObject * CE2MaterialDB::allocateObject(
   if (objectID >= objectTable.size() || baseObjID >= objectTable.size())
     errorMessage("CE2MaterialDB: internal error: object ID is out of range");
   CE2MaterialObject *o = objectTable[objectID];
-  if (BRANCH_UNLIKELY(o))
+  if (o) [[unlikely]]
   {
     throw FO76UtilsError("object 0x%08X is defined more than once "
                          "in material database", (unsigned int) objectID);
   }
   std::int32_t  type;
-  if (BRANCH_UNLIKELY(!baseObjID))
+  if (!baseObjID) [[unlikely]]
   {
     switch (h & 0xFFFFFFFFU)
     {
@@ -320,7 +333,7 @@ CE2MaterialObject * CE2MaterialDB::allocateObject(
   o->h = h;
   o->name = stringBuffers.front().data();
   o->parent = nullptr;
-  if (BRANCH_UNLIKELY(!baseObjID))
+  if (!baseObjID) [[unlikely]]
     initializeObject(o, objectTable);
   return o;
 }
@@ -420,12 +433,12 @@ void CE2MaterialDB::loadCDBFile(CDBFile& buf)
   size_t  componentID = 0;
   size_t  componentCnt = 0;
   unsigned int  chunkType;
-  while ((chunkType = buf.readChunk(componentInfo.buf, 4)) != 0U)
+  while ((chunkType = buf.readChunk(componentInfo, 4)) != 0U)
   {
-    if (BRANCH_LIKELY(chunkType == CDBFile::ChunkType_DIFF ||
-                      chunkType == CDBFile::ChunkType_OBJT))
+    if (chunkType == CDBFile::ChunkType_DIFF ||
+        chunkType == CDBFile::ChunkType_OBJT) [[likely]]
     {
-      if (BRANCH_UNLIKELY(componentID >= componentCnt))
+      if (componentID >= componentCnt) [[unlikely]]
       {
 #if ENABLE_CDB_DEBUG
         std::fputc('\n', stdout);
@@ -441,16 +454,16 @@ void CE2MaterialDB::loadCDBFile(CDBFile& buf)
       componentID++;
       componentInfo.o = const_cast< CE2MaterialObject * >(
                             findObject(componentInfo.objectTable, objectID));
-      if (BRANCH_UNLIKELY(!componentInfo.o))
+      if (!componentInfo.o) [[unlikely]]
       {
 #if ENABLE_CDB_DEBUG
         std::fputc('\n', stdout);
 #endif
         continue;
       }
-      if (BRANCH_UNLIKELY(componentInfo.o->type < 0))
+      if (componentInfo.o->type < 0) [[unlikely]]
         initializeObject(componentInfo.o, componentInfo.objectTable);
-      if (BRANCH_UNLIKELY(componentInfo.buf.size() < 4))
+      if (componentInfo.size() < 4) [[unlikely]]
       {
 #if ENABLE_CDB_DEBUG
         std::fputc('\n', stdout);
@@ -462,7 +475,7 @@ void CE2MaterialDB::loadCDBFile(CDBFile& buf)
                   objectID, componentInfo.o->type,
                   componentInfo.componentType, componentInfo.componentIndex);
 #  if ENABLE_CDB_DEBUG > 1
-      printHexData(componentInfo.buf.data() + 4, componentInfo.buf.size() - 4);
+      printHexData(componentInfo.data() + 4, componentInfo.size() - 4);
 #  endif
 #endif
       if (!componentInfo.o)
@@ -487,21 +500,20 @@ void CE2MaterialDB::loadCDBFile(CDBFile& buf)
 #if ENABLE_CDB_DEBUG
     std::fputc('\n', stdout);
 #endif
-    FileBuffer& buf2 = componentInfo.buf;
-    if (BRANCH_UNLIKELY(chunkType == CDBFile::ChunkType_STRT))  // string table
+    if (chunkType == CDBFile::ChunkType_STRT) [[unlikely]]      // string table
     {
-      if ((buf.getPosition() - componentInfo.buf.size()) != 24)
+      if ((buf.getPosition() - componentInfo.size()) != 24)
         errorMessage("duplicate string table in material database");
       continue;
     }
     size_t  t = CDBFile::String_Unknown;
-    if (componentInfo.buf.size() >= 4)
-      t = buf.findString(FileBuffer::readUInt32Fast(buf2.data()));
+    if (componentInfo.size() >= 4)
+      t = buf.findString(FileBuffer::readUInt32Fast(componentInfo.data()));
 #if ENABLE_CDB_DEBUG
     if (chunkType == CDBFile::ChunkType_MAPC)
     {
-      size_t  t2 = buf.findString(buf2.readUInt32());
-      unsigned int  n = buf2.readUInt32();
+      size_t  t2 = buf.findString(componentInfo.readUInt32());
+      unsigned int  n = componentInfo.readUInt32();
       std::printf("  < %s, %s >[%u]\n",
                   CDBFile::stringTable[t], CDBFile::stringTable[t2], n);
       if (t == CDBFile::String_BSResource_ID)
@@ -509,30 +521,31 @@ void CE2MaterialDB::loadCDBFile(CDBFile& buf)
         for ( ; n; n--)
         {
           // hash of the base name without extension
-          std::printf("    0x%08X", buf2.readUInt32());
+          std::printf("    0x%08X", componentInfo.readUInt32());
           // extension ("mat\0")
-          std::printf(", 0x%08X", buf2.readUInt32());
+          std::printf(", 0x%08X", componentInfo.readUInt32());
           // hash of the directory name
-          std::printf(", 0x%08X", buf2.readUInt32());
+          std::printf(", 0x%08X", componentInfo.readUInt32());
           // unknown hash
-          std::printf("  0x%016llX\n", (unsigned long long) buf2.readUInt64());
+          std::printf("  0x%016llX\n",
+                      (unsigned long long) componentInfo.readUInt64());
         }
       }
       continue;
     }
     if (chunkType == CDBFile::ChunkType_CLAS)
     {
-      buf2.setPosition(buf2.getPosition() + 8);
-      while ((buf2.getPosition() + 12ULL) <= buf2.size())
+      componentInfo.setPosition(componentInfo.getPosition() + 8);
+      while ((componentInfo.getPosition() + 12ULL) <= componentInfo.size())
       {
-        const char    *fieldName =
-            CDBFile::stringTable[buf.findString(buf2.readUInt32Fast())];
-        const char    *fieldType =
-            CDBFile::stringTable[buf.findString(buf2.readUInt32Fast())];
-        unsigned int  dataOffset = buf2.readUInt16Fast();
-        unsigned int  dataSize = buf2.readUInt16Fast();
+        std::uint32_t fieldName = componentInfo.readUInt32Fast();
+        std::uint32_t fieldType = componentInfo.readUInt32Fast();
+        unsigned int  dataOffset = componentInfo.readUInt16Fast();
+        unsigned int  dataSize = componentInfo.readUInt16Fast();
         std::printf("    %s, %s, 0x%04X, 0x%04X\n",
-                    fieldName, fieldType, dataOffset, dataSize);
+                    CDBFile::stringTable[buf.findString(fieldName)],
+                    CDBFile::stringTable[buf.findString(fieldType)],
+                    dataOffset, dataSize);
       }
       continue;
     }
@@ -543,28 +556,32 @@ void CE2MaterialDB::loadCDBFile(CDBFile& buf)
       if (chunkType == CDBFile::ChunkType_USER ||
           chunkType == CDBFile::ChunkType_USRD)
       {
-        size_t  t2 = buf.findString(buf2.readUInt32());
+        size_t  t2 = buf.findString(componentInfo.readUInt32());
         std::printf("  %s : %s\n",
                     CDBFile::stringTable[t], CDBFile::stringTable[t2]);
 #  if ENABLE_CDB_DEBUG > 1
-        printHexData(buf2.data() + buf2.getPosition(),
-                     buf2.size() - buf2.getPosition());
+        printHexData(componentInfo.data() + componentInfo.getPosition(),
+                     componentInfo.size() - componentInfo.getPosition());
 #  endif
       }
 #endif
       continue;
     }
-    unsigned int  n = buf2.readUInt32();
+    unsigned int  n = componentInfo.readUInt32();
 #if ENABLE_CDB_DEBUG
     std::printf("  %s[%u]\n", CDBFile::stringTable[t], n);
 #endif
     if (t == CDBFile::String_BSComponentDB2_DBFileIndex_ObjectInfo)
     {
-      if ((buf2.getPosition() + (std::uint64_t(n) * 21UL)) > buf2.size())
+      if ((componentInfo.getPosition() + (std::uint64_t(n) * 21UL))
+          > componentInfo.size())
+      {
         errorMessage("unexpected end of LIST chunk in material database");
+      }
       if (componentInfo.objectTable.begin() != componentInfo.objectTable.end())
         errorMessage("duplicate ObjectInfo list in material database");
-      const unsigned char *objectInfoPtr = buf2.data() + buf2.getPosition();
+      const unsigned char *objectInfoPtr =
+          componentInfo.data() + componentInfo.getPosition();
       unsigned int  objectCnt = n;
       std::uint32_t maxObjID = 0U;
       for (const unsigned char *p = objectInfoPtr; n; n--, p = p + 21)
@@ -596,7 +613,7 @@ void CE2MaterialDB::loadCDBFile(CDBFile& buf)
                     (unsigned int) dirHash, (unsigned int) objectID,
                     (unsigned int) baseObjID, int(hasBaseObject));
 #endif
-        if (BRANCH_UNLIKELY(!objectID))
+        if (!objectID) [[unlikely]]
           continue;
         if (!hasBaseObject)
           baseObjID = 0U;
@@ -613,8 +630,8 @@ void CE2MaterialDB::loadCDBFile(CDBFile& buf)
         size_t  collisionCnt = 0;
         for ( ; objectNameMap[h]; h = (h + 1U) & objectNameHashMask)
         {
-          if (BRANCH_UNLIKELY(objectNameMap[h]->h == o->h &&
-                              objectNameMap[h]->e == o->e))
+          if (objectNameMap[h]->h == o->h &&
+              objectNameMap[h]->e == o->e) [[unlikely]]
           {
             if (!((objectNameMap[h]->type ^ o->type) & 0xFF))
               break;
@@ -631,18 +648,21 @@ void CE2MaterialDB::loadCDBFile(CDBFile& buf)
     }
     else if (t == CDBFile::String_BSComponentDB2_DBFileIndex_ComponentInfo)
     {
-      if ((buf2.getPosition() + (std::uint64_t(n) << 3)) > buf2.size())
+      if ((componentInfo.getPosition() + (std::uint64_t(n) << 3))
+          > componentInfo.size())
+      {
         errorMessage("unexpected end of LIST chunk in material database");
+      }
       if (componentInfoPtr)
         errorMessage("duplicate ComponentInfo list in material database");
-      componentInfoPtr = buf2.data() + buf2.getPosition();
+      componentInfoPtr = componentInfo.data() + componentInfo.getPosition();
       componentCnt = n;
 #if ENABLE_CDB_DEBUG
       while (n--)
       {
-        unsigned int  objectID = buf2.readUInt32Fast();
-        unsigned int  componentIndex = buf2.readUInt16Fast();
-        unsigned int  componentType = buf2.readUInt16Fast();
+        unsigned int  objectID = componentInfo.readUInt32Fast();
+        unsigned int  componentIndex = componentInfo.readUInt16Fast();
+        unsigned int  componentType = componentInfo.readUInt16Fast();
         std::printf("    0x%08X, 0x%04X, 0x%04X\n",
                     objectID, componentIndex, componentType);
       }
@@ -650,9 +670,13 @@ void CE2MaterialDB::loadCDBFile(CDBFile& buf)
     }
     else if (t == CDBFile::String_BSComponentDB2_DBFileIndex_EdgeInfo)
     {
-      if ((buf2.getPosition() + (std::uint64_t(n) * 12UL)) > buf2.size())
+      if ((componentInfo.getPosition() + (std::uint64_t(n) * 12UL))
+          > componentInfo.size())
+      {
         errorMessage("unexpected end of LIST chunk in material database");
-      const unsigned char *edgeInfoPtr = buf2.data() + buf2.getPosition();
+      }
+      const unsigned char *edgeInfoPtr =
+          componentInfo.data() + componentInfo.getPosition();
       for (const unsigned char *p = edgeInfoPtr; n; n--, p = p + 12)
       {
         std::uint32_t childObjectID = FileBuffer::readUInt32Fast(p);
@@ -664,7 +688,7 @@ void CE2MaterialDB::loadCDBFile(CDBFile& buf)
                     (unsigned int) childObjectID, (unsigned int) parentObjectID,
                     edgeIndex, edgeType);
 #endif
-        if (BRANCH_UNLIKELY(edgeType != 0x0064U))
+        if (edgeType != 0x0064U) [[unlikely]]
           continue;             // not "BSComponentDB2::OuterEdge"
         const CE2MaterialObject *o =
             findObject(componentInfo.objectTable, childObjectID);
@@ -737,35 +761,4 @@ const CE2Material * CE2MaterialDB::findMaterial(
     return static_cast< const CE2Material * >(o);
   return nullptr;
 }
-
-#if ENABLE_CDB_DEBUG > 1
-static void printHexData(const unsigned char *p, size_t n)
-{
-  for (size_t i = 0; i < n; i++)
-  {
-    if (!(i & 15))
-      std::printf("%08x", (unsigned int) i);
-    std::printf("%s%02x", (!(i & 7) ? "  " : " "), (unsigned int) p[i]);
-    if ((i & 15) != 15 && (i + 1) < n)
-      continue;
-    while ((i & 15) != 15)
-    {
-      i++;
-      std::printf("%s", (!(i & 7) ? "    " : "   "));
-    }
-    std::printf("  |");
-    i = i - 16;
-    do
-    {
-      i++;
-      unsigned char c = p[i];
-      if (c < 0x20 || c >= 0x7F)
-        c = 0x2E;
-      std::fputc(c, stdout);
-    }
-    while ((i & 15) != 15 && (i + 1) < n);
-    std::printf("|\n");
-  }
-}
-#endif
 

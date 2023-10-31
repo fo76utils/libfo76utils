@@ -4,170 +4,31 @@
 
 #include <bit>
 
-inline bool CE2MaterialDB::ComponentInfo::getFieldNumber(
-    unsigned int& n, unsigned int nMax, bool isDiff)
-{
-  if (BRANCH_UNLIKELY(!isDiff))
-  {
-    n++;
-    return (n <= nMax);
-  }
-  if (BRANCH_UNLIKELY((buf.getPosition() + 2ULL) > buf.size()))
-  {
-    buf.setPosition(buf.size());
-    return false;
-  }
-  n = buf.readUInt16Fast();
-  if (BRANCH_LIKELY(std::int16_t(n) <= std::int16_t(nMax)))
-    return (std::int16_t(n) >= 0);
-#if ENABLE_CDB_DEBUG
-  std::printf("Warning: unrecognized DIFF field number, skipping data\n");
-#endif
-  buf.setPosition(buf.size());
-  return false;
-}
-
-inline bool CE2MaterialDB::ComponentInfo::readBool(bool& n)
-{
-  if (BRANCH_LIKELY(buf.getPosition() < buf.size()))
-  {
-    n = bool(buf.readUInt8Fast());
-    return true;
-  }
-  return false;
-}
-
-inline bool CE2MaterialDB::ComponentInfo::readUInt16(std::uint16_t& n)
-{
-  if (BRANCH_UNLIKELY((buf.getPosition() + 2ULL) > buf.size()))
-  {
-    buf.setPosition(buf.size());
-    return false;
-  }
-  n = buf.readUInt16Fast();
-  return true;
-}
-
-inline bool CE2MaterialDB::ComponentInfo::readUInt32(std::uint32_t& n)
-{
-  if (BRANCH_UNLIKELY((buf.getPosition() + 4ULL) > buf.size()))
-  {
-    buf.setPosition(buf.size());
-    return false;
-  }
-  n = buf.readUInt32Fast();
-  return true;
-}
-
-inline bool CE2MaterialDB::ComponentInfo::readFloat(float& n)
-{
-  if (BRANCH_UNLIKELY((buf.getPosition() + 4ULL) > buf.size()))
-  {
-    buf.setPosition(buf.size());
-    return false;
-  }
-#if defined(__i386__) || defined(__x86_64__) || defined(__x86_64)
-  std::uint32_t tmp = buf.readUInt32Fast();
-  if (!((tmp + 0x00800000U) & 0x7F000000U))
-    tmp = 0U;
-  n = std::bit_cast< float, std::uint32_t >(tmp);
-#else
-  n = buf.readFloat();
-#endif
-  return true;
-}
-
-inline bool CE2MaterialDB::ComponentInfo::readFloat0To1(float& n)
-{
-  if (BRANCH_UNLIKELY((buf.getPosition() + 4ULL) > buf.size()))
-  {
-    buf.setPosition(buf.size());
-    return false;
-  }
-#if defined(__i386__) || defined(__x86_64__) || defined(__x86_64)
-  std::uint32_t tmp = buf.readUInt32Fast();
-  if (!((tmp + 0x00800000U) & 0x7F000000U))
-    tmp = 0U;
-  n = std::bit_cast< float, std::uint32_t >(tmp);
-#else
-  n = buf.readFloat();
-#endif
-  n = std::min(std::max(n, 0.0f), 1.0f);
-  return true;
-}
-
 inline bool CE2MaterialDB::ComponentInfo::readString()
 {
-  if (BRANCH_UNLIKELY((buf.getPosition() + 2ULL) > buf.size()))
-  {
-    buf.setPosition(buf.size());
-    return false;
-  }
-  unsigned int  len = buf.readUInt16Fast();
-  if (BRANCH_UNLIKELY((buf.getPosition() + std::uint64_t(len)) > buf.size()))
-  {
-    buf.setPosition(buf.size());
-    return false;
-  }
-  buf.readString(stringBuf, len);
-  return true;
+  return CDBFile::CDBChunk::readString(stringBuf);
 }
 
 inline bool CE2MaterialDB::ComponentInfo::readAndStoreString(
     const std::string*& s, int type)
 {
-  if (BRANCH_UNLIKELY((buf.getPosition() + 2ULL) > buf.size()))
+  if ((filePos + 2ULL) > fileBufSize) [[unlikely]]
   {
-    buf.setPosition(buf.size());
+    filePos = fileBufSize;
     return false;
   }
-  unsigned int  len = buf.readUInt16Fast();
-  if (BRANCH_UNLIKELY((buf.getPosition() + std::uint64_t(len)) > buf.size()))
+  unsigned int  len = readUInt16Fast();
+  if ((filePos + std::uint64_t(len)) > fileBufSize) [[unlikely]]
   {
-    buf.setPosition(buf.size());
+    filePos = fileBufSize;
     return false;
   }
-  s = cdb.readStringParam(stringBuf, buf, len, type);
+  s = cdb.readStringParam(stringBuf, *this, len, type);
   return true;
 }
 
-bool CE2MaterialDB::ComponentInfo::readEnum(unsigned char& n, const char *t)
-{
-  if (BRANCH_UNLIKELY((buf.getPosition() + 2ULL) > buf.size()))
-  {
-    buf.setPosition(buf.size());
-    return false;
-  }
-  unsigned int  len = buf.readUInt16Fast();
-  if (BRANCH_UNLIKELY((buf.getPosition() + std::uint64_t(len)) > buf.size()))
-  {
-    buf.setPosition(buf.size());
-    return false;
-  }
-  const char  *s =
-      reinterpret_cast< const char * >(buf.data()) + buf.getPosition();
-  buf.setPosition(buf.getPosition() + len);
-  while (len > 0U && s[len - 1U] == '\0')
-    len--;
-  for (unsigned int i = 0U; *t; i++)
-  {
-    unsigned int  len2 = (unsigned char) *t;
-    const char  *s2 = t + 1;
-    t = s2 + len2;
-    if (len2 != len)
-      continue;
-    for (unsigned int j = 0U; len2 && s2[j] == s[j]; j++, len2--)
-      ;
-    if (!len2)
-    {
-      n = (unsigned char) i;
-      break;
-    }
-  }
-  return true;
-}
-
-unsigned int CE2MaterialDB::ComponentInfo::readChunk(FileBuffer& chunkBuf)
+unsigned int CE2MaterialDB::ComponentInfo::readChunk(
+    CDBFile::CDBChunk& chunkBuf)
 {
   unsigned int  chunkType = cdbBuf.readChunk(chunkBuf, 0);
 #if ENABLE_CDB_DEBUG
@@ -234,7 +95,7 @@ void CE2MaterialDB::ComponentInfo::readLayeredEmissivityComponent(
 {
   CE2Material *m = nullptr;
   CE2Material::LayeredEmissiveSettings  *sp = nullptr;
-  if (BRANCH_LIKELY(p.o->type == 1))
+  if (p.o->type == 1) [[likely]]
   {
     m = static_cast< CE2Material * >(p.o);
     sp = reinterpret_cast< CE2Material::LayeredEmissiveSettings * >(
@@ -413,7 +274,7 @@ void CE2MaterialDB::ComponentInfo::readAlphaBlenderSettings(
     ComponentInfo& p, bool isDiff)
 {
   CE2Material *m = nullptr;
-  if (BRANCH_LIKELY(p.o->type == 1))
+  if (p.o->type == 1) [[likely]]
     m = static_cast< CE2Material * >(p.o);
   for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 8U, isDiff); )
   {
@@ -499,7 +360,7 @@ void CE2MaterialDB::ComponentInfo::readEmissiveSettingsComponent(
 {
   CE2Material *m = nullptr;
   CE2Material::EmissiveSettings *sp = nullptr;
-  if (BRANCH_LIKELY(p.o->type == 1))
+  if (p.o->type == 1) [[likely]]
   {
     m = static_cast< CE2Material * >(p.o);
     sp = reinterpret_cast< CE2Material::EmissiveSettings * >(
@@ -585,8 +446,45 @@ void CE2MaterialDB::ComponentInfo::readWaterFoamSettingsComponent(
 void CE2MaterialDB::ComponentInfo::readFlipbookComponent(
     ComponentInfo& p, bool isDiff)
 {
-  (void) p;
-  (void) isDiff;
+  CE2Material::Material *m = nullptr;
+  if (p.o->type == 4) [[likely]]
+    m = static_cast< CE2Material::Material * >(p.o);
+  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 4U, isDiff); )
+  {
+    if (n == 0U || n == 4U)
+    {
+      bool    tmp;
+      if (!p.readBool(tmp))
+        break;
+      if (!m)
+        continue;
+      if (n == 0U)
+        m->flipbookFlags = (m->flipbookFlags & 2) | (unsigned char) tmp;
+      else
+        m->flipbookFlags = (m->flipbookFlags & 1) | ((unsigned char) tmp << 1);
+    }
+    else if (n <= 2U)
+    {
+      std::uint32_t tmp;
+      if (!p.readUInt32(tmp))
+        break;
+      if (!m)
+        continue;
+      tmp = std::min< std::uint32_t >(tmp, 255U);
+      if (n == 1U)
+        m->flipbookColumns = (unsigned char) tmp;
+      else
+        m->flipbookRows = (unsigned char) tmp;
+    }
+    else
+    {
+      float   tmp;
+      if (!p.readFloat(tmp))
+        break;
+      if (m)
+        m->flipbookFPS = tmp;
+    }
+  }
 }
 
 // BSMaterial::PhysicsMaterialType
@@ -595,8 +493,43 @@ void CE2MaterialDB::ComponentInfo::readFlipbookComponent(
 void CE2MaterialDB::ComponentInfo::readPhysicsMaterialType(
     ComponentInfo& p, bool isDiff)
 {
-  (void) p;
-  (void) isDiff;
+  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
+  {
+    std::uint32_t tmp;
+    if (!p.readUInt32(tmp))
+      break;
+    if (p.o->type == 1 && p.componentType == 0x0077U) [[likely]]
+    {                                   // "BSMaterial::CollisionComponent"
+      CE2Material *m = static_cast< CE2Material * >(p.o);
+      switch (tmp)
+      {
+        case 0x064003D4U:               // "metal"
+          m->physicsMaterialType = 6;
+          break;
+        case 0x1DD9C611U:               // "wood"
+          m->physicsMaterialType = 7;
+          break;
+        case 0x4BDC3571U:               // "materialphyicedebrislarge"
+          m->physicsMaterialType = 5;
+          break;
+        case 0x6B81B7B0U:               // "mat"
+          m->physicsMaterialType = 2;
+          break;
+        case 0x7A0EB611U:               // "materialmat"
+          m->physicsMaterialType = 4;
+          break;
+        case 0xAD5ACB92U:               // "materialgroundtilevinyl"
+          m->physicsMaterialType = 3;
+          break;
+        case 0xF0170989U:               // "carpet"
+          m->physicsMaterialType = 1;
+          break;
+        default:
+          m->physicsMaterialType = 0;
+          break;
+      }
+    }
+  }
 }
 
 // BSMaterial::TerrainTintSettingsComponent
@@ -622,7 +555,7 @@ void CE2MaterialDB::ComponentInfo::readUVStreamID(
     const CE2Material::UVStream *uvStream =
         static_cast< const CE2Material::UVStream * >(
             readBSComponentDB2ID(p, isDiff, 6));
-    if (BRANCH_LIKELY(p.componentType == 0x006BU))
+    if (p.componentType == 0x006BU) [[likely]]
     {                           // "BSMaterial::UVStreamID"
       if (p.o->type == 2)
         static_cast< CE2Material::Blender * >(p.o)->uvStream = uvStream;
@@ -662,7 +595,7 @@ void CE2MaterialDB::ComponentInfo::readDecalSettingsComponent(
 {
   CE2Material *m = nullptr;
   CE2Material::DecalSettings  *sp = nullptr;
-  if (BRANCH_LIKELY(p.o->type == 1))
+  if (p.o->type == 1) [[likely]]
   {
     m = static_cast< CE2Material * >(p.o);
     sp = reinterpret_cast< CE2Material::DecalSettings * >(
@@ -785,12 +718,101 @@ void CE2MaterialDB::ComponentInfo::readDirectory(
 void CE2MaterialDB::ComponentInfo::readWaterSettingsComponent(
     ComponentInfo& p, bool isDiff)
 {
-  (void) isDiff;
-  if (BRANCH_LIKELY(p.o->type == 1))
+  CE2Material *m = nullptr;
+  CE2Material::WaterSettings  *sp = nullptr;
+  if (p.o->type == 1) [[likely]]
   {
-    CE2Material *m = static_cast< CE2Material * >(p.o);
-    m->setFlags(CE2Material::Flag_IsWater | CE2Material::Flag_AlphaBlending,
-                true);
+    m = static_cast< CE2Material * >(p.o);
+    sp = reinterpret_cast< CE2Material::WaterSettings * >(
+             p.cdb.allocateSpace(sizeof(CE2Material::WaterSettings),
+                                 m->waterSettings));
+    if (!m->waterSettings)
+    {
+      m->setFlags(CE2Material::Flag_IsWater | CE2Material::Flag_AlphaBlending,
+                  true);
+      // FIXME: find correct default water settings
+      sp->waterEdgeFalloff = 0.0f;
+      sp->waterWetnessMaxDepth = 0.0f;
+      sp->waterEdgeNormalFalloff = 0.0f;
+      sp->waterDepthBlur = 0.0f;
+      sp->reflectance = FloatVector4(0.0f, 0.0f, 0.0f, 0.0f);
+      sp->phytoplanktonReflectance = FloatVector4(0.0f, 0.0f, 0.0f, 0.0f);
+      sp->sedimentReflectance = FloatVector4(0.0f, 0.0f, 0.0f, 0.0f);
+      sp->yellowMatterReflectance = FloatVector4(0.0f, 0.0f, 0.0f, 0.0f);
+      sp->lowLOD = false;
+      sp->placedWater = false;
+    }
+    m->waterSettings = sp;
+  }
+  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 21U, isDiff); )
+  {
+    if (n <= 19U)
+    {
+      float   tmp;
+      if (!p.readFloat(tmp))
+        break;
+      if (!sp)
+        continue;
+      switch (n)
+      {
+        case 0U:
+          sp->waterEdgeFalloff = tmp;
+          break;
+        case 1U:
+          sp->waterWetnessMaxDepth = tmp;
+          break;
+        case 2U:
+          sp->waterEdgeNormalFalloff = tmp;
+          break;
+        case 3U:
+          sp->waterDepthBlur = tmp;
+          break;
+        case 4U:
+          sp->reflectance[3] = tmp;
+          break;
+        case 5U:
+        case 6U:
+        case 7U:
+          sp->phytoplanktonReflectance[n - 5U] = tmp;
+          break;
+        case 8U:
+        case 9U:
+        case 10U:
+          sp->sedimentReflectance[n - 8U] = tmp;
+          break;
+        case 11U:
+        case 12U:
+        case 13U:
+          sp->yellowMatterReflectance[n - 11U] = tmp;
+          break;
+        case 14U:
+          sp->phytoplanktonReflectance[3] = tmp;
+          break;
+        case 15U:
+          sp->sedimentReflectance[3] = tmp;
+          break;
+        case 16U:
+          sp->yellowMatterReflectance[3] = tmp;
+          break;
+        case 17U:
+        case 18U:
+        case 19U:
+          sp->reflectance[n - 17U] = tmp;
+          break;
+      }
+    }
+    else
+    {
+      bool    tmp;
+      if (!p.readBool(tmp))
+        break;
+      if (!sp)
+        continue;
+      if (n == 20U)
+        sp->lowLOD = tmp;
+      else
+        sp->placedWater = tmp;
+    }
   }
 }
 
@@ -878,7 +900,7 @@ void CE2MaterialDB::ComponentInfo::readEffectSettingsComponent(
 {
   CE2Material *m = nullptr;
   CE2Material::EffectSettings *sp = nullptr;
-  if (BRANCH_LIKELY(p.o->type == 1))
+  if (p.o->type == 1) [[likely]]
   {
     m = static_cast< CE2Material * >(p.o);
     sp = reinterpret_cast< CE2Material::EffectSettings * >(
@@ -909,7 +931,7 @@ void CE2MaterialDB::ComponentInfo::readEffectSettingsComponent(
   }
   for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 32U, isDiff); )
   {
-    if (BRANCH_UNLIKELY(n == 32U))
+    if (n == 32U) [[unlikely]]
     {
       std::uint16_t tmp;
       if (!p.readUInt16(tmp))
@@ -1048,7 +1070,7 @@ void CE2MaterialDB::ComponentInfo::readOffset(
 {
   FloatVector4  tmp(0.0f);
   FloatVector4  *c = &tmp;
-  if (BRANCH_LIKELY(p.o->type == 6 && p.componentType == 0x0094U))
+  if (p.o->type == 6 && p.componentType == 0x0094U) [[likely]]
     c = &(static_cast< CE2Material::UVStream * >(p.o)->scaleAndOffset);
   for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
     readXMFLOAT2H(*c, p, isDiff);
@@ -1106,7 +1128,7 @@ void CE2MaterialDB::ComponentInfo::readProjectedDecalSettings(
     ComponentInfo& p, bool isDiff)
 {
   CE2Material::DecalSettings  *sp = nullptr;
-  if (BRANCH_LIKELY(p.o->type == 1))
+  if (p.o->type == 1) [[likely]]
   {
     CE2Material *m = static_cast< CE2Material * >(p.o);
     sp = const_cast< CE2Material::DecalSettings * >(m->decalSettings);
@@ -1141,9 +1163,9 @@ void CE2MaterialDB::ComponentInfo::readProjectedDecalSettings(
     }
     else if (n == 4U)
     {
-      if (BRANCH_UNLIKELY(p.buf.getPosition() >= p.buf.size()))
+      unsigned char tmp;
+      if (!p.readUInt8(tmp))
         break;
-      unsigned char tmp = p.buf.readUInt8Fast();
       if (sp)
         sp->maxParallaxSteps = tmp;
     }
@@ -1200,7 +1222,7 @@ bool CE2MaterialDB::ComponentInfo::readColorValue(
   bool    r = false;
   for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
     r = r | readXMFLOAT4(c, p, isDiff);
-  if (BRANCH_LIKELY(r))
+  if (r) [[likely]]
     c.maxValues(FloatVector4(0.0f)).minValues(FloatVector4(1.0f));
   return r;
 }
@@ -1213,7 +1235,7 @@ bool CE2MaterialDB::ComponentInfo::readColorValue(
   bool    r = false;
   for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
     r = r | readXMFLOAT4(tmp, p, isDiff);
-  if (BRANCH_LIKELY(r))
+  if (r) [[likely]]
     c = std::uint32_t(tmp * 255.0f);
   return r;
 }
@@ -1225,7 +1247,7 @@ void CE2MaterialDB::ComponentInfo::readColor(
     ComponentInfo& p, bool isDiff)
 {
   CE2Material::Material *m = nullptr;
-  if (BRANCH_LIKELY(p.o->type == 4))
+  if (p.o->type == 4) [[likely]]
     m = static_cast< CE2Material::Material * >(p.o);
   for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
   {
@@ -1324,7 +1346,7 @@ void CE2MaterialDB::ComponentInfo::readDetailBlenderSettings(
 {
   CE2Material *m = nullptr;
   CE2Material::DetailBlenderSettings  *sp = nullptr;
-  if (BRANCH_LIKELY(p.o->type == 1))
+  if (p.o->type == 1) [[likely]]
   {
     m = static_cast< CE2Material * >(p.o);
     sp = const_cast< CE2Material::DetailBlenderSettings * >(
@@ -1422,7 +1444,7 @@ void CE2MaterialDB::ComponentInfo::readScale(
 {
   FloatVector4  tmp(0.0f);
   FloatVector4  *c = &tmp;
-  if (BRANCH_LIKELY(p.o->type == 6 && p.componentType == 0x0093U))
+  if (p.o->type == 6 && p.componentType == 0x0093U) [[likely]]
     c = &(static_cast< CE2Material::UVStream * >(p.o)->scaleAndOffset);
   for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
     readXMFLOAT2L(*c, p, isDiff);
@@ -1499,7 +1521,7 @@ void CE2MaterialDB::ComponentInfo::readOpacityComponent(
     ComponentInfo& p, bool isDiff)
 {
   CE2Material *m = nullptr;
-  if (BRANCH_LIKELY(p.o->type == 1))
+  if (p.o->type == 1) [[likely]]
   {
     m = static_cast< CE2Material * >(p.o);
     m->setFlags(CE2Material::Flag_HasOpacityComponent, true);
@@ -1690,9 +1712,9 @@ const CE2MaterialObject * CE2MaterialDB::ComponentInfo::readBSComponentDB2ID(
     else
     {
       o = p.objectTable[objectID];
-      if (BRANCH_LIKELY(typeRequired))
+      if (typeRequired) [[likely]]
       {
-        if (BRANCH_UNLIKELY((o->type ^ typeRequired) & 0xFF))
+        if ((o->type ^ typeRequired) & 0xFF) [[unlikely]]
         {
 #if ENABLE_CDB_DEBUG
           std::printf("Warning: linked object 0x%08X is of type %d, "
@@ -1717,9 +1739,8 @@ void CE2MaterialDB::ComponentInfo::readTextureReplacement(
 {
   CE2Material::Blender  *blender = nullptr;
   CE2Material::TextureSet *txtSet = nullptr;
-  if (BRANCH_LIKELY(p.o->type == 5 &&
-                    p.componentIndex
-                    < CE2Material::TextureSet::maxTexturePaths))
+  if (p.o->type == 5 &&
+      p.componentIndex < CE2Material::TextureSet::maxTexturePaths) [[likely]]
   {
     txtSet = static_cast< CE2Material::TextureSet * >(p.o);
   }
@@ -1734,7 +1755,7 @@ void CE2MaterialDB::ComponentInfo::readTextureReplacement(
       bool    isEnabled;
       if (!p.readBool(isEnabled))
         break;
-      if (BRANCH_LIKELY(txtSet))
+      if (txtSet) [[likely]]
       {
         if (!isEnabled)
           txtSet->textureReplacementMask &= ~(1U << p.componentIndex);
@@ -1789,7 +1810,7 @@ void CE2MaterialDB::ComponentInfo::readLayeredEdgeFalloffComponent(
 {
   CE2Material *m = nullptr;
   CE2Material::LayeredEdgeFalloff *sp = nullptr;
-  if (BRANCH_LIKELY(p.o->type == 1))
+  if (p.o->type == 1) [[likely]]
   {
     m = static_cast< CE2Material * >(p.o);
     sp = reinterpret_cast< CE2Material::LayeredEdgeFalloff * >(
@@ -1815,7 +1836,7 @@ void CE2MaterialDB::ComponentInfo::readLayeredEdgeFalloffComponent(
     m->layeredEdgeFalloff = sp;
     m->setFlags(CE2Material::Flag_LayeredEdgeFalloff, true);
   }
-  FileBuffer  listBuf;
+  CDBFile::CDBChunk listBuf;
   for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 5U, isDiff); )
   {
     if (n <= 3U)
@@ -1832,11 +1853,11 @@ void CE2MaterialDB::ComponentInfo::readLayeredEdgeFalloffComponent(
         continue;
       }
       unsigned int  listSize = listBuf.readUInt32Fast();
-      for (unsigned int i = 0U;
-           i < listSize && i < 3U &&
-           (listBuf.getPosition() + 4ULL) <= listBuf.size(); i++)
+      for (unsigned int i = 0U; i < listSize && i < 3U; i++)
       {
-        float   tmp = listBuf.readFloat();
+        float   tmp;
+        if (!listBuf.readFloat(tmp))
+          break;
         if (n == 0U)
           sp->falloffStartAngles[i] = tmp;
         else if (n == 1U)
@@ -1849,9 +1870,9 @@ void CE2MaterialDB::ComponentInfo::readLayeredEdgeFalloffComponent(
     }
     else if (n == 4U)
     {
-      if (BRANCH_UNLIKELY(p.buf.getPosition() >= p.buf.size()))
+      unsigned char tmp;
+      if (!p.readUInt8(tmp))
         break;
-      unsigned char tmp = p.buf.readUInt8Fast();
       if (sp)
         sp->activeLayersMask = tmp & 7;
     }
@@ -1880,7 +1901,7 @@ void CE2MaterialDB::ComponentInfo::readVegetationSettingsComponent(
 {
   CE2Material *m = nullptr;
   CE2Material::VegetationSettings *sp = nullptr;
-  if (BRANCH_LIKELY(p.o->type == 1))
+  if (p.o->type == 1) [[likely]]
   {
     m = static_cast< CE2Material * >(p.o);
     sp = reinterpret_cast< CE2Material::VegetationSettings * >(
@@ -2053,7 +2074,7 @@ void CE2MaterialDB::ComponentInfo::readAlphaSettingsComponent(
     ComponentInfo& p, bool isDiff)
 {
   CE2Material *m = nullptr;
-  if (BRANCH_LIKELY(p.o->type == 1))
+  if (p.o->type == 1) [[likely]]
     m = static_cast< CE2Material * >(p.o);
   for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 4U, isDiff); )
   {
@@ -2142,7 +2163,7 @@ void CE2MaterialDB::ComponentInfo::readFloat2DCurveController(
 void CE2MaterialDB::ComponentInfo::readTextureFile(
     ComponentInfo& p, bool isDiff)
 {
-  if (BRANCH_LIKELY(p.componentType == 0x0096U))
+  if (p.componentType == 0x0096U) [[likely]]
   {                                     // "BSMaterial::TextureFile"
     readMRTextureFile(p, isDiff);
     return;
@@ -2150,7 +2171,7 @@ void CE2MaterialDB::ComponentInfo::readTextureFile(
   if (p.componentType != 0x0076U)       // "BSMaterial::DecalSettingsComponent"
     return;
   CE2Material::DecalSettings  *sp = nullptr;
-  if (BRANCH_LIKELY(p.o->type == 1))
+  if (p.o->type == 1) [[likely]]
   {
     CE2Material *m = static_cast< CE2Material * >(p.o);
     sp = const_cast< CE2Material::DecalSettings * >(m->decalSettings);
@@ -2181,7 +2202,7 @@ void CE2MaterialDB::ComponentInfo::readTranslucencySettings(
     ComponentInfo& p, bool isDiff)
 {
   CE2Material::TranslucencySettings *sp = nullptr;
-  if (BRANCH_LIKELY(p.o->type == 1))
+  if (p.o->type == 1) [[likely]]
   {
     CE2Material *m = static_cast< CE2Material * >(p.o);
     sp = const_cast< CE2Material::TranslucencySettings * >(
@@ -2280,7 +2301,7 @@ void CE2MaterialDB::ComponentInfo::readDetailBlenderSettingsComponent(
 {
   CE2Material *m = nullptr;
   CE2Material::DetailBlenderSettings  *sp = nullptr;
-  if (BRANCH_LIKELY(p.o->type == 1))
+  if (p.o->type == 1) [[likely]]
   {
     m = static_cast< CE2Material * >(p.o);
     sp = reinterpret_cast< CE2Material::DetailBlenderSettings * >(
@@ -2377,7 +2398,7 @@ void CE2MaterialDB::ComponentInfo::readTranslucencySettingsComponent(
 {
   CE2Material *m = nullptr;
   CE2Material::TranslucencySettings *sp = nullptr;
-  if (BRANCH_LIKELY(p.o->type == 1))
+  if (p.o->type == 1) [[likely]]
   {
     m = static_cast< CE2Material * >(p.o);
     sp = reinterpret_cast< CE2Material::TranslucencySettings * >(
@@ -2521,7 +2542,7 @@ void CE2MaterialDB::ComponentInfo::readEmittanceSettings(
     ComponentInfo& p, bool isDiff)
 {
   CE2Material::EmissiveSettings *sp = nullptr;
-  if (BRANCH_LIKELY(p.o->type == 1))
+  if (p.o->type == 1) [[likely]]
   {
     CE2Material *m = static_cast< CE2Material * >(p.o);
     sp = const_cast< CE2Material::EmissiveSettings * >(m->emissiveSettings);
@@ -2743,7 +2764,7 @@ void CE2MaterialDB::ComponentInfo::readHairSettingsComponent(
 {
   (void) isDiff;
   CE2Material *m = nullptr;
-  if (BRANCH_LIKELY(p.o->type == 1))
+  if (p.o->type == 1) [[likely]]
   {
     m = static_cast< CE2Material * >(p.o);
     m->setFlags(CE2Material::Flag_IsHair, true);
@@ -2785,8 +2806,8 @@ void CE2MaterialDB::ComponentInfo::readMRTextureFile(
     if (!p.readAndStoreString(txtPath, 1))
       break;
     unsigned int  i = p.componentIndex;
-    if (BRANCH_LIKELY(p.o->type == 5 &&
-                      i < CE2Material::TextureSet::maxTexturePaths))
+    if (p.o->type == 5 &&
+        i < CE2Material::TextureSet::maxTexturePaths) [[likely]]
     {
       CE2Material::TextureSet *txtSet =
           static_cast< CE2Material::TextureSet * >(p.o);
@@ -2836,8 +2857,8 @@ void CE2MaterialDB::ComponentInfo::readBlenderID(
 void CE2MaterialDB::ComponentInfo::readCollisionComponent(
     ComponentInfo& p, bool isDiff)
 {
-  (void) p;
-  (void) isDiff;
+  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
+    readPhysicsMaterialType(p, isDiff);
 }
 
 // BSMaterial::TerrainSettingsComponent
@@ -2854,7 +2875,7 @@ void CE2MaterialDB::ComponentInfo::readTerrainSettingsComponent(
 {
   (void) isDiff;
   CE2Material *m = nullptr;
-  if (BRANCH_LIKELY(p.o->type == 1))
+  if (p.o->type == 1) [[likely]]
   {
     m = static_cast< CE2Material * >(p.o);
     m->setFlags(CE2Material::Flag_IsTerrain, true);

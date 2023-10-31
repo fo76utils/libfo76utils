@@ -198,6 +198,12 @@ static const char *resolutionSettingNames[4] =
   "Tiling", "UniqueMap", "DetailMapTiling", "HighResUniqueMap"
 };
 
+static const char *physicsMaterialNames[8] =
+{
+  "None", "Carpet", "Mat", "MaterialGroundTileVinyl",
+  "MaterialMat", "MaterialPHYIceDebrisLarge", "Metal", "Wood"
+};
+
 static
 #ifdef __GNUC__
 __attribute__ ((__format__ (__printf__, 3, 4)))
@@ -261,6 +267,11 @@ void CE2Material::printObjectInfo(
     printToStringBuf(buf, indentCnt, "Shader model: %s, route: %s\n",
                      shaderModelNames[shaderModel & 63],
                      shaderRouteNames[shaderRoute & 7]);
+  }
+  if (physicsMaterialType)
+  {
+    printToStringBuf(buf, indentCnt, "Physics material type: %s\n",
+                     physicsMaterialNames[physicsMaterialType & 7]);
   }
   if (flags & Flag_HasOpacity)
   {
@@ -619,6 +630,51 @@ void CE2Material::printObjectInfo(
       detailBlenderSettings->uvStream->printObjectInfo(buf, indentCnt);
     }
   }
+  if ((flags & Flag_IsWater) && waterSettings)
+  {
+    printToStringBuf(buf, indentCnt, "Water edge falloff: %f\n",
+                     waterSettings->waterEdgeFalloff);
+    printToStringBuf(buf, indentCnt, "Water wetness maximum depth: %f\n",
+                     waterSettings->waterWetnessMaxDepth);
+    printToStringBuf(buf, indentCnt, "Water edge normal falloff: %f\n",
+                     waterSettings->waterEdgeNormalFalloff);
+    printToStringBuf(buf, indentCnt, "Water depth blur: %f\n",
+                     waterSettings->waterDepthBlur);
+    printToStringBuf(buf, indentCnt, "Water refraction magnitude: %f\n",
+                     waterSettings->reflectance[3]);
+    printToStringBuf(buf, indentCnt,
+                     "Water phytoplankton reflectance color: %f, %f, %f\n",
+                     waterSettings->phytoplanktonReflectance[0],
+                     waterSettings->phytoplanktonReflectance[1],
+                     waterSettings->phytoplanktonReflectance[2]);
+    printToStringBuf(buf, indentCnt,
+                     "Water sediment reflectance color: %f, %f, %f\n",
+                     waterSettings->sedimentReflectance[0],
+                     waterSettings->sedimentReflectance[1],
+                     waterSettings->sedimentReflectance[2]);
+    printToStringBuf(buf, indentCnt,
+                     "Water yellow matter reflectance color: %f, %f, %f\n",
+                     waterSettings->yellowMatterReflectance[0],
+                     waterSettings->yellowMatterReflectance[1],
+                     waterSettings->yellowMatterReflectance[2]);
+    printToStringBuf(buf, indentCnt,
+                     "Water maximum concentration plankton: %f\n",
+                     waterSettings->phytoplanktonReflectance[3]);
+    printToStringBuf(buf, indentCnt,
+                     "Water maximum concentration sediment: %f\n",
+                     waterSettings->sedimentReflectance[3]);
+    printToStringBuf(buf, indentCnt,
+                     "Water maximum concentration yellow matter: %f\n",
+                     waterSettings->yellowMatterReflectance[3]);
+    printToStringBuf(buf, indentCnt, "Water reflectance color: %f, %f, %f\n",
+                     waterSettings->reflectance[0],
+                     waterSettings->reflectance[1],
+                     waterSettings->reflectance[2]);
+    printToStringBuf(buf, indentCnt, "Water: low LOD: %s\n",
+                     (!waterSettings->lowLOD ? "False" : "True"));
+    printToStringBuf(buf, indentCnt, "Water: is placed: %s\n",
+                     (!waterSettings->placedWater ? "False" : "True"));
+  }
   for (unsigned int i = 0U; i < maxLayers && layerMask >= (1U << i); i++)
   {
     if (!((layerMask & (1U << i)) && layers[i]))
@@ -712,6 +768,16 @@ void CE2Material::Material::printObjectInfo(
                    color[0], color[1], color[2], color[3]);
   printToStringBuf(buf, indentCnt,
                    "Color override mode: %s\n", colorModeNames[colorMode & 1]);
+  if (flipbookFlags & 1)
+  {
+    printToStringBuf(buf, indentCnt, "Flipbook columns: %u\n",
+                     (unsigned int) flipbookColumns);
+    printToStringBuf(buf, indentCnt, "Flipbook rows: %u\n",
+                     (unsigned int) flipbookRows);
+    printToStringBuf(buf, indentCnt, "Flipbook FPS: %f\n", flipbookFPS);
+    printToStringBuf(buf, indentCnt, "Flipbook: loops: %s\n",
+                     (!(flipbookFlags & 2) ? "False" : "True"));
+  }
   if (textureSet)
   {
     buf.resize(buf.length() + indentCnt, ' ');

@@ -75,6 +75,8 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     // texturePaths[8] =  translucency (_transmissive.dds)
     // texturePaths[9] =  _curvature.dds
     // texturePaths[10] = _mask.dds
+    // texturePaths[12] = _zoffset.dds
+    // texturePaths[20] = _id.dds
     const std::string *texturePaths[maxTexturePaths];
     // texture replacements are colors in R8G8B8A8 format
     std::uint32_t textureReplacementMask;
@@ -89,6 +91,11 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     FloatVector4  color;
     // MaterialOverrideColorTypeComponent, 0 = "Multiply", 1 = "Lerp"
     unsigned char colorMode;
+    // bit 0 = is flipbook, bit 1 = loops
+    unsigned char flipbookFlags;
+    unsigned char flipbookColumns;
+    unsigned char flipbookRows;
+    float   flipbookFPS;
     const TextureSet  *textureSet;
     void printObjectInfo(std::string& buf, size_t indentCnt) const;
   };
@@ -312,6 +319,21 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     unsigned char activeLayersMask;
     bool    useRGBFalloff;
   };
+  struct WaterSettings
+  {
+    float   waterEdgeFalloff;
+    float   waterWetnessMaxDepth;
+    float   waterEdgeNormalFalloff;
+    float   waterDepthBlur;
+    // color R, color G, color B, refraction magnitude
+    FloatVector4  reflectance;
+    // color R, color G, color B, max. concentration
+    FloatVector4  phytoplanktonReflectance;
+    FloatVector4  sedimentReflectance;
+    FloatVector4  yellowMatterReflectance;
+    bool    lowLOD;
+    bool    placedWater;
+  };
   static const char *materialFlagNames[32];
   static const char *shaderModelNames[64];
   std::uint32_t flags;
@@ -341,6 +363,10 @@ struct CE2Material : public CE2MaterialObject   // object type 1
   unsigned char opacityBlender2;
   unsigned char opacityBlender2Mode;
   float   specularOpacityOverride;
+  // 0 = "None" (default), 1 = "Carpet", 2 = "Mat",
+  // 3 = "MaterialGroundTileVinyl", 4 = "MaterialMat",
+  // 5 = "MaterialPHYIceDebrisLarge", 6 = "Metal", 7 = "Wood"
+  unsigned char physicsMaterialType;
   const Blender *blenders[maxBlenders];
   const CE2Material *lodMaterials[maxLODMaterials];
   // the following pointers are valid if the corresponding bit in flags is set
@@ -352,6 +378,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
   const VegetationSettings  *vegetationSettings;
   const DetailBlenderSettings *detailBlenderSettings;
   const LayeredEdgeFalloff  *layeredEdgeFalloff;
+  const WaterSettings   *waterSettings;
   inline void setFlags(std::uint32_t m, bool n)
   {
     flags = (flags & ~m) | ((0U - std::uint32_t(n)) & m);
@@ -420,12 +447,12 @@ struct CE2Material : public CE2MaterialObject   // object type 1
 class CE2MaterialDB
 {
  protected:
-  struct ComponentInfo
+  class ComponentInfo : public CDBFile::CDBChunk
   {
+   public:
     typedef void (*ReadFunctionType)(ComponentInfo&, bool);
     static const ReadFunctionType readFunctionTable[64];
     CE2MaterialDB&  cdb;
-    FileBuffer    buf;
     CE2MaterialObject *o;
     unsigned int  componentIndex;
     unsigned int  componentType;
@@ -536,24 +563,15 @@ class CE2MaterialDB
     static void readCollisionComponent(ComponentInfo& p, bool isDiff);
     static void readTerrainSettingsComponent(ComponentInfo& p, bool isDiff);
     static void readLODMaterialID(ComponentInfo& p, bool isDiff);
-    ComponentInfo(CE2MaterialDB& p, CDBFile& fileBuf)
+    ComponentInfo(CE2MaterialDB& p, CDBFile& cdbFileBuf)
       : cdb(p),
-        buf((unsigned char *) 0, 0, 0),
-        cdbBuf(fileBuf)
+        cdbBuf(cdbFileBuf)
     {
     }
-    inline bool getFieldNumber(unsigned int& n, unsigned int nMax, bool isDiff);
-    inline bool readBool(bool& n);
-    inline bool readUInt16(std::uint16_t& n);
-    inline bool readUInt32(std::uint32_t& n);
-    inline bool readFloat(float& n);
-    inline bool readFloat0To1(float& n);
     inline bool readString();
     inline bool readAndStoreString(const std::string*& s, int type);
-    // t = sequence of strings with length prefix (e.g. "\005False\004True")
-    bool readEnum(unsigned char& n, const char *t);
     // returns chunk type (e.g. 0x5453494C for "LIST")
-    unsigned int readChunk(FileBuffer& chunkBuf);
+    unsigned int readChunk(CDBFile::CDBChunk& chunkBuf);
   };
   enum
   {
@@ -576,7 +594,7 @@ class CE2MaterialDB
       const std::vector< CE2MaterialObject * >& t, unsigned int objectID) const;
   void initializeObject(CE2MaterialObject *o,
                         const std::vector< CE2MaterialObject * >& objectTable);
-  void *allocateSpace(size_t nBytes, const void *copySrc = (void *) 0,
+  void *allocateSpace(size_t nBytes, const void *copySrc = nullptr,
                       size_t alignBytes = 16);
   CE2MaterialObject *allocateObject(
       std::vector< CE2MaterialObject * >& objectTable,
@@ -590,11 +608,11 @@ class CE2MaterialDB
   CE2MaterialDB();
   // fileName defaults to "materials/materialsbeta.cdb", it can be a comma
   // separated list of multiple CDB file names
-  CE2MaterialDB(const BA2File& ba2File, const char *fileName = (char *) 0);
+  CE2MaterialDB(const BA2File& ba2File, const char *fileName = nullptr);
   virtual ~CE2MaterialDB();
   void loadCDBFile(CDBFile& buf);
   void loadCDBFile(const unsigned char *buf, size_t bufSize);
-  void loadCDBFile(const BA2File& ba2File, const char *fileName = (char *) 0);
+  void loadCDBFile(const BA2File& ba2File, const char *fileName = nullptr);
   const CE2Material *findMaterial(const std::string& fileName) const;
 };
 
