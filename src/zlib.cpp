@@ -3,8 +3,6 @@
 #include "zlib.hpp"
 #include "fp32vec4.hpp"
 
-#include <bit>
-
 std::uint32_t ZLibDecompressor::readU32LE()
 {
   std::uint32_t w = readU16LE();

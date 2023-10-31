@@ -2,8 +2,6 @@
 #include "common.hpp"
 #include "material.hpp"
 
-#include <bit>
-
 inline bool CE2MaterialDB::ComponentInfo::readString()
 {
   return CDBFile::CDBChunk::readString(stringBuf);

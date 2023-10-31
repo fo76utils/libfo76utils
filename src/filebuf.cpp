@@ -2,8 +2,6 @@
 #include "common.hpp"
 #include "filebuf.hpp"
 
-#include <bit>
-
 #if defined(_WIN32) || defined(_WIN64)
 #  include <windows.h>
 #  include <io.h>

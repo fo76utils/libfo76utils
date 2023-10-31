@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <exception>
 #include <stdexcept>
+#include <bit>
 
 #if defined(__GNUC__) && (defined(__x86_64__) || defined(__x86_64))
 #  if defined(__AVX__) && !defined(ENABLE_X86_64_AVX)
