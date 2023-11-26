@@ -450,7 +450,6 @@ void CE2MaterialDB::loadCDBFile(CDBFile& buf)
       const unsigned char *cmpInfoPtr = componentInfoPtr + (componentID << 3);
       unsigned int  objectID = FileBuffer::readUInt32Fast(cmpInfoPtr);
       componentInfo.componentIndex = FileBuffer::readUInt16Fast(cmpInfoPtr + 4);
-      componentInfo.componentType = FileBuffer::readUInt16Fast(cmpInfoPtr + 6);
       componentID++;
       componentInfo.o = const_cast< CE2MaterialObject * >(
                             findObject(componentInfo.objectTable, objectID));
@@ -470,10 +469,16 @@ void CE2MaterialDB::loadCDBFile(CDBFile& buf)
 #endif
         continue;
       }
+      componentInfo.componentType =
+          (unsigned int) buf.getClassName(FileBuffer::readUInt32Fast(
+                                              componentInfo.data()));
 #if ENABLE_CDB_DEBUG
-      std::printf(", object = 0x%08X:%d, component 0x%04X[%u]\n",
+      const char  *componentTypeStr = "<Unknown>";
+      if (componentInfo.componentType <= 0xFFU)
+        componentTypeStr = CDBFile::stringTable[componentInfo.componentType];
+      std::printf(", object = 0x%08X:%d, component %s[%u]\n",
                   objectID, componentInfo.o->type,
-                  componentInfo.componentType, componentInfo.componentIndex);
+                  componentTypeStr, componentInfo.componentIndex);
 #  if ENABLE_CDB_DEBUG > 1
       printHexData(componentInfo.data() + 4, componentInfo.size() - 4);
 #  endif
@@ -485,12 +490,12 @@ void CE2MaterialDB::loadCDBFile(CDBFile& buf)
 #endif
         continue;
       }
-      unsigned int  n = componentInfo.componentType - 0x0060U;
-      if ((n & ~0x3FU) || !ComponentInfo::readFunctionTable[n])
+      unsigned int  n = componentInfo.componentType - 0x0080U;
+      if ((n & ~0x7FU) || !ComponentInfo::readFunctionTable[n]) [[unlikely]]
       {
 #if ENABLE_CDB_DEBUG
-        std::printf("Warning: unrecognized component type 0x%04X\n",
-                    n + 0x0060U);
+        std::printf("Warning: unrecognized component type %d\n",
+                    int(n + 0x0080U));
 #endif
         continue;
       }
@@ -681,15 +686,13 @@ void CE2MaterialDB::loadCDBFile(CDBFile& buf)
       {
         std::uint32_t childObjectID = FileBuffer::readUInt32Fast(p);
         std::uint32_t parentObjectID = FileBuffer::readUInt32Fast(p + 4);
-        unsigned int  edgeType = FileBuffer::readUInt16Fast(p + 10);    // 0x64
 #if ENABLE_CDB_DEBUG
+        unsigned int  edgeType = FileBuffer::readUInt16Fast(p + 10);    // 0x64
         unsigned int  edgeIndex = FileBuffer::readUInt16Fast(p + 8);    // 0
         std::printf("    0x%08X, 0x%08X, 0x%04X, 0x%04X\n",
                     (unsigned int) childObjectID, (unsigned int) parentObjectID,
                     edgeIndex, edgeType);
 #endif
-        if (edgeType != 0x0064U) [[unlikely]]
-          continue;             // not "BSComponentDB2::OuterEdge"
         const CE2MaterialObject *o =
             findObject(componentInfo.objectTable, childObjectID);
         if (!o)

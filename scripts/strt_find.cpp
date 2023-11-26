@@ -3,6 +3,7 @@
 #include "filebuf.hpp"
 #include "ba2file.hpp"
 #include "esmfile.hpp"
+#include "cdb_file.hpp"
 
 static void loadStrings(std::set< std::string >& cdbStrings, FileBuffer& buf)
 {
@@ -46,22 +47,41 @@ static const char *predefinedCDBStrings[19] =
 int main()
 {
   std::set< std::string > cdbStrings;
-  BA2File ba2File("Starfield/Data");
+  for (size_t i = sizeof(predefinedCDBStrings) / sizeof(char *);
+       i < (sizeof(CDBFile::stringTable) / sizeof(char *)); i++)
+  {
+    cdbStrings.insert(std::string(CDBFile::stringTable[i]));
+  }
+  BA2File ba2File("");
   {
     std::vector< unsigned char >  tmpBuf;
     ba2File.extractFile(tmpBuf, std::string("materials/materialsbeta.cdb"));
     FileBuffer  buf(tmpBuf.data(), tmpBuf.size());
     loadStrings(cdbStrings, buf);
   }
-  ESMFile esmFile("Starfield/Data/Starfield.esm");
-  for (unsigned int i = 0U; i <= 0x0FFFFFFFU; i++)
   {
-    const ESMFile::ESMRecord  *r = esmFile.findRecord(i);
-    if (!r)
-      continue;
-    ESMFile::ESMField f(esmFile, *r);
-    while (f.next())
-      loadStrings(cdbStrings, f);
+    ESMFile esmFile("Starfield.esm");
+    for (unsigned int i = 0U; i <= 0x0FFFFFFFU; i++)
+    {
+      const ESMFile::ESMRecord  *r = esmFile.findRecord(i);
+      if (!r)
+        continue;
+      ESMFile::ESMField f(esmFile, *r);
+      while (f.next())
+        loadStrings(cdbStrings, f);
+    }
+  }
+  {
+    ESMFile esmFile("BlueprintShips-Starfield.esm");
+    for (unsigned int i = 0U; i <= 0x0FFFFFFFU; i++)
+    {
+      const ESMFile::ESMRecord  *r = esmFile.findRecord(i);
+      if (!r)
+        continue;
+      ESMFile::ESMField f(esmFile, *r);
+      while (f.next())
+        loadStrings(cdbStrings, f);
+    }
   }
   std::set< std::string >::iterator i = cdbStrings.begin();
   for (unsigned int n = 0U; i != cdbStrings.end(); n++)

@@ -496,8 +496,10 @@ void CE2MaterialDB::ComponentInfo::readPhysicsMaterialType(
     std::uint32_t tmp;
     if (!p.readUInt32(tmp))
       break;
-    if (p.o->type == 1 && p.componentType == 0x0077U) [[likely]]
-    {                                   // "BSMaterial::CollisionComponent"
+    if (p.o->type == 1 &&
+        p.componentType
+        == CDBFile::String_BSMaterial_CollisionComponent) [[likely]]
+    {
       CE2Material *m = static_cast< CE2Material * >(p.o);
       switch (tmp)
       {
@@ -553,20 +555,22 @@ void CE2MaterialDB::ComponentInfo::readUVStreamID(
     const CE2Material::UVStream *uvStream =
         static_cast< const CE2Material::UVStream * >(
             readBSComponentDB2ID(p, isDiff, 6));
-    if (p.componentType == 0x006BU) [[likely]]
-    {                           // "BSMaterial::UVStreamID"
+    if (p.componentType == CDBFile::String_BSMaterial_UVStreamID) [[likely]]
+    {
       if (p.o->type == 2)
         static_cast< CE2Material::Blender * >(p.o)->uvStream = uvStream;
       else if (p.o->type == 3)
         static_cast< CE2Material::Layer * >(p.o)->uvStream = uvStream;
     }
-    else if (p.componentType == 0x0075U)
-    {                           // "BSMaterial::AlphaSettingsComponent"
+    else if (p.componentType
+             == CDBFile::String_BSMaterial_AlphaSettingsComponent)
+    {
       if (p.o->type == 1)
         static_cast< CE2Material * >(p.o)->alphaUVStream = uvStream;
     }
-    else if (p.componentType == 0x0074U)
-    {                           // "BSMaterial::DetailBlenderSettingsComponent"
+    else if (p.componentType
+             == CDBFile::String_BSMaterial_DetailBlenderSettingsComponent)
+    {
       if (p.o->type == 1)
       {
         CE2Material::DetailBlenderSettings  *sp =
@@ -1068,8 +1072,11 @@ void CE2MaterialDB::ComponentInfo::readOffset(
 {
   FloatVector4  tmp(0.0f);
   FloatVector4  *c = &tmp;
-  if (p.o->type == 6 && p.componentType == 0x0094U) [[likely]]
+  if (p.o->type == 6 &&
+      p.componentType == CDBFile::String_BSMaterial_Offset) [[likely]]
+  {
     c = &(static_cast< CE2Material::UVStream * >(p.o)->scaleAndOffset);
+  }
   for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
     readXMFLOAT2H(*c, p, isDiff);
 }
@@ -1442,8 +1449,11 @@ void CE2MaterialDB::ComponentInfo::readScale(
 {
   FloatVector4  tmp(0.0f);
   FloatVector4  *c = &tmp;
-  if (p.o->type == 6 && p.componentType == 0x0093U) [[likely]]
+  if (p.o->type == 6 &&
+      p.componentType == CDBFile::String_BSMaterial_Scale) [[likely]]
+  {
     c = &(static_cast< CE2Material::UVStream * >(p.o)->scaleAndOffset);
+  }
   for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
     readXMFLOAT2L(*c, p, isDiff);
 }
@@ -2161,12 +2171,12 @@ void CE2MaterialDB::ComponentInfo::readFloat2DCurveController(
 void CE2MaterialDB::ComponentInfo::readTextureFile(
     ComponentInfo& p, bool isDiff)
 {
-  if (p.componentType == 0x0096U) [[likely]]
-  {                                     // "BSMaterial::TextureFile"
+  if (p.componentType == CDBFile::String_BSMaterial_TextureFile) [[likely]]
+  {
     readMRTextureFile(p, isDiff);
     return;
   }
-  if (p.componentType != 0x0076U)       // "BSMaterial::DecalSettingsComponent"
+  if (p.componentType != CDBFile::String_BSMaterial_DecalSettingsComponent)
     return;
   CE2Material::DecalSettings  *sp = nullptr;
   if (p.o->type == 1) [[likely]]
@@ -2696,8 +2706,11 @@ void CE2MaterialDB::ComponentInfo::readChannel(
     unsigned char tmp = 0xFF;
     if (!p.readEnum(tmp, "\004Zero\003One\003Two\005Three"))
       break;
-    if (p.o->type == 6 && p.componentType == 0x0095U && tmp != 0xFF)
+    if (p.o->type == 6 &&
+        p.componentType == CDBFile::String_BSMaterial_Channel && tmp != 0xFF)
+    {
       static_cast< CE2Material::UVStream * >(p.o)->channel = tmp;
+    }
   }
 }
 
@@ -2897,72 +2910,151 @@ void CE2MaterialDB::ComponentInfo::readLODMaterialID(
   }
 }
 
-const CE2MaterialDB::ComponentInfo::ReadFunctionType
-    CE2MaterialDB::ComponentInfo::readFunctionTable[64] =
+// BSMaterial::MipBiasSetting
+//   Bool  DisableMipBiasHint
+
+void CE2MaterialDB::ComponentInfo::readMipBiasSetting(
+    ComponentInfo& p, bool isDiff)
 {
-  (ReadFunctionType) 0,
-  &readCTName,
-  &readDirectoryComponent,
-  &readControllerComponent,
-  (ReadFunctionType) 0,
-  (ReadFunctionType) 0,
-  (ReadFunctionType) 0,
-  &readBlenderID,
-  &readLayerID,
-  &readMaterialID,
-  &readTextureSetID,
-  &readUVStreamID,
-  &readLODMaterialID,
-  &readTextureResolutionSetting,
-  &readTextureReplacement,
-  &readMaterialOverrideColorTypeComponent,
-  &readFlipbookComponent,
-  &readBlendModeComponent,
-  &readColorChannelTypeComponent,
-  &readShaderRouteComponent,
+  (void) p;
+  (void) isDiff;
+}
+
+const CE2MaterialDB::ComponentInfo::ReadFunctionType
+    CE2MaterialDB::ComponentInfo::readFunctionTable[128] =
+{
+  // indexed by string ID (returned by CDBFile::getClassName(strtOffs)) - 128
+  (ReadFunctionType) 0,         // "BSBind::ColorLerpController"
+  (ReadFunctionType) 0,         // "BSBind::ComponentProperty"
+  &readControllerComponent,     // "BSBind::ControllerComponent"
+  (ReadFunctionType) 0,         // "BSBind::Controllers"
+  (ReadFunctionType) 0,         // "BSBind::Controllers::Mapping"
+  (ReadFunctionType) 0,         // "BSBind::Directory"
+  &readDirectoryComponent,      // "BSBind::DirectoryComponent"
+  (ReadFunctionType) 0,         // "BSBind::Float2DCurveController"
+  (ReadFunctionType) 0,         // "BSBind::Float2DLerpController"
+  (ReadFunctionType) 0,         // "BSBind::Float3DCurveController"
+  (ReadFunctionType) 0,         // "BSBind::Float3DLerpController"
+  (ReadFunctionType) 0,         // "BSBind::FloatCurveController"
+  (ReadFunctionType) 0,         // "BSBind::FloatLerpController"
+  (ReadFunctionType) 0,         // "BSBind::Multiplex"
+  (ReadFunctionType) 0,         // "BSBind::Snapshot"
+  (ReadFunctionType) 0,         // "BSBind::Snapshot::Entry"
+  (ReadFunctionType) 0,         // "BSBind::TimerController"
+  (ReadFunctionType) 0,         // "BSBlendable::ColorValue"
+  (ReadFunctionType) 0,         // "BSBlendable::FloatValue"
+  (ReadFunctionType) 0,         // "BSColorCurve"
+  (ReadFunctionType) 0,         // "BSComponentDB2::DBFileIndex"
+  (ReadFunctionType) 0,         // "BSComponentDB2::DBFileIndex::ComponentInfo"
+  (ReadFunctionType) 0,     // "BSComponentDB2::DBFileIndex::ComponentTypeInfo"
+  (ReadFunctionType) 0,         // "BSComponentDB2::DBFileIndex::EdgeInfo"
+  (ReadFunctionType) 0,         // "BSComponentDB2::DBFileIndex::ObjectInfo"
+  (ReadFunctionType) 0,         // "BSComponentDB2::ID"
+  &readCTName,                  // "BSComponentDB::CTName"
+  (ReadFunctionType) 0,         // "BSFloat2DCurve"
+  (ReadFunctionType) 0,         // "BSFloat3DCurve"
+  (ReadFunctionType) 0,         // "BSFloatCurve"
+  (ReadFunctionType) 0,         // "BSFloatCurve::Control"
+  (ReadFunctionType) 0,         // "BSGalaxy::BGSSunPresetForm"
+  (ReadFunctionType) 0,     // "BSGalaxy::BGSSunPresetForm::DawnDuskSettings"
+  (ReadFunctionType) 0,         // "BSGalaxy::BGSSunPresetForm::NightSettings"
+  (ReadFunctionType) 0,         // "BSHoudini::HoudiniAssetData"
+  (ReadFunctionType) 0,         // "BSHoudini::HoudiniAssetData::Parameter"
+  (ReadFunctionType) 0,         // "BSMaterial::AlphaBlenderSettings"
+  &readAlphaSettingsComponent,  // "BSMaterial::AlphaSettingsComponent"
+  &readBlendModeComponent,      // "BSMaterial::BlendModeComponent"
+  &readBlendParamFloat,         // "BSMaterial::BlendParamFloat"
+  &readBlenderID,               // "BSMaterial::BlenderID"
+  &readChannel,                 // "BSMaterial::Channel"
+  &readCollisionComponent,      // "BSMaterial::CollisionComponent"
+  &readColor,                   // "BSMaterial::Color"
+  &readColorChannelTypeComponent,   // "BSMaterial::ColorChannelTypeComponent"
+  &readColorRemapSettingsComponent, // "BSMaterial::ColorRemapSettingsComponent"
+  &readDecalSettingsComponent,  // "BSMaterial::DecalSettingsComponent"
+  (ReadFunctionType) 0,         // "BSMaterial::DetailBlenderSettings"
+  // "BSMaterial::DetailBlenderSettingsComponent"
   &readDetailBlenderSettingsComponent,
-  &readAlphaSettingsComponent,
-  &readDecalSettingsComponent,
-  &readCollisionComponent,
-  &readEmissiveSettingsComponent,
-  &readTranslucencySettingsComponent,
-  &readShaderModelComponent,
-  &readFlowSettingsComponent,
-  &readEffectSettingsComponent,
-  &readOpacityComponent,
-  &readLayeredEmissivityComponent,
-  &readHairSettingsComponent,
-  &readMouthSettingsComponent,
-  &readWaterSettingsComponent,
-  &readWaterFoamSettingsComponent,
-  &readWaterGrimeSettingsComponent,
-  &readColorRemapSettingsComponent,
-  &readStarmapBodyEffectComponent,
-  &readTerrainSettingsComponent,
-  &readEyeSettingsComponent,
-  &readDistortionComponent,
-  &readVegetationSettingsComponent,
+  &readDistortionComponent,     // "BSMaterial::DistortionComponent"
+  &readEffectSettingsComponent, // "BSMaterial::EffectSettingsComponent"
+  &readEmissiveSettingsComponent,   // "BSMaterial::EmissiveSettingsComponent"
+  (ReadFunctionType) 0,         // "BSMaterial::EmittanceSettings"
+  &readEyeSettingsComponent,    // "BSMaterial::EyeSettingsComponent"
+  &readFlipbookComponent,       // "BSMaterial::FlipbookComponent"
+  &readFlowSettingsComponent,   // "BSMaterial::FlowSettingsComponent"
+  &readGlobalLayerDataComponent,    // "BSMaterial::GlobalLayerDataComponent"
+  (ReadFunctionType) 0,         // "BSMaterial::GlobalLayerNoiseSettings"
+  &readHairSettingsComponent,   // "BSMaterial::HairSettingsComponent"
+  (ReadFunctionType) 0,         // "BSMaterial::Internal::CompiledDB"
+  (ReadFunctionType) 0,         // "BSMaterial::Internal::CompiledDB::FilePair"
+  &readLODMaterialID,           // "BSMaterial::LODMaterialID"
+  &readLayerID,                 // "BSMaterial::LayerID"
+  &readLayeredEdgeFalloffComponent, // "BSMaterial::LayeredEdgeFalloffComponent"
+  &readLayeredEmissivityComponent,  // "BSMaterial::LayeredEmissivityComponent"
+  &readLevelOfDetailSettings,   // "BSMaterial::LevelOfDetailSettings"
+  &readMRTextureFile,           // "BSMaterial::MRTextureFile"
+  &readMaterialID,              // "BSMaterial::MaterialID"
+  // "BSMaterial::MaterialOverrideColorTypeComponent"
+  &readMaterialOverrideColorTypeComponent,
+  &readMaterialParamFloat,      // "BSMaterial::MaterialParamFloat"
+  &readMipBiasSetting,          // "BSMaterial::MipBiasSetting"
+  &readMouthSettingsComponent,  // "BSMaterial::MouthSettingsComponent"
+  &readOffset,                  // "BSMaterial::Offset"
+  &readOpacityComponent,        // "BSMaterial::OpacityComponent"
+  &readParamBool,               // "BSMaterial::ParamBool"
+  (ReadFunctionType) 0,         // "BSMaterial::PhysicsMaterialType"
+  (ReadFunctionType) 0,         // "BSMaterial::ProjectedDecalSettings"
+  &readScale,                   // "BSMaterial::Scale"
+  &readShaderModelComponent,    // "BSMaterial::ShaderModelComponent"
+  &readShaderRouteComponent,    // "BSMaterial::ShaderRouteComponent"
+  (ReadFunctionType) 0,         // "BSMaterial::SourceTextureWithReplacement"
+  &readStarmapBodyEffectComponent,  // "BSMaterial::StarmapBodyEffectComponent"
+  &readTerrainSettingsComponent,    // "BSMaterial::TerrainSettingsComponent"
+  // "BSMaterial::TerrainTintSettingsComponent"
   &readTerrainTintSettingsComponent,
-  (ReadFunctionType) 0,
-  &readGlobalLayerDataComponent,
-  (ReadFunctionType) 0,
-  &readLevelOfDetailSettings,
-  &readLayeredEdgeFalloffComponent,
-  &readTextureSetKindComponent,
-  &readColor,
-  (ReadFunctionType) 0,
-  &readScale,
-  &readOffset,
-  &readChannel,
-  &readTextureFile,
-  &readMRTextureFile,
-  &readMaterialParamFloat,
-  &readBlendParamFloat,
-  &readParamBool,
-  (ReadFunctionType) 0,
-  &readTextureAddressModeComponent,
-  &readUVStreamParamBool,
-  (ReadFunctionType) 0,
-  (ReadFunctionType) 0
+  &readTextureAddressModeComponent, // "BSMaterial::TextureAddressModeComponent"
+  &readTextureFile,             // "BSMaterial::TextureFile"
+  &readTextureReplacement,      // "BSMaterial::TextureReplacement"
+  &readTextureResolutionSetting,    // "BSMaterial::TextureResolutionSetting"
+  &readTextureSetID,            // "BSMaterial::TextureSetID"
+  &readTextureSetKindComponent, // "BSMaterial::TextureSetKindComponent"
+  (ReadFunctionType) 0,         // "BSMaterial::TranslucencySettings"
+  // "BSMaterial::TranslucencySettingsComponent"
+  &readTranslucencySettingsComponent,
+  &readUVStreamID,              // "BSMaterial::UVStreamID"
+  &readUVStreamParamBool,       // "BSMaterial::UVStreamParamBool"
+  &readVegetationSettingsComponent, // "BSMaterial::VegetationSettingsComponent"
+  &readWaterFoamSettingsComponent,  // "BSMaterial::WaterFoamSettingsComponent"
+  &readWaterGrimeSettingsComponent, // "BSMaterial::WaterGrimeSettingsComponent"
+  &readWaterSettingsComponent,  // "BSMaterial::WaterSettingsComponent"
+  (ReadFunctionType) 0,         // "BSMaterialBinding::MaterialPropertyNode"
+  (ReadFunctionType) 0,     // "BSMaterialBinding::MaterialUVStreamPropertyNode"
+  (ReadFunctionType) 0,         // "BSResource::ID"
+  (ReadFunctionType) 0,         // "BSSequence::AnimationEvent"
+  (ReadFunctionType) 0,         // "BSSequence::AnimationTrack"
+  (ReadFunctionType) 0,         // "BSSequence::CameraShakeEvent"
+  (ReadFunctionType) 0,         // "BSSequence::CameraShakeStrengthTrack"
+  (ReadFunctionType) 0,         // "BSSequence::CameraShakeTrack"
+  (ReadFunctionType) 0,         // "BSSequence::ColorCurveEvent"
+  (ReadFunctionType) 0,         // "BSSequence::ColorLerpEvent"
+  (ReadFunctionType) 0,         // "BSSequence::ColorTriggerEvent"
+  (ReadFunctionType) 0,         // "BSSequence::CullEvent"
+  (ReadFunctionType) 0,         // "BSSequence::DissolveEvent"
+  (ReadFunctionType) 0,         // "BSSequence::DissolveFrequencyScaleTrack"
+  (ReadFunctionType) 0,         // "BSSequence::DissolveOffsetTrack"
+  (ReadFunctionType) 0,         // "BSSequence::DissolveTrack"
+  (ReadFunctionType) 0,         // "BSSequence::ExplosionObjectSpawn"
+  (ReadFunctionType) 0,         // "BSSequence::Float2LerpEvent"
+  (ReadFunctionType) 0,         // "BSSequence::Float2TriggerEvent"
+  (ReadFunctionType) 0,         // "BSSequence::FloatCurveEvent"
+  (ReadFunctionType) 0,         // "BSSequence::FloatLerpEvent"
+  (ReadFunctionType) 0,         // "BSSequence::FloatNoiseEvent"
+  (ReadFunctionType) 0,         // "BSSequence::FloatTriggerEvent"
+  (ReadFunctionType) 0,         // "BSSequence::ImageSpaceLifetimeEvent"
+  (ReadFunctionType) 0,         // "BSSequence::ImageSpaceStrengthTrack"
+  (ReadFunctionType) 0,         // "BSSequence::ImageSpaceTrack"
+  (ReadFunctionType) 0,         // "BSSequence::ImpactEffectEvent"
+  (ReadFunctionType) 0,         // "BSSequence::ImpactEffectTrack"
+  (ReadFunctionType) 0,         // "BSSequence::LightColorTrack"
+  (ReadFunctionType) 0          // "BSSequence::LightEffectReferenceTrack"
 };
 

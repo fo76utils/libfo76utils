@@ -11,17 +11,17 @@
 
 // CE2Material (.mat file), object type 1
 //   |
-//   +--(component type 0x0067)-- CE2Material::Blender, object type 2
+//   +--(BSMaterial::BlenderID)-- CE2Material::Blender, object type 2
 //   |      |
-//   |      +--(component type 0x006B)-- CE2Material::UVStream, object type 6
-//   +--(component type 0x0068)-- CE2Material::Layer, object type 3
+//   |      +--(BSMaterial::UVStreamID)-- CE2Material::UVStream, object type 6
+//   +--(BSMaterial::LayerID)-- CE2Material::Layer, object type 3
 //   |      |
-//   |      +--(component type 0x006B)-- CE2Material::UVStream, object type 6
+//   |      +--(BSMaterial::UVStreamID)-- CE2Material::UVStream, object type 6
 //   |      |
-//   |      +--(component type 0x0069)-- CE2Material::Material, object type 4
+//   |      +--(BSMaterial::MaterialID)-- CE2Material::Material, object type 4
 //   |             |
-//   |         (component type 0x006A)-- CE2Material::TextureSet, object type 5
-//   +--(component type 0x006C)-- LOD material, object type 1
+//   |       (BSMaterial::TextureSetID)-- CE2Material::TextureSet, object type 5
+//   +--(BSMaterial::LODMaterialID)-- LOD material, object type 1
 
 struct CE2MaterialObject
 {
@@ -121,7 +121,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     unsigned char blendMode;
     // 0 = "Red" (default), 1 = "Green", 2 = "Blue", 3 = "Alpha"
     unsigned char colorChannel;
-    // parameters set via component types 0x0098 and 0x009A
+    // values set via BSMaterial::MaterialParamFloat and BSMaterial::ParamBool
     float   floatParams[maxFloatParams];
     bool    boolParams[maxBoolParams];
     void printObjectInfo(std::string& buf, size_t indentCnt) const;
@@ -387,63 +387,6 @@ struct CE2Material : public CE2MaterialObject   // object type 1
                        bool isLODMaterial = false) const;
 };
 
-// Component types:
-//   0x0061: "BSComponentDB::CTName"
-//   0x0062: "BSBind::DirectoryComponent"
-//   0x0063: "BSBind::ControllerComponent"
-//   0x0064: "BSComponentDB2::OuterEdge"
-//   0x0067: "BSMaterial::BlenderID"
-//   0x0068: "BSMaterial::LayerID"
-//   0x0069: "BSMaterial::MaterialID"
-//   0x006A: "BSMaterial::TextureSetID"
-//   0x006B: "BSMaterial::UVStreamID"
-//   0x006C: "BSMaterial::LODMaterialID"
-//   0x006D: "BSMaterial::TextureResolutionSetting"
-//   0x006E: "BSMaterial::TextureReplacement"
-//   0x006F: "BSMaterial::MaterialOverrideColorTypeComponent"
-//   0x0070: "BSMaterial::FlipbookComponent"
-//   0x0071: "BSMaterial::BlendModeComponent"
-//   0x0072: "BSMaterial::ColorChannelTypeComponent"
-//   0x0073: "BSMaterial::ShaderRouteComponent"
-//   0x0074: "BSMaterial::DetailBlenderSettingsComponent"
-//   0x0075: "BSMaterial::AlphaSettingsComponent"
-//   0x0076: "BSMaterial::DecalSettingsComponent"
-//   0x0077: "BSMaterial::CollisionComponent"
-//   0x0078: "BSMaterial::EmissiveSettingsComponent"
-//   0x0079: "BSMaterial::TranslucencySettingsComponent"
-//   0x007A: "BSMaterial::ShaderModelComponent"
-//   0x007B: "BSMaterial::FlowSettingsComponent"
-//   0x007C: "BSMaterial::EffectSettingsComponent"
-//   0x007D: "BSMaterial::OpacityComponent"
-//   0x007E: "BSMaterial::LayeredEmissivityComponent"
-//   0x007F: "BSMaterial::HairSettingsComponent"
-//   0x0080: "BSMaterial::MouthSettingsComponent"
-//   0x0081: "BSMaterial::WaterSettingsComponent"
-//   0x0082: "BSMaterial::WaterFoamSettingsComponent"
-//   0x0083: "BSMaterial::WaterGrimeSettingsComponent"
-//   0x0084: "BSMaterial::ColorRemapSettingsComponent"
-//   0x0085: "BSMaterial::StarmapBodyEffectComponent"
-//   0x0086: "BSMaterial::TerrainSettingsComponent"
-//   0x0087: "BSMaterial::EyeSettingsComponent"
-//   0x0088: "BSMaterial::DistortionComponent"
-//   0x0089: "BSMaterial::VegetationSettingsComponent"
-//   0x008A: "BSMaterial::TerrainTintSettingsComponent"
-//   0x008C: "BSMaterial::GlobalLayerDataComponent"
-//   0x008E: "BSMaterial::LevelOfDetailSettings"
-//   0x008F: "BSMaterial::LayeredEdgeFalloffComponent"
-//   0x0090: "BSMaterial::TextureSetKindComponent"
-//   0x0091: "BSMaterial::Color"
-//   0x0093: "BSMaterial::Scale"
-//   0x0094: "BSMaterial::Offset"
-//   0x0095: "BSMaterial::Channel"
-//   0x0096: "BSMaterial::TextureFile"
-//   0x0097: "BSMaterial::MRTextureFile"
-//   0x0098: "BSMaterial::MaterialParamFloat"
-//   0x0099: "BSMaterial::BlendParamFloat"
-//   0x009A: "BSMaterial::ParamBool"
-//   0x009C: "BSMaterial::TextureAddressModeComponent"
-//   0x009D: "BSMaterial::UVStreamParamBool"
-
 class CE2MaterialDB
 {
  protected:
@@ -451,11 +394,11 @@ class CE2MaterialDB
   {
    public:
     typedef void (*ReadFunctionType)(ComponentInfo&, bool);
-    static const ReadFunctionType readFunctionTable[64];
+    static const ReadFunctionType readFunctionTable[128];
     CE2MaterialDB&  cdb;
     CE2MaterialObject *o;
     unsigned int  componentIndex;
-    unsigned int  componentType;
+    unsigned int  componentType;        // as CDBFile::stringTable[] index
     std::string   stringBuf;
     std::vector< CE2MaterialObject * >  objectTable;
     CDBFile&      cdbBuf;
@@ -563,6 +506,7 @@ class CE2MaterialDB
     static void readCollisionComponent(ComponentInfo& p, bool isDiff);
     static void readTerrainSettingsComponent(ComponentInfo& p, bool isDiff);
     static void readLODMaterialID(ComponentInfo& p, bool isDiff);
+    static void readMipBiasSetting(ComponentInfo& p, bool isDiff);
     ComponentInfo(CE2MaterialDB& p, CDBFile& cdbFileBuf)
       : cdb(p),
         cdbBuf(cdbFileBuf)

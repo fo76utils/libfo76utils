@@ -45,11 +45,78 @@ class CDBFile : public FileBuffer
     String_Float = 16,
     String_Double = 17,
     String_Unknown = 18,
+    String_BSBind_ControllerComponent = 130,
+    String_BSBind_DirectoryComponent = 134,
+    String_BSComponentDB2_DBFileIndex = 148,
     String_BSComponentDB2_DBFileIndex_ComponentInfo = 149,
     String_BSComponentDB2_DBFileIndex_ComponentTypeInfo = 150,
     String_BSComponentDB2_DBFileIndex_EdgeInfo = 151,
     String_BSComponentDB2_DBFileIndex_ObjectInfo = 152,
-    String_BSResource_ID = 227
+    String_BSComponentDB2_ID = 153,
+    String_BSComponentDB_CTName = 154,
+    String_BSMaterial_AlphaBlenderSettings = 164,
+    String_BSMaterial_AlphaSettingsComponent = 165,
+    String_BSMaterial_BlendModeComponent = 166,
+    String_BSMaterial_BlendParamFloat = 167,
+    String_BSMaterial_BlenderID = 168,
+    String_BSMaterial_Channel = 169,
+    String_BSMaterial_CollisionComponent = 170,
+    String_BSMaterial_Color = 171,
+    String_BSMaterial_ColorChannelTypeComponent = 172,
+    String_BSMaterial_ColorRemapSettingsComponent = 173,
+    String_BSMaterial_DecalSettingsComponent = 174,
+    String_BSMaterial_DetailBlenderSettings = 175,
+    String_BSMaterial_DetailBlenderSettingsComponent = 176,
+    String_BSMaterial_DistortionComponent = 177,
+    String_BSMaterial_EffectSettingsComponent = 178,
+    String_BSMaterial_EmissiveSettingsComponent = 179,
+    String_BSMaterial_EmittanceSettings = 180,
+    String_BSMaterial_EyeSettingsComponent = 181,
+    String_BSMaterial_FlipbookComponent = 182,
+    String_BSMaterial_FlowSettingsComponent = 183,
+    String_BSMaterial_GlobalLayerDataComponent = 184,
+    String_BSMaterial_GlobalLayerNoiseSettings = 185,
+    String_BSMaterial_HairSettingsComponent = 186,
+    String_BSMaterial_Internal_CompiledDB = 187,
+    String_BSMaterial_Internal_CompiledDB_FilePair = 188,
+    String_BSMaterial_LODMaterialID = 189,
+    String_BSMaterial_LayerID = 190,
+    String_BSMaterial_LayeredEdgeFalloffComponent = 191,
+    String_BSMaterial_LayeredEmissivityComponent = 192,
+    String_BSMaterial_LevelOfDetailSettings = 193,
+    String_BSMaterial_MRTextureFile = 194,
+    String_BSMaterial_MaterialID = 195,
+    String_BSMaterial_MaterialOverrideColorTypeComponent = 196,
+    String_BSMaterial_MaterialParamFloat = 197,
+    String_BSMaterial_MipBiasSetting = 198,
+    String_BSMaterial_MouthSettingsComponent = 199,
+    String_BSMaterial_Offset = 200,
+    String_BSMaterial_OpacityComponent = 201,
+    String_BSMaterial_ParamBool = 202,
+    String_BSMaterial_PhysicsMaterialType = 203,
+    String_BSMaterial_ProjectedDecalSettings = 204,
+    String_BSMaterial_Scale = 205,
+    String_BSMaterial_ShaderModelComponent = 206,
+    String_BSMaterial_ShaderRouteComponent = 207,
+    String_BSMaterial_SourceTextureWithReplacement = 208,
+    String_BSMaterial_StarmapBodyEffectComponent = 209,
+    String_BSMaterial_TerrainSettingsComponent = 210,
+    String_BSMaterial_TerrainTintSettingsComponent = 211,
+    String_BSMaterial_TextureAddressModeComponent = 212,
+    String_BSMaterial_TextureFile = 213,
+    String_BSMaterial_TextureReplacement = 214,
+    String_BSMaterial_TextureResolutionSetting = 215,
+    String_BSMaterial_TextureSetID = 216,
+    String_BSMaterial_TextureSetKindComponent = 217,
+    String_BSMaterial_TranslucencySettings = 218,
+    String_BSMaterial_TranslucencySettingsComponent = 219,
+    String_BSMaterial_UVStreamID = 220,
+    String_BSMaterial_UVStreamParamBool = 221,
+    String_BSMaterial_VegetationSettingsComponent = 222,
+    String_BSMaterial_WaterFoamSettingsComponent = 223,
+    String_BSMaterial_WaterGrimeSettingsComponent = 224,
+    String_BSMaterial_WaterSettingsComponent = 225,
+    String_BSResource_ID = 228
   };
   class CDBChunk : public FileBuffer
   {
@@ -65,6 +132,10 @@ class CDBFile : public FileBuffer
       fileBufSize = fileSize;
       filePos = filePosition;
       fileStream = std::uintptr_t(-1);
+    }
+    inline std::uint16_t readUInt16()
+    {
+      return FileBuffer::readUInt16();
     }
     inline std::uint32_t readUInt32()
     {
@@ -82,7 +153,7 @@ class CDBFile : public FileBuffer
     // t = sequence of strings with length prefix (e.g. "\005False\004True")
     bool readEnum(unsigned char& n, const char *t);
   };
-  static const char *stringTable[1141];
+  static const char *stringTable[1143];
   static int findString(const char *s);
   unsigned int  chunksRemaining;
  protected:
@@ -100,6 +171,16 @@ class CDBFile : public FileBuffer
     readStringTable();
   }
   size_t findString(unsigned int strtOffs) const;
+  inline const char *getStringPtr(unsigned int strtOffs) const
+  {
+    return stringTable[findString(strtOffs)];
+  }
+  inline int getClassName(unsigned int strtOffs) const
+  {
+    if (strtOffs >= stringMap.size()) [[unlikely]]
+      return -1;
+    return stringMap[strtOffs];
+  }
   // returns chunk type (ChunkType_BETH, etc.), or 0 on end of file
   inline unsigned int readChunk(CDBChunk& chunkBuf, size_t startPos = 0);
 };
