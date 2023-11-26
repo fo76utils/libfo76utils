@@ -35,7 +35,7 @@ const char * CE2Material::materialFlagNames[32] =
   "Is hair",                            // 20 (0x00100000)
   "Use detail blender",                 // 21 (0x00200000)
   "Layered edge falloff",               // 22 (0x00400000)
-  "",                                   // 23 (0x00800000)
+  "Global layer data",                  // 23 (0x00800000)
   "",                                   // 24 (0x01000000)
   "",                                   // 25 (0x02000000)
   "",                                   // 26 (0x04000000)
@@ -675,6 +675,96 @@ void CE2Material::printObjectInfo(
     printToStringBuf(buf, indentCnt, "Water: is placed: %s\n",
                      (!waterSettings->placedWater ? "False" : "True"));
   }
+  if ((flags & Flag_GlobalLayerData) && globalLayerData)
+  {
+    const GlobalLayerData *sp = globalLayerData;
+    printToStringBuf(buf, indentCnt,
+                     "Global layer texture coordinate scale XY: %f\n",
+                     sp->texcoordScaleXY);
+    printToStringBuf(buf, indentCnt,
+                     "Global layer texture coordinate scale YZ: %f\n",
+                     sp->texcoordScaleYZ);
+    printToStringBuf(buf, indentCnt,
+                     "Global layer texture coordinate scale XZ: %f\n",
+                     sp->texcoordScaleXZ);
+    printToStringBuf(buf, indentCnt,
+                     "Global layer albedo tint color: %f, %f, %f, %f\n",
+                     sp->albedoTintColor[0], sp->albedoTintColor[1],
+                     sp->albedoTintColor[2], sp->albedoTintColor[3]);
+    printToStringBuf(buf, indentCnt, "Global layer: uses directionality: %s\n",
+                     (!sp->usesDirectionality ? "False" : "True"));
+    if (sp->usesDirectionality)
+    {
+      printToStringBuf(buf, indentCnt,
+                       "Global layer source direction: X: %f, Y: %f, Z: %f\n",
+                       sp->sourceDirection[0], sp->sourceDirection[1],
+                       sp->sourceDirection[2]);
+      printToStringBuf(buf, indentCnt,
+                       "Global layer directionality intensity: %f\n",
+                       sp->sourceDirection[3]);
+      printToStringBuf(buf, indentCnt,
+                       "Global layer directionality scale: %f\n",
+                       sp->directionalityScale);
+      printToStringBuf(buf, indentCnt,
+                       "Global layer directionality saturation: %f\n",
+                       sp->directionalitySaturation);
+    }
+    printToStringBuf(buf, indentCnt,
+                     "Global layer: blend normals additively: %s\n",
+                     (!sp->blendNormalsAdditively ? "False" : "True"));
+    if (!sp->blendNormalsAdditively)
+    {
+      printToStringBuf(buf, indentCnt, "Global layer blend position: %f\n",
+                       sp->blendPosition);
+      printToStringBuf(buf, indentCnt, "Global layer blend contrast: %f\n",
+                       sp->blendContrast);
+    }
+    printToStringBuf(buf, indentCnt,
+                     "Global layer material mask intensity scale: %f\n",
+                     sp->materialMaskIntensityScale);
+    printToStringBuf(buf, indentCnt,
+                     "Global layer: use noise mask texture: %s\n",
+                     (!sp->useNoiseMaskTexture ? "False" : "True"));
+    if (sp->useNoiseMaskTexture)
+    {
+      if (!sp->noiseMaskTxtReplacementEnabled)
+      {
+        printToStringBuf(buf, indentCnt,
+                         "Global layer noise mask texture file: \"");
+      }
+      else
+      {
+        printToStringBuf(buf, indentCnt,
+                         "Global layer noise mask texture replacement: 0x%08X, "
+                         "file: \"",
+                         (unsigned int) sp->noiseMaskTextureReplacement);
+      }
+      buf += *(sp->noiseMaskTexture);
+      buf += "\"\n";
+    }
+    printToStringBuf(buf, indentCnt,
+                     "Global layer noise texture coordinate scale: %f, %f\n",
+                     sp->texcoordScaleAndBias[0], sp->texcoordScaleAndBias[1]);
+    printToStringBuf(buf, indentCnt,
+                     "Global layer noise texture coordinate bias: %f, %f\n",
+                     sp->texcoordScaleAndBias[2], sp->texcoordScaleAndBias[3]);
+    printToStringBuf(buf, indentCnt,
+                     "Global layer noise worldspace scale factor: %f\n",
+                     sp->worldspaceScaleFactor);
+    printToStringBuf(buf, indentCnt, "Global layer noise Hurst exponent: %f\n",
+                     sp->hurstExponent);
+    printToStringBuf(buf, indentCnt, "Global layer noise base frequency: %f\n",
+                     sp->baseFrequency);
+    printToStringBuf(buf, indentCnt,
+                     "Global layer noise frequency multiplier: %f\n",
+                     sp->frequencyMultiplier);
+    printToStringBuf(buf, indentCnt,
+                     "Global layer noise mask intensity minimum: %f\n",
+                     sp->maskIntensityMin);
+    printToStringBuf(buf, indentCnt,
+                     "Global layer noise mask intensity maximum: %f\n",
+                     sp->maskIntensityMax);
+  }
   for (unsigned int i = 0U; i < maxLayers && layerMask >= (1U << i); i++)
   {
     if (!((layerMask & (1U << i)) && layers[i]))
@@ -791,7 +881,9 @@ void CE2Material::TextureSet::printObjectInfo(
 {
   CE2MaterialObject::printObjectInfo(buf, indentCnt);
   indentCnt = indentCnt + indentTabSize;
-  printToStringBuf(buf, indentCnt, "Float param: %f\n", floatParam);
+  printToStringBuf(buf, indentCnt,
+                   "Float param: %f, mip bias hint disabled: %s\n",
+                   floatParam, (!disableMipBiasHint ? "False" : "True"));
   printToStringBuf(buf, indentCnt, "Resolution setting: %s\n",
                    resolutionSettingNames[resolutionHint & 3]);
   for (unsigned int i = 0U; i < maxTexturePaths; i++)

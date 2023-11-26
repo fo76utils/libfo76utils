@@ -28,7 +28,7 @@ inline bool CE2MaterialDB::ComponentInfo::readAndStoreString(
 unsigned int CE2MaterialDB::ComponentInfo::readChunk(
     CDBFile::CDBChunk& chunkBuf)
 {
-  unsigned int  chunkType = cdbBuf.readChunk(chunkBuf, 0);
+  unsigned int  chunkType = cdbBuf.readChunk(chunkBuf, 0, true);
 #if ENABLE_CDB_DEBUG
   std::fputc('\n', stdout);
 #endif
@@ -1060,8 +1060,113 @@ void CE2MaterialDB::ComponentInfo::readCTName(
 void CE2MaterialDB::ComponentInfo::readGlobalLayerDataComponent(
     ComponentInfo& p, bool isDiff)
 {
-  (void) p;
-  (void) isDiff;
+  CE2Material *m = nullptr;
+  CE2Material::GlobalLayerData  *sp = nullptr;
+  if (p.o->type == 1) [[likely]]
+  {
+    m = static_cast< CE2Material * >(p.o);
+    sp = reinterpret_cast< CE2Material::GlobalLayerData * >(
+             p.cdb.allocateSpace(sizeof(CE2Material::GlobalLayerData),
+                                 m->globalLayerData));
+    if (!m->globalLayerData)
+    {
+      sp->texcoordScaleXY = 1.0f;
+      sp->texcoordScaleYZ = 1.0f;
+      sp->texcoordScaleXZ = 1.0f;
+      sp->usesDirectionality = true;
+      sp->blendNormalsAdditively = true;
+      sp->useNoiseMaskTexture = false;
+      sp->noiseMaskTxtReplacementEnabled = false;
+      sp->albedoTintColor = FloatVector4(1.0f);
+      sp->sourceDirection = FloatVector4(0.0f, 0.0f, 1.0f, 1.0f);
+      sp->directionalityScale = 1.0f;
+      sp->directionalitySaturation = 1.0f;
+      sp->blendPosition = 0.5f;
+      sp->blendContrast = 0.5f;
+      sp->materialMaskIntensityScale = 1.0f;
+      sp->noiseMaskTextureReplacement = 0xFFFFFFFFU;
+      sp->noiseMaskTexture = p.cdb.stringBuffers.front().data();
+      sp->texcoordScaleAndBias = FloatVector4(1.0f, 1.0f, 0.0f, 0.0f);
+      sp->worldspaceScaleFactor = 0.0f;
+      sp->hurstExponent = 0.5f;
+      sp->baseFrequency = 0.0f;
+      sp->frequencyMultiplier = 1.0f;
+      sp->maskIntensityMin = 0.0f;
+      sp->maskIntensityMax = 1.0f;
+    }
+    m->globalLayerData = sp;
+    m->setFlags(CE2Material::Flag_GlobalLayerData, true);
+  }
+  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 12U, isDiff); )
+  {
+    if ((1U << n) & 0x00000DC7U)        // 0, 1, 2, 6, 7, 8, 10, 11: floats
+    {
+      float   tmp;
+      if (!p.readFloat(tmp))
+        break;
+      if (!sp)
+        continue;
+      switch (n)
+      {
+        case 0U:
+          sp->texcoordScaleXY = tmp;
+          break;
+        case 1U:
+          sp->texcoordScaleYZ = tmp;
+          break;
+        case 2U:
+          sp->texcoordScaleXZ = tmp;
+          break;
+        case 6U:
+          sp->sourceDirection[3] = tmp;
+          break;
+        case 7U:
+          sp->directionalityScale = tmp;
+          break;
+        case 8U:
+          sp->directionalitySaturation = tmp;
+          break;
+        case 10U:
+          sp->blendPosition = tmp;
+          break;
+        case 11U:
+          sp->blendContrast = tmp;
+          break;
+      }
+    }
+    else if ((1U << n) & 0x00000210U)   // 4, 9: booleans
+    {
+      bool    tmp;
+      if (!p.readBool(tmp))
+        break;
+      if (!sp)
+        continue;
+      if (n == 4U)
+        sp->usesDirectionality = tmp;
+      else
+        sp->blendNormalsAdditively = tmp;
+    }
+    else if (n == 3U)
+    {
+      FloatVector4  tmp(0.0f);
+      if (sp) [[likely]]
+        readColorValue(sp->albedoTintColor, p, isDiff);
+      else
+        readColorValue(tmp, p, isDiff);
+    }
+    else if (n == 5U)
+    {
+      FloatVector4  tmp(0.0f);
+      if (sp) [[likely]]
+        readXMFLOAT3(sp->sourceDirection, p, isDiff);
+      else
+        readXMFLOAT3(tmp, p, isDiff);
+    }
+    else
+    {
+      readGlobalLayerNoiseSettings(p, isDiff);
+    }
+  }
 }
 
 // BSMaterial::Offset
@@ -2463,8 +2568,83 @@ void CE2MaterialDB::ComponentInfo::readTranslucencySettingsComponent(
 void CE2MaterialDB::ComponentInfo::readGlobalLayerNoiseSettings(
     ComponentInfo& p, bool isDiff)
 {
-  (void) p;
-  (void) isDiff;
+  CE2Material::GlobalLayerData  *sp = nullptr;
+  if (p.o->type == 1) [[likely]]
+  {
+    CE2Material *m = static_cast< CE2Material * >(p.o);
+    sp = const_cast< CE2Material::GlobalLayerData * >(m->globalLayerData);
+  }
+  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 9U, isDiff); )
+  {
+    if ((1U << n) & 0x000003F1U)        // 0, 4, 5, 6, 7, 8, 9: floats
+    {
+      float   tmp;
+      if (!p.readFloat(tmp))
+        break;
+      if (!sp)
+        continue;
+      switch (n)
+      {
+        case 0U:
+          sp->materialMaskIntensityScale = tmp;
+          break;
+        case 4U:
+          sp->worldspaceScaleFactor = tmp;
+          break;
+        case 5U:
+          sp->hurstExponent = tmp;
+          break;
+        case 6U:
+          sp->baseFrequency = tmp;
+          break;
+        case 7U:
+          sp->frequencyMultiplier = tmp;
+          break;
+        case 8U:
+          sp->maskIntensityMin = tmp;
+          break;
+        case 9U:
+          sp->maskIntensityMax = tmp;
+          break;
+      }
+    }
+    else if (n == 1U)
+    {
+      bool    tmp;
+      if (!p.readBool(tmp))
+        break;
+      if (sp)
+        sp->useNoiseMaskTexture = tmp;
+    }
+    else if (n == 2U)
+    {
+      if (sp) [[likely]]
+      {
+        if (!readSourceTextureWithReplacement(
+                 sp->noiseMaskTexture, sp->noiseMaskTextureReplacement,
+                 sp->noiseMaskTxtReplacementEnabled, p, isDiff))
+        {
+          break;
+        }
+      }
+      else
+      {
+        const std::string *tmp1 = nullptr;
+        std::uint32_t tmp2 = 0U;
+        bool    tmp3 = false;
+        if (!readSourceTextureWithReplacement(tmp1, tmp2, tmp3, p, isDiff))
+          break;
+      }
+    }
+    else
+    {
+      FloatVector4  tmp(0.0f);
+      if (sp) [[likely]]
+        readXMFLOAT4(sp->texcoordScaleAndBias, p, isDiff);
+      else
+        readXMFLOAT4(tmp, p, isDiff);
+    }
+  }
 }
 
 // BSMaterial::MaterialID
@@ -2916,8 +3096,14 @@ void CE2MaterialDB::ComponentInfo::readLODMaterialID(
 void CE2MaterialDB::ComponentInfo::readMipBiasSetting(
     ComponentInfo& p, bool isDiff)
 {
-  (void) p;
-  (void) isDiff;
+  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
+  {
+    bool    tmp;
+    if (!p.readBool(tmp))
+      break;
+    if (p.o->type == 5)
+      static_cast< CE2Material::TextureSet * >(p.o)->disableMipBiasHint = tmp;
+  }
 }
 
 const CE2MaterialDB::ComponentInfo::ReadFunctionType

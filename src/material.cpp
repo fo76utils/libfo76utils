@@ -181,6 +181,7 @@ void CE2MaterialDB::initializeObject(
         p->detailBlenderSettings = nullptr;
         p->layeredEdgeFalloff = nullptr;
         p->waterSettings = nullptr;
+        p->globalLayerData = nullptr;
       }
       break;
     case 2:
@@ -229,6 +230,7 @@ void CE2MaterialDB::initializeObject(
         for (size_t i = 0; i < CE2Material::TextureSet::maxTexturePaths; i++)
           p->textureReplacements[i] = defaultTextureRepl[i];
         p->resolutionHint = 0;          // "Tiling"
+        p->disableMipBiasHint = false;
       }
       break;
     case 6:
@@ -433,7 +435,7 @@ void CE2MaterialDB::loadCDBFile(CDBFile& buf)
   size_t  componentID = 0;
   size_t  componentCnt = 0;
   unsigned int  chunkType;
-  while ((chunkType = buf.readChunk(componentInfo, 4)) != 0U)
+  while ((chunkType = buf.readChunk(componentInfo, 4, true)) != 0U)
   {
     if (chunkType == CDBFile::ChunkType_DIFF ||
         chunkType == CDBFile::ChunkType_OBJT) [[likely]]

@@ -63,7 +63,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
       maxTexturePaths = 21
     };
     std::uint32_t texturePathMask;
-    float   floatParam;
+    float   floatParam;                 // possibly mip bias
     // texturePaths[0] =  albedo (_color.dds)
     // texturePaths[1] =  normal map (_normal.dds)
     // texturePaths[2] =  alpha (_opacity.dds)
@@ -84,6 +84,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     // 0 = "Tiling" (default), 1 = "UniqueMap", 2 = "DetailMapTiling",
     // 3 = "HighResUniqueMap"
     unsigned char resolutionHint;
+    bool    disableMipBiasHint;
     void printObjectInfo(std::string& buf, size_t indentCnt) const;
   };
   struct Material : public CE2MaterialObject    // object type 4
@@ -166,7 +167,8 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     Flag_IsTerrain = 0x00080000,
     Flag_IsHair = 0x00100000,
     Flag_UseDetailBlender = 0x00200000,
-    Flag_LayeredEdgeFalloff = 0x00400000
+    Flag_LayeredEdgeFalloff = 0x00400000,
+    Flag_GlobalLayerData = 0x00800000
   };
   enum
   {
@@ -334,6 +336,34 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     bool    lowLOD;
     bool    placedWater;
   };
+  struct GlobalLayerData
+  {
+    float   texcoordScaleXY;
+    float   texcoordScaleYZ;
+    float   texcoordScaleXZ;
+    bool    usesDirectionality;
+    bool    blendNormalsAdditively;
+    bool    useNoiseMaskTexture;
+    bool    noiseMaskTxtReplacementEnabled;
+    FloatVector4  albedoTintColor;
+    // sourceDirection[3] = directionalityIntensity
+    FloatVector4  sourceDirection;
+    float   directionalityScale;
+    float   directionalitySaturation;
+    float   blendPosition;      // used if blendNormalsAdditively is false
+    float   blendContrast;
+    // GlobalLayerNoiseData
+    float   materialMaskIntensityScale;
+    std::uint32_t noiseMaskTextureReplacement;
+    const std::string *noiseMaskTexture;
+    FloatVector4  texcoordScaleAndBias;
+    float   worldspaceScaleFactor;
+    float   hurstExponent;
+    float   baseFrequency;
+    float   frequencyMultiplier;
+    float   maskIntensityMin;
+    float   maskIntensityMax;
+  };
   static const char *materialFlagNames[32];
   static const char *shaderModelNames[64];
   std::uint32_t flags;
@@ -379,6 +409,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
   const DetailBlenderSettings *detailBlenderSettings;
   const LayeredEdgeFalloff  *layeredEdgeFalloff;
   const WaterSettings   *waterSettings;
+  const GlobalLayerData *globalLayerData;
   inline void setFlags(std::uint32_t m, bool n)
   {
     flags = (flags & ~m) | ((0U - std::uint32_t(n)) & m);
