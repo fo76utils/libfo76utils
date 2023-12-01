@@ -473,41 +473,40 @@ void BA2File::loadArchiveFile(const char *fileName)
   try
   {
     FileBuffer&   buf = *bufp;
+    // loose file: -1, BSA: 103 to 105, BA2: header size (+ 1 if DX10)
     int           archiveType = -1;
-    unsigned int  hdr1 = buf.readUInt32();
-    unsigned int  hdr2 = buf.readUInt32();
-    unsigned int  hdr3 = buf.readUInt32();
-    if (hdr1 == 0x58445442 && hdr2 && hdr2 <= 3U)       // "BTDX", version <= 3
+    if (buf.size() >= 12)
     {
-      if (hdr3 == 0x4C524E47)                           // "GNRL"
-        archiveType = 0;
-      else if (hdr3 == 0x30315844)                      // "DX10"
-        archiveType = int(hdr2);
+      unsigned int  hdr1 = buf.readUInt32Fast();
+      unsigned int  hdr2 = buf.readUInt32Fast();
+      unsigned int  hdr3 = buf.readUInt32Fast();
+      if (hdr1 == 0x58445442 && hdr2 && hdr2 <= 3U)     // "BTDX", version <= 3
+      {
+        if (hdr3 == 0x4C524E47)                         // "GNRL"
+          archiveType = (hdr2 == 1 ? 24 : 32);
+        else if (hdr3 == 0x30315844)                    // "DX10"
+          archiveType = (hdr2 == 1 ? 25 : (hdr2 == 2 ? 33 : 37));
+      }
+      else if (hdr1 == 0x00415342 && hdr3 == 36)        // "BSA\0", header size
+      {
+        if (hdr2 >= 103 && hdr2 <= 105)
+          archiveType = int(hdr2);
+      }
     }
-    else if (hdr1 == 0x00415342 && hdr3 == 0x00000024)  // "BSA\0", header size
-    {
-      if (hdr2 >= 103 && hdr2 <= 105)
-        archiveType = int(hdr2);
-    }
-    switch (archiveType)
+    switch (archiveType & 0xC1)
     {
       case 0:
-        loadBA2General(buf, archiveFiles.size(), (hdr2 == 1U ? 24 : 32));
+        loadBA2General(buf, archiveFiles.size(), size_t(archiveType));
         break;
       case 1:
-        loadBA2Textures(buf, archiveFiles.size(), 24);
+        loadBA2Textures(buf, archiveFiles.size(), size_t(archiveType & 0x3E));
         break;
-      case 2:
-        loadBA2Textures(buf, archiveFiles.size(), 32);
-        break;
-      case 3:
-        loadBA2Textures(buf, archiveFiles.size(), 36);
+      case 0x40:
+      case 0x41:
+        loadBSAFile(buf, archiveFiles.size(), archiveType);
         break;
       default:
-        if (archiveType >= 0)
-          loadBSAFile(buf, archiveFiles.size(), archiveType);
-        else
-          loadFile(buf, archiveFiles.size(), fileName);
+        loadFile(buf, archiveFiles.size(), fileName);
         break;
     }
     archiveFiles.push_back(bufp);
