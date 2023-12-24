@@ -313,6 +313,24 @@ class SDLDisplay
         | std::uint32_t(bgColor >= 0 ? (((bgColor & 0xFF) << 16) | 0x8000) : 0);
     textColor = defaultTextColor;
   }
+  inline std::uint32_t getCurrentColors() const
+  {
+    return textColor;
+  }
+  inline std::uint32_t getDefaultColors() const
+  {
+    return defaultTextColor;
+  }
+  inline FloatVector4 textColorToRGBA(std::uint32_t c) const
+  {
+    return FloatVector4::convertRGBA32(ansiColor256Table[(c >> 24) & 0xFF]);
+  }
+  inline FloatVector4 backgroundColorToRGBA(std::uint32_t c) const
+  {
+    if (!(c & 0x8000U))
+      return FloatVector4(0.0f);
+    return FloatVector4::convertRGBA32(ansiColor256Table[(c >> 16) & 0xFF]);
+  }
   // read character from the text buffer
   inline int readCharacter(int x, int y) const
   {
