@@ -104,25 +104,25 @@ bool CDBFile::CDBChunk::readEnum(unsigned char& n, const char *t)
 
 const char * CDBFile::stringTable[1143] =
 {
-  "None",                                               //    0
+  "null",                                               //    0
   "String",                                             //    1
   "List",                                               //    2
   "Map",                                                //    3
-  "Ref",                                                //    4
+  "<ref>",                                              //    4
   "Unknown_-250",                                       //    5
   "Unknown_-249",                                       //    6
-  "Int8",                                               //    7
-  "UInt8",                                              //    8
-  "Int16",                                              //    9
-  "UInt16",                                             //   10
-  "Int32",                                              //   11
-  "UInt32",                                             //   12
-  "Int64",                                              //   13
-  "UInt64",                                             //   14
-  "Bool",                                               //   15
-  "Float",                                              //   16
-  "Double",                                             //   17
-  "Unknown",                                            //   18
+  "int8_t",                                             //    7
+  "uint8_t",                                            //    8
+  "int16_t",                                            //    9
+  "uint16_t",                                           //   10
+  "int32_t",                                            //   11
+  "uint32_t",                                           //   12
+  "int64_t",                                            //   13
+  "uint64_t",                                           //   14
+  "bool",                                               //   15
+  "float",                                              //   16
+  "double",                                             //   17
+  "<unknown>",                                          //   18
   "AOVertexColorChannel",                               //   19
   "Absolute",                                           //   20
   "ActiveLayersMask",                                   //   21
