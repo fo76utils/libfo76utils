@@ -243,9 +243,8 @@ void CDBMaterialToJSON::loadItem(CDBObject*& o, CDBChunk& chunkBuf, bool isDiff,
         {
           loadItem(o->data.children[n], userBuf, isDiff, className2);
           className2 = std::uint32_t(findString(userBuf.readUInt32()));
-          n++;
         }
-        while (int(n) <= int(nMax) && className2 < String_Unknown);
+        while (++n < nMax && className2 < String_Unknown);
       }
     }
     else
@@ -661,18 +660,17 @@ void CDBMaterialToJSON::dumpObject(
       printToString(s, "],\n");
       if (o->childCnt)
       {
-        const char  *elementType = "null";
+        std::uint32_t elementType = 0U;
         if (o->data.children[0])
+          elementType = o->data.children[0]->type;
+        const char  *elementTypeStr = stringTable[elementType];
+        if (elementType && elementType < String_Ref)
         {
-          if (o->data.children[0]->type == String_String)
-            elementType = "BSFixedString";
-          else if (o->data.children[0]->type == String_Float)
-            elementType = "float";
-          else
-            elementType = stringTable[o->data.children[0]->type];
+          elementTypeStr =
+              (elementType == String_String ? "BSFixedString" : "<collection>");
         }
         printToString(s, "%*s\"ElementType\": \"%s\",\n",
-                      indentCnt + 2, "", elementType);
+                      indentCnt + 2, "", elementTypeStr);
       }
       printToString(s, "%*s\"Type\": \"<collection>\"\n", indentCnt + 2, "");
       printToString(s, "%*s}", indentCnt, "");
