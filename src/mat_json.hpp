@@ -51,21 +51,31 @@ class CDBMaterialToJSON : public CDBFile
               (dir == r.dir && file == r.file && ext < r.ext));
     }
   };
+  struct MaterialComponent
+  {
+    std::uint32_t key;          // (name << 16) | index
+    bool    usesBaseObject;
+    CDBObject *o;
+    inline bool operator<(const MaterialComponent& r) const
+    {
+      return (key < r.key);
+    }
+  };
   struct MaterialObject
   {
     BSResourceID  persistentID;
     std::uint32_t dbID;
     std::uint32_t baseObject;
     const MaterialObject  *parent;
-    // key = (type << 32) | index
-    std::map< std::uint64_t, CDBObject * >  components;
+    std::vector< MaterialComponent >  components;
   };
   std::map< std::uint32_t, CDBClassDef >  classes;
   std::vector< std::uint32_t >  objectsHashMap;
   std::vector< MaterialObject > objects;
-  std::vector< std::pair< std::uint32_t, std::uint32_t > >  componentInfo;
   std::map< BSResourceID, std::vector< std::uint32_t > >  matFileObjectMap;
   std::vector< std::vector< unsigned char > > objectBuffers;
+  MaterialComponent& findComponent(MaterialObject& o,
+                                   std::uint32_t name, std::uint32_t index);
   static inline bool isRootObject(std::uint32_t dbID)
   {
     return (dbID <= 7U);
