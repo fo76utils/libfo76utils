@@ -61,25 +61,31 @@ CDBMaterialToJSON::MaterialComponent& CDBMaterialToJSON::findComponent(
     MaterialObject& o, std::uint32_t name, std::uint32_t index)
 {
   std::uint32_t key = (name << 16) | index;
-  for (std::vector< MaterialComponent >::iterator
-           i = o.components.begin(); i != o.components.end(); i++)
+  MaterialComponent *prv = nullptr;
+  MaterialComponent *i = o.components;
+  for ( ; i && i->key < key; i = i->next)
+    prv = i;
+  if (i && i->key == key)
   {
-    if (i->key == key)
+    if (i->usesBaseObject)
     {
-      if (i->usesBaseObject)
-      {
-        copyObject(i->o);
-        i->usesBaseObject = false;
-      }
-      return *i;
+      copyObject(i->o);
+      i->usesBaseObject = false;
     }
+    return *i;
   }
-  o.components.emplace_back();
-  MaterialComponent&  p = o.components.back();
-  p.key = key;
-  p.usesBaseObject = false;
-  p.o = nullptr;
-  return p;
+  MaterialComponent *p =
+      reinterpret_cast< MaterialComponent * >(
+          allocateSpace(sizeof(MaterialComponent), alignof(MaterialComponent)));
+  p->key = key;
+  p->usesBaseObject = false;
+  p->o = nullptr;
+  p->next = i;
+  if (!prv)
+    o.components = p;
+  else
+    prv->next = p;
+  return *p;
 }
 
 inline const CDBMaterialToJSON::MaterialObject *
@@ -196,12 +202,20 @@ void CDBMaterialToJSON::copyBaseObject(MaterialObject& o)
   }
   if (!isRootObject(p->baseObject))
     copyBaseObject(*p);
-  o.components = p->components;
   o.baseObject = p->baseObject;
-  for (std::vector< MaterialComponent >::iterator
-           i = o.components.begin(); i != o.components.end(); i++)
+  o.components = nullptr;
+  MaterialComponent **prv = &(o.components);
+  for (MaterialComponent *i = p->components; i; i = i->next)
   {
-    i->usesBaseObject = true;
+    MaterialComponent *tmp = reinterpret_cast< MaterialComponent * >(
+                                 allocateSpace(sizeof(MaterialComponent),
+                                               alignof(MaterialComponent)));
+    tmp->key = i->key;
+    tmp->usesBaseObject = true;
+    tmp->o = i->o;
+    tmp->next = nullptr;
+    *prv = tmp;
+    prv = &(tmp->next);
   }
 }
 
@@ -524,6 +538,7 @@ void CDBMaterialToJSON::readAllChunks()
         o.baseObject = chunkBuf.readUInt32();
         (void) static_cast< FileBuffer * >(&chunkBuf)->readUInt8(); // HasData
         o.parent = nullptr;
+        o.components = nullptr;
       }
     }
     else if (className == String_BSComponentDB2_DBFileIndex_ComponentInfo)
@@ -564,7 +579,6 @@ void CDBMaterialToJSON::readAllChunks()
       p = const_cast< MaterialObject * >(p->parent);
     if (p->persistentID.file == 0x0074616DU)    // "mat\0"
       matFileObjectMap[p->persistentID].push_back(i->dbID);
-    std::sort(i->components.begin(), i->components.end());
   }
   for (std::map< BSResourceID, std::vector< std::uint32_t > >::iterator
            i = matFileObjectMap.begin(); i != matFileObjectMap.end(); i++)
@@ -794,8 +808,7 @@ void CDBMaterialToJSON::dumpMaterial(
     if (!i)
       continue;
     printToString(jsonBuf, "    {\n      \"Components\": [\n");
-    for (std::vector< MaterialComponent >::const_iterator
-             j = i->components.begin(); j != i->components.end(); j++)
+    for (const MaterialComponent *j = i->components; j; j = j->next)
     {
       jsonBuf += "        ";
       dumpObject(jsonBuf, j->o, 8);

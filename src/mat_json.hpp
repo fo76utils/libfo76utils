@@ -56,6 +56,7 @@ class CDBMaterialToJSON : public CDBFile
     std::uint32_t key;          // (name << 16) | index
     bool    usesBaseObject;
     CDBObject *o;
+    MaterialComponent *next;
     inline bool operator<(const MaterialComponent& r) const
     {
       return (key < r.key);
@@ -67,7 +68,7 @@ class CDBMaterialToJSON : public CDBFile
     std::uint32_t dbID;
     std::uint32_t baseObject;
     const MaterialObject  *parent;
-    std::vector< MaterialComponent >  components;
+    MaterialComponent *components;
   };
   std::map< std::uint32_t, CDBClassDef >  classes;
   std::vector< std::uint32_t >  objectsHashMap;
