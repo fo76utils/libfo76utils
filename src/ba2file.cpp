@@ -383,6 +383,7 @@ void BA2File::loadArchivesFromDir(const char *pathName)
         case 0x6474622EU:               // ".btd"
         case 0x6F74622EU:               // ".bto"
         case 0x7274622EU:               // ".btr"
+        case 0x6264632EU:               // ".cdb"
         case 0x7364642EU:               // ".dds"
         case 0x74616D2EU:               // ".mat"
         case 0x66696E2EU:               // ".nif"
