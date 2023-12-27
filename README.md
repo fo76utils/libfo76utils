@@ -12,7 +12,7 @@ Defining the macro BUILD\_CE2UTILS enables the use of default paths and environm
 * **downsamp.cpp**, **downsamp.hpp**: Image downsampler for 4x and 16x SSAA implementation.
 * **esmfile.cpp**, **esmfile.hpp**: class ESMFile: ESM file reader.
 * **filebuf.cpp**, **filebuf.hpp**: class FileBuffer: general file input, can be used to memory map files, or to read memory buffers using the same interface. The same source files also include code for writing uncompressed DDS images.
-* **fp32vec4.hpp**: class FloatVector4: fast vector math using AVX instructions if available.
+* **fp32vec4.hpp**, **fp32vec8.hpp**: class FloatVector4, FloatVector8: fast vector math using AVX instructions if available.
 * **frtable.cpp**: Tables for Fresnel approximation using polynomials.
 * **mat_json.cpp**, **mat_json.hpp**: Starfield material database to JSON conversion (class CDBMaterialToJSON).
 * **mman.c**, **mman.h**: [mman-win32](https://github.com/alitrack/mman-win32) for memory mapping on Windows.
