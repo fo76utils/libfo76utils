@@ -1,6 +1,7 @@
 
 #include "sfcube.hpp"
 #include "filebuf.hpp"
+#include "fp32vec8.hpp"
 
 #include <thread>
 
@@ -132,48 +133,50 @@ void SFCubeMapFilter::processImage_Specular(
     for (int y = y0; y < y1; y++)
     {
       unsigned char *p = outBufP + (size_t(y * w) * sizeof(std::uint32_t));
-      // w must be a multiple of 4
+      // w must be even
       for (int x = 0; x < w; x++, p = p + 4)
       {
-        std::vector< FloatVector4 >::const_iterator i =
-            cubeCoordTable.begin() + ((n * h + y) * w + (x & ~3));
+        int     i = (n * h + y) * w + x;
         // v1 = reflected view vector (R), assume V = N = R
-        FloatVector4  v1x(i[0][x & 3]);
-        FloatVector4  v1y(i[1][x & 3]);
-        FloatVector4  v1z(i[2][x & 3]);
-        FloatVector4  c_r(0.0f);
-        FloatVector4  c_g(0.0f);
-        FloatVector4  c_b(0.0f);
-        FloatVector4  totalWeight(0.0f);
-        for (i = cubeCoordTable.begin();
-             (i + 4) <= cubeCoordTable.end(); i = i + 4)
+        FloatVector8  v1x(cubeCoordTable[(i & ~7) | ((i & 4) >> 2)][i & 3]);
+        FloatVector8  v1y(cubeCoordTable[(i & ~7) | ((i & 4) >> 2) | 2][i & 3]);
+        FloatVector8  v1z(cubeCoordTable[(i & ~7) | ((i & 4) >> 2) | 4][i & 3]);
+        FloatVector8  c_r(0.0f);
+        FloatVector8  c_g(0.0f);
+        FloatVector8  c_b(0.0f);
+        FloatVector8  totalWeight(0.0f);
+        for (std::vector< FloatVector4 >::const_iterator
+                 j = cubeCoordTable.begin();
+                 (j + 8) <= cubeCoordTable.end(); j = j + 8)
         {
           // v2 = light vector
-          FloatVector4  v2x(i[0]);
-          FloatVector4  v2y(i[1]);
-          FloatVector4  v2z(i[2]);
-          FloatVector4  v2w(i[3]);
+          FloatVector8  v2x(&(j[0]));
+          FloatVector8  v2y(&(j[2]));
+          FloatVector8  v2z(&(j[4]));
           // d = N·L = R·L = 2.0 * N·H * N·H - 1.0
-          FloatVector4  d = (v1x * v2x) + (v1y * v2y) + (v1z * v2z);
-          if (d.getSignMask() == 15U)
+          FloatVector8  d = (v1x * v2x) + (v1y * v2y) + (v1z * v2z);
+          if (d.getSignMask() == 255U)
             continue;
-          d.maxValues(FloatVector4(0.0f));
-          FloatVector4  g1 = d;
+          FloatVector8  v2w(&(j[6]));
+          d.maxValues(FloatVector8(0.0f));
+          FloatVector8  g1 = d;
           // g2 = geometry function denominator * 2.0 (a = k * 2.0)
-          FloatVector4  g2 = d * (2.0f - a) + a;
+          FloatVector8  g2 = d * (2.0f - a) + a;
           // D denominator = (N·H * N·H * (a2 - 1.0) + 1.0)² * 4.0
           d = (d + 1.0f) * (a2 - 1.0f) + 2.0f;
-          FloatVector4  weight = g1 * v2w / (g2 * d * d);
-          c_r += (inBuf[i - cubeCoordTable.begin()] * weight);
-          c_g += (inBuf[(i - cubeCoordTable.begin()) + 1] * weight);
-          c_b += (inBuf[(i - cubeCoordTable.begin()) + 2] * weight);
+          FloatVector8  weight = g1 * v2w / (g2 * d * d);
+          std::vector< FloatVector4 >::const_iterator k =
+              inBuf.begin() + (j - cubeCoordTable.begin());
+          c_r += (FloatVector8(&(k[0])) * weight);
+          c_g += (FloatVector8(&(k[2])) * weight);
+          c_b += (FloatVector8(&(k[4])) * weight);
           totalWeight += weight;
         }
         FloatVector4  c(0.0f);
-        c[0] = c_r.dotProduct(FloatVector4(1.0f));
-        c[1] = c_g.dotProduct(FloatVector4(1.0f));
-        c[2] = c_b.dotProduct(FloatVector4(1.0f));
-        c /= totalWeight.dotProduct(FloatVector4(1.0f));
+        c[0] = c_r.dotProduct(FloatVector8(1.0f));
+        c[1] = c_g.dotProduct(FloatVector8(1.0f));
+        c[2] = c_b.dotProduct(FloatVector8(1.0f));
+        c /= totalWeight.dotProduct(FloatVector8(1.0f));
         std::uint32_t tmp = std::uint32_t(c.srgbCompress());
         p[0] = (unsigned char) (tmp & 0xFF);
         p[1] = (unsigned char) ((tmp >> 8) & 0xFF);
@@ -212,19 +215,51 @@ void SFCubeMapFilter::threadFunction(
   }
 }
 
-void SFCubeMapFilter::transpose4x4(std::vector< FloatVector4 >& v)
+void SFCubeMapFilter::transpose4x8(std::vector< FloatVector4 >& v)
 {
   std::vector< FloatVector4 >::iterator i;
-  for (i = v.begin(); (i + 4) <= v.end(); i = i + 4)
+  for (i = v.begin(); (i + 8) <= v.end(); i = i + 8)
   {
-    FloatVector4  tmp0 = i[0];
-    FloatVector4  tmp1 = i[1];
-    FloatVector4  tmp2 = i[2];
-    FloatVector4  tmp3 = i[3];
+    FloatVector4  tmp0(i[0]);
+    FloatVector4  tmp1(i[1]);
+    FloatVector4  tmp2(i[2]);
+    FloatVector4  tmp3(i[3]);
+    FloatVector4  tmp4(i[4]);
+    FloatVector4  tmp5(i[5]);
+    FloatVector4  tmp6(i[6]);
+    FloatVector4  tmp7(i[7]);
     i[0] = FloatVector4(tmp0[0], tmp1[0], tmp2[0], tmp3[0]);
-    i[1] = FloatVector4(tmp0[1], tmp1[1], tmp2[1], tmp3[1]);
-    i[2] = FloatVector4(tmp0[2], tmp1[2], tmp2[2], tmp3[2]);
-    i[3] = FloatVector4(tmp0[3], tmp1[3], tmp2[3], tmp3[3]);
+    i[1] = FloatVector4(tmp4[0], tmp5[0], tmp6[0], tmp7[0]);
+    i[2] = FloatVector4(tmp0[1], tmp1[1], tmp2[1], tmp3[1]);
+    i[3] = FloatVector4(tmp4[1], tmp5[1], tmp6[1], tmp7[1]);
+    i[4] = FloatVector4(tmp0[2], tmp1[2], tmp2[2], tmp3[2]);
+    i[5] = FloatVector4(tmp4[2], tmp5[2], tmp6[2], tmp7[2]);
+    i[6] = FloatVector4(tmp0[3], tmp1[3], tmp2[3], tmp3[3]);
+    i[7] = FloatVector4(tmp4[3], tmp5[3], tmp6[3], tmp7[3]);
+  }
+}
+
+void SFCubeMapFilter::transpose8x4(std::vector< FloatVector4 >& v)
+{
+  std::vector< FloatVector4 >::iterator i;
+  for (i = v.begin(); (i + 8) <= v.end(); i = i + 8)
+  {
+    FloatVector4  tmp0(i[0]);
+    FloatVector4  tmp1(i[1]);
+    FloatVector4  tmp2(i[2]);
+    FloatVector4  tmp3(i[3]);
+    FloatVector4  tmp4(i[4]);
+    FloatVector4  tmp5(i[5]);
+    FloatVector4  tmp6(i[6]);
+    FloatVector4  tmp7(i[7]);
+    i[0] = FloatVector4(tmp0[0], tmp2[0], tmp4[0], tmp6[0]);
+    i[1] = FloatVector4(tmp0[1], tmp2[1], tmp4[1], tmp6[1]);
+    i[2] = FloatVector4(tmp0[2], tmp2[2], tmp4[2], tmp6[2]);
+    i[3] = FloatVector4(tmp0[3], tmp2[3], tmp4[3], tmp6[3]);
+    i[4] = FloatVector4(tmp1[0], tmp3[0], tmp5[0], tmp7[0]);
+    i[5] = FloatVector4(tmp1[1], tmp3[1], tmp5[1], tmp7[1]);
+    i[6] = FloatVector4(tmp1[2], tmp3[2], tmp5[2], tmp7[2]);
+    i[7] = FloatVector4(tmp1[3], tmp3[3], tmp5[3], tmp7[3]);
   }
 }
 
@@ -334,8 +369,8 @@ size_t SFCubeMapFilter::convertImage(unsigned char *buf, size_t bufSize)
       if (m > (mipCnt - 9) && m < (mipCnt - 2))
       {
         // specular: reorder data for more efficient use of SIMD
-        transpose4x4(inBuf);
-        transpose4x4(cubeCoordTable);
+        transpose4x8(inBuf);
+        transpose4x8(cubeCoordTable);
       }
       try
       {
@@ -370,7 +405,7 @@ size_t SFCubeMapFilter::convertImage(unsigned char *buf, size_t bufSize)
         throw;
       }
       if (m > (mipCnt - 9) && m < (mipCnt - 2))
-        transpose4x4(inBuf);
+        transpose8x4(inBuf);
     }
     // calculate mipmaps
     int     w2 = (w + 1) >> 1;
