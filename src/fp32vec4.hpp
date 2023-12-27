@@ -155,6 +155,7 @@ struct FloatVector4
   inline std::uint32_t convertToX10Y10Z10() const;
   // decode the output of convertToX10Y10Z10()
   static inline FloatVector4 convertX10Y10Z10(const std::uint32_t& n);
+  inline std::uint32_t getSignMask() const;
 };
 
 #if ENABLE_X86_64_AVX
@@ -1455,6 +1456,18 @@ inline FloatVector4 FloatVector4::convertX10Y10Z10(const std::uint32_t& n)
   tmp[1] = float(int(n & 0x000FFC00U)) * float(2.0 / 1047552.0) - 1.0f;
   tmp[2] = float(int(n & 0x3FF00000U)) * float(2.0 / 1072693248.0) - 1.0f;
   tmp[3] = 0.0f;
+#endif
+  return tmp;
+}
+
+inline std::uint32_t FloatVector4::getSignMask() const
+{
+  std::uint32_t tmp;
+#if ENABLE_X86_64_AVX
+  __asm__ ("vmovmskps %1, %0" : "=r" (tmp) : "x" (v));
+#else
+  tmp = std::uint32_t(v[0] < 0.0f) | (std::uint32_t(v[1] < 0.0f) << 1)
+        | (std::uint32_t(v[2] < 0.0f) << 2) | (std::uint32_t(v[3] < 0.0f) << 3);
 #endif
   return tmp;
 }
