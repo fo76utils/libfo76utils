@@ -107,9 +107,9 @@ inline FloatVector8::FloatVector8(const std::uint64_t *p)
 #else
   const unsigned char *b = reinterpret_cast< const unsigned char * >(p);
   XMM_UInt32  tmp;
-  __asm__ ("vpmovzxbd %1, %0" : "=x" (v) : "m" (*p));
+  __asm__ ("vpmovzxbd %1, %x0" : "=x" (v) : "m" (*p));
   __asm__ ("vpmovzxbd %1, %0" : "=x" (tmp) : "m" (*(b + 4)));
-  __asm__ ("vcvtdq2ps %0, %0" : "+x" (v));
+  __asm__ ("vcvtdq2ps %x0, %x0" : "+x" (v));
   __asm__ ("vcvtdq2ps %0, %0" : "+x" (tmp));
   __asm__ ("vinsertf128 $0x01, %1, %t0, %t0" : "+x" (v) : "x" (tmp));
 #endif
@@ -122,7 +122,7 @@ inline FloatVector8::FloatVector8(const FloatVector4 *p)
 
 inline FloatVector8::FloatVector8(FloatVector4 v0, FloatVector4 v1)
 {
-  __asm__ ("vinsertf128 $0x01, %2, %t1, %t0"
+  __asm__ ("vinsertf128 $0x01, %x2, %t1, %t0"
            : "=x" (v) : "x" (v0.v), "xm" (v1.v));
 }
 
@@ -144,9 +144,9 @@ inline FloatVector8::FloatVector8(const std::int16_t *p)
   __asm__ ("vcvtdq2ps %t0, %t0" : "+x" (v));
 #else
   XMM_UInt32  tmp;
-  __asm__ ("vpmovsxwd %1, %0" : "=x" (v) : "m" (*p));
+  __asm__ ("vpmovsxwd %1, %x0" : "=x" (v) : "m" (*p));
   __asm__ ("vpmovsxwd %1, %0" : "=x" (tmp) : "m" (*(p + 4)));
-  __asm__ ("vcvtdq2ps %0, %0" : "+x" (v));
+  __asm__ ("vcvtdq2ps %x0, %x0" : "+x" (v));
   __asm__ ("vcvtdq2ps %0, %0" : "+x" (tmp));
   __asm__ ("vinsertf128 $0x01, %1, %t0, %t0" : "+x" (v) : "x" (tmp));
 #endif
@@ -167,16 +167,16 @@ inline FloatVector8::FloatVector8(const std::uint16_t *p, bool noInfNaN)
   }
   else
   {
-    __asm__ ("vmovdqu %1, %0" : "=x" (v) : "m" (*p));
+    __asm__ ("vmovdqu %1, %x0" : "=x" (v) : "m" (*p));
     const XMM_UInt16  expMaskTbl =
     {
       0x7C00, 0x7C00, 0x7C00, 0x7C00, 0x7C00, 0x7C00, 0x7C00, 0x7C00
     };
     XMM_UInt16  tmp;
-    __asm__ ("vpand %2, %1, %0" : "=x" (tmp) : "x" (v), "x" (expMaskTbl));
+    __asm__ ("vpand %2, %x1, %0" : "=x" (tmp) : "x" (v), "x" (expMaskTbl));
     __asm__ ("vpcmpeqw %1, %0, %0" : "+x" (tmp) : "x" (expMaskTbl));
-    __asm__ ("vpandn %0, %1, %0" : "+x" (v) : "x" (tmp));
-    __asm__ ("vcvtph2ps %0, %t0" : "+x" (v));
+    __asm__ ("vpandn %x0, %1, %x0" : "+x" (v) : "x" (tmp));
+    __asm__ ("vcvtph2ps %x0, %t0" : "+x" (v));
   }
 #else
   std::uint64_t v0, v1;
@@ -203,11 +203,11 @@ inline void FloatVector8::convertToInt16(std::int16_t *p) const
   YMM_UInt32  tmp;
   __asm__ ("vcvtps2dq %t1, %t0" : "=x" (tmp) : "xm" (v));
   __asm__ ("vpackssdw %t0, %t0, %t0" : "+x" (tmp));
-  __asm__ ("vmovdqu %1, %0" : "=m" (*p) : "x" (tmp));
+  __asm__ ("vmovdqu %x1, %0" : "=m" (*p) : "x" (tmp));
 #else
   XMM_UInt32  tmp1, tmp2;
   __asm__ ("vextractf128 $0x01, %t1, %0" : "=x" (tmp2) : "x" (v));
-  __asm__ ("vcvtps2dq %1, %0" : "=x" (tmp1) : "x" (v));
+  __asm__ ("vcvtps2dq %x1, %0" : "=x" (tmp1) : "x" (v));
   __asm__ ("vcvtps2dq %0, %0" : "+x" (tmp2));
   __asm__ ("vpackssdw %1, %0, %0" : "+x" (tmp1) : "x" (tmp2));
   __asm__ ("vmovdqu %1, %0" : "=m" (*p) : "x" (tmp1));
@@ -369,17 +369,17 @@ inline float FloatVector8::dotProduct(const FloatVector8& r) const
   __asm__ ("vmulps %t2, %t1, %t0" : "=x" (tmp1) : "x" (v), "xm" (r.v));
   XMM_Float tmp2;
   __asm__ ("vextractf128 $0x01, %t1, %0" : "=x" (tmp2) : "x" (tmp1));
-  __asm__ ("vaddps %1, %0, %0" : "+x" (tmp1) : "x" (tmp2));
-  __asm__ ("vmovshdup %1, %0" : "=x" (tmp2) : "x" (tmp1));
-  __asm__ ("vaddps %1, %0, %0" : "+x" (tmp1) : "x" (tmp2));
-  __asm__ ("vshufps $0x4e, %1, %1, %0" : "=x" (tmp2) : "x" (tmp1));
-  __asm__ ("vaddps %1, %0, %0" : "+x" (tmp1) : "x" (tmp2));
+  __asm__ ("vaddps %1, %x0, %x0" : "+x" (tmp1) : "x" (tmp2));
+  __asm__ ("vmovshdup %x1, %0" : "=x" (tmp2) : "x" (tmp1));
+  __asm__ ("vaddps %1, %x0, %x0" : "+x" (tmp1) : "x" (tmp2));
+  __asm__ ("vshufps $0x4e, %x1, %x1, %0" : "=x" (tmp2) : "x" (tmp1));
+  __asm__ ("vaddps %1, %x0, %x0" : "+x" (tmp1) : "x" (tmp2));
   return tmp1[0];
 }
 
 inline FloatVector8& FloatVector8::squareRoot()
 {
-  const YMM_Float tmp = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+  YMM_Float tmp = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
   __asm__ ("vmaxps %t1, %t0, %t0" : "+x" (tmp) : "x" (v));
   __asm__ ("vsqrtps %t1, %t0" : "=x" (v) : "x" (tmp));
   return (*this);
@@ -405,10 +405,10 @@ inline FloatVector8& FloatVector8::log2V()
 #if ENABLE_X86_64_AVX2
   YMM_Float e, m, tmp;
   __asm__ ("vpsrld $0x17, %t1, %t0" : "=x" (e) : "x" (v));
-  __asm__ ("vmovd %1, %0" : "=x" (tmp) : "r" (0x3F800000U));
+  __asm__ ("vmovd %1, %x0" : "=x" (tmp) : "r" (0x3F800000U));
   __asm__ ("vpslld $0x17, %t1, %t0" : "=x" (m) : "x" (e));
   __asm__ ("vcvtdq2ps %t0, %t0" : "+x" (e));
-  __asm__ ("vpbroadcastd %0, %t0" : "+x" (tmp));
+  __asm__ ("vpbroadcastd %x0, %t0" : "+x" (tmp));
   __asm__ ("vpxor %t1, %t0, %t0" : "+x" (m) : "x" (v));
   __asm__ ("vpor %t1, %t0, %t0" : "+x" (m) : "x" (tmp));
   YMM_Float m2 = m * m;
@@ -449,12 +449,12 @@ inline FloatVector8::operator std::uint64_t() const
   YMM_UInt32  tmp;
   __asm__ ("vcvtps2dq %t1, %t0" : "=x" (tmp) : "xm" (v));
   __asm__ ("vpackssdw %t0, %t0, %t0" : "+x" (tmp));
-  __asm__ ("vpackuswb %0, %0, %0" : "+x" (tmp));
-  __asm__ ("vmovq %1, %0" : "=r" (c) : "x" (tmp));
+  __asm__ ("vpackuswb %x0, %x0, %x0" : "+x" (tmp));
+  __asm__ ("vmovq %x1, %0" : "=r" (c) : "x" (tmp));
 #else
   XMM_Float tmp1, tmp2;
   __asm__ ("vextractf128 $0x01, %t1, %0" : "=x" (tmp2) : "x" (v));
-  __asm__ ("vcvtps2dq %1, %0" : "=x" (tmp1) : "x" (v));
+  __asm__ ("vcvtps2dq %x1, %0" : "=x" (tmp1) : "x" (v));
   __asm__ ("vcvtps2dq %0, %0" : "+x" (tmp2));
   __asm__ ("vpackssdw %1, %0, %0" : "+x" (tmp1) : "x" (tmp2));
   __asm__ ("vpackuswb %0, %0, %0" : "+x" (tmp1));
