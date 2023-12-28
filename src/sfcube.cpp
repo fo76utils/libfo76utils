@@ -126,58 +126,82 @@ void SFCubeMapFilter::processImage_Diffuse(
 void SFCubeMapFilter::processImage_Specular(
     unsigned char *outBufP, int w, int h, int y0, int y1, float roughness)
 {
+  std::vector< FloatVector4 > tmpBuf(size_t(w * (y1 - y0)) * 6,
+                                     FloatVector4(0.0f));
   float   a = roughness * roughness;
   float   a2 = a * a;
+  for (size_t j0 = 0; (j0 + 8) <= cubeCoordTable.size(); )
+  {
+    // accumulate convolution output in tmpBuf using smaller partitions of the
+    // impulse response so that data used from cubeCoordTable and inBuf fits in
+    // L1 cache
+    size_t  j1 = j0 + 512;
+    if (j1 > cubeCoordTable.size())
+      j1 = cubeCoordTable.size();
+    FloatVector4  *tmpBufPtr = tmpBuf.data();
+    for (int n = 0; n < 6; n++)
+    {
+      for (int y = y0; y < y1; y++)
+      {
+        // w must be even
+        for (int x = 0; x < w; x++, tmpBufPtr++)
+        {
+          int     i = (n * h + y) * w + x;
+          std::vector< FloatVector4 >::const_iterator j =
+              cubeCoordTable.begin() + ((i & ~7) | ((i & 4) >> 2));
+          // v1 = reflected view vector (R), assume V = N = R
+          FloatVector8  v1x(j[0][i & 3]);
+          FloatVector8  v1y(j[2][i & 3]);
+          FloatVector8  v1z(j[4][i & 3]);
+          FloatVector8  c_r(0.0f);
+          FloatVector8  c_g(0.0f);
+          FloatVector8  c_b(0.0f);
+          FloatVector8  totalWeight(0.0f);
+          std::vector< FloatVector4 >::const_iterator k = inBuf.begin() + j0;
+          for (j = cubeCoordTable.begin() + j0;
+               (j + 8) <= (cubeCoordTable.begin() + j1); j = j + 8, k = k + 8)
+          {
+            // v2 = light vector
+            FloatVector8  v2x(&(j[0]));
+            FloatVector8  v2y(&(j[2]));
+            FloatVector8  v2z(&(j[4]));
+            // d = N·L = R·L = 2.0 * N·H * N·H - 1.0
+            FloatVector8  d = (v1x * v2x) + (v1y * v2y) + (v1z * v2z);
+            if (d.getSignMask() == 255U)
+              continue;
+            FloatVector8  v2w(&(j[6]));
+            d.maxValues(FloatVector8(0.0f));
+            FloatVector8  g1 = d;
+            // g2 = geometry function denominator * 2.0 (a = k * 2.0)
+            FloatVector8  g2 = d * (2.0f - a) + a;
+            // D denominator = (N·H * N·H * (a2 - 1.0) + 1.0)² * 4.0
+            d = (d + 1.0f) * (a2 - 1.0f) + 2.0f;
+            FloatVector8  weight = g1 * v2w / (g2 * d * d);
+            c_r += (FloatVector8(&(k[0])) * weight);
+            c_g += (FloatVector8(&(k[2])) * weight);
+            c_b += (FloatVector8(&(k[4])) * weight);
+            totalWeight += weight;
+          }
+          FloatVector4  c(c_r.dotProduct(FloatVector8(1.0f)),
+                          c_g.dotProduct(FloatVector8(1.0f)),
+                          c_b.dotProduct(FloatVector8(1.0f)),
+                          totalWeight.dotProduct(FloatVector8(1.0f)));
+          *tmpBufPtr = *tmpBufPtr + c;
+        }
+      }
+    }
+    j0 = j1;
+  }
+  const FloatVector4  *tmpBufPtr = tmpBuf.data();
   for (int n = 0; n < 6; n++)
   {
     for (int y = y0; y < y1; y++)
     {
       unsigned char *p = outBufP + (size_t(y * w) * sizeof(std::uint32_t));
-      // w must be even
-      for (int x = 0; x < w; x++, p = p + 4)
+      for (int x = 0; x < w; x++, p = p + 4, tmpBufPtr++)
       {
-        int     i = (n * h + y) * w + x;
-        // v1 = reflected view vector (R), assume V = N = R
-        FloatVector8  v1x(cubeCoordTable[(i & ~7) | ((i & 4) >> 2)][i & 3]);
-        FloatVector8  v1y(cubeCoordTable[(i & ~7) | ((i & 4) >> 2) | 2][i & 3]);
-        FloatVector8  v1z(cubeCoordTable[(i & ~7) | ((i & 4) >> 2) | 4][i & 3]);
-        FloatVector8  c_r(0.0f);
-        FloatVector8  c_g(0.0f);
-        FloatVector8  c_b(0.0f);
-        FloatVector8  totalWeight(0.0f);
-        for (std::vector< FloatVector4 >::const_iterator
-                 j = cubeCoordTable.begin();
-                 (j + 8) <= cubeCoordTable.end(); j = j + 8)
-        {
-          // v2 = light vector
-          FloatVector8  v2x(&(j[0]));
-          FloatVector8  v2y(&(j[2]));
-          FloatVector8  v2z(&(j[4]));
-          // d = N·L = R·L = 2.0 * N·H * N·H - 1.0
-          FloatVector8  d = (v1x * v2x) + (v1y * v2y) + (v1z * v2z);
-          if (d.getSignMask() == 255U)
-            continue;
-          FloatVector8  v2w(&(j[6]));
-          d.maxValues(FloatVector8(0.0f));
-          FloatVector8  g1 = d;
-          // g2 = geometry function denominator * 2.0 (a = k * 2.0)
-          FloatVector8  g2 = d * (2.0f - a) + a;
-          // D denominator = (N·H * N·H * (a2 - 1.0) + 1.0)² * 4.0
-          d = (d + 1.0f) * (a2 - 1.0f) + 2.0f;
-          FloatVector8  weight = g1 * v2w / (g2 * d * d);
-          std::vector< FloatVector4 >::const_iterator k =
-              inBuf.begin() + (j - cubeCoordTable.begin());
-          c_r += (FloatVector8(&(k[0])) * weight);
-          c_g += (FloatVector8(&(k[2])) * weight);
-          c_b += (FloatVector8(&(k[4])) * weight);
-          totalWeight += weight;
-        }
-        FloatVector4  c(0.0f);
-        c[0] = c_r.dotProduct(FloatVector8(1.0f));
-        c[1] = c_g.dotProduct(FloatVector8(1.0f));
-        c[2] = c_b.dotProduct(FloatVector8(1.0f));
-        c /= totalWeight.dotProduct(FloatVector8(1.0f));
-        std::uint32_t tmp = std::uint32_t(c.srgbCompress());
+        FloatVector4  c(*tmpBufPtr);
+        std::uint32_t tmp = std::uint32_t((c / c[3]).srgbCompress());
         p[0] = (unsigned char) (tmp & 0xFF);
         p[1] = (unsigned char) ((tmp >> 8) & 0xFF);
         p[2] = (unsigned char) ((tmp >> 16) & 0xFF);
