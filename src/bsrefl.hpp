@@ -1,6 +1,6 @@
 
-#ifndef CDB_FILE_HPP_INCLUDED
-#define CDB_FILE_HPP_INCLUDED
+#ifndef BSREFL_HPP_INCLUDED
+#define BSREFL_HPP_INCLUDED
 
 #include "common.hpp"
 #include "filebuf.hpp"
@@ -9,7 +9,7 @@
 #  define ENABLE_CDB_DEBUG  0
 #endif
 
-class CDBFile : public FileBuffer
+class BSReflStream : public FileBuffer
 {
  public:
   enum
@@ -118,10 +118,10 @@ class CDBFile : public FileBuffer
     String_BSMaterial_WaterSettingsComponent = 225,
     String_BSResource_ID = 228
   };
-  class CDBChunk : public FileBuffer
+  class Chunk : public FileBuffer
   {
    public:
-    inline CDBChunk()
+    inline Chunk()
       : FileBuffer()
     {
     }
@@ -160,17 +160,17 @@ class CDBFile : public FileBuffer
   std::vector< std::int16_t > stringMap;
   void readStringTable();
  public:
-  CDBFile(const unsigned char *fileData, size_t fileSize)
+  BSReflStream(const unsigned char *fileData, size_t fileSize)
     : FileBuffer(fileData, fileSize)
   {
     readStringTable();
   }
-  CDBFile(const char *fileName)
+  BSReflStream(const char *fileName)
     : FileBuffer(fileName)
   {
     readStringTable();
   }
-  size_t findString(unsigned int strtOffs) const;
+  std::uint32_t findString(unsigned int strtOffs) const;
   inline const char *getStringPtr(unsigned int strtOffs) const
   {
     return stringTable[findString(strtOffs)];
@@ -182,11 +182,15 @@ class CDBFile : public FileBuffer
     return stringMap[strtOffs];
   }
   // returns chunk type (ChunkType_BETH, etc.), or 0 on end of file
-  inline unsigned int readChunk(CDBChunk& chunkBuf, size_t startPos = 0,
+  inline unsigned int readChunk(Chunk& chunkBuf, size_t startPos = 0,
                                 bool enableDebugPrint = false);
+  static inline const char *getDefaultMaterialDBPath()
+  {
+    return "materials/materialsbeta.cdb";
+  }
 };
 
-inline bool CDBFile::CDBChunk::getFieldNumber(
+inline bool BSReflStream::Chunk::getFieldNumber(
     unsigned int& n, unsigned int nMax, bool isDiff)
 {
   if (!isDiff) [[unlikely]]
@@ -209,7 +213,7 @@ inline bool CDBFile::CDBChunk::getFieldNumber(
   return false;
 }
 
-inline bool CDBFile::CDBChunk::readBool(bool& n)
+inline bool BSReflStream::Chunk::readBool(bool& n)
 {
   if (filePos < fileBufSize) [[likely]]
   {
@@ -219,7 +223,7 @@ inline bool CDBFile::CDBChunk::readBool(bool& n)
   return false;
 }
 
-inline bool CDBFile::CDBChunk::readUInt8(unsigned char& n)
+inline bool BSReflStream::Chunk::readUInt8(unsigned char& n)
 {
   if (filePos < fileBufSize) [[likely]]
   {
@@ -229,7 +233,7 @@ inline bool CDBFile::CDBChunk::readUInt8(unsigned char& n)
   return false;
 }
 
-inline bool CDBFile::CDBChunk::readUInt16(std::uint16_t& n)
+inline bool BSReflStream::Chunk::readUInt16(std::uint16_t& n)
 {
   if ((filePos + 2ULL) > fileBufSize) [[unlikely]]
   {
@@ -240,7 +244,7 @@ inline bool CDBFile::CDBChunk::readUInt16(std::uint16_t& n)
   return true;
 }
 
-inline bool CDBFile::CDBChunk::readUInt32(std::uint32_t& n)
+inline bool BSReflStream::Chunk::readUInt32(std::uint32_t& n)
 {
   if ((filePos + 4ULL) > fileBufSize) [[unlikely]]
   {
@@ -251,7 +255,7 @@ inline bool CDBFile::CDBChunk::readUInt32(std::uint32_t& n)
   return true;
 }
 
-inline bool CDBFile::CDBChunk::readFloat(float& n)
+inline bool BSReflStream::Chunk::readFloat(float& n)
 {
   if ((filePos + 4ULL) > fileBufSize) [[unlikely]]
   {
@@ -269,7 +273,7 @@ inline bool CDBFile::CDBChunk::readFloat(float& n)
   return true;
 }
 
-inline bool CDBFile::CDBChunk::readFloat0To1(float& n)
+inline bool BSReflStream::Chunk::readFloat0To1(float& n)
 {
   if ((filePos + 4ULL) > fileBufSize) [[unlikely]]
   {
@@ -288,7 +292,7 @@ inline bool CDBFile::CDBChunk::readFloat0To1(float& n)
   return true;
 }
 
-inline bool CDBFile::CDBChunk::readString(std::string& stringBuf)
+inline bool BSReflStream::Chunk::readString(std::string& stringBuf)
 {
   if ((filePos + 2ULL) > fileBufSize) [[unlikely]]
   {
@@ -305,18 +309,18 @@ inline bool CDBFile::CDBChunk::readString(std::string& stringBuf)
   return true;
 }
 
-inline unsigned int CDBFile::readChunk(CDBChunk& chunkBuf, size_t startPos,
-                                       bool enableDebugPrint)
+inline unsigned int BSReflStream::readChunk(Chunk& chunkBuf, size_t startPos,
+                                            bool enableDebugPrint)
 {
   if (!chunksRemaining) [[unlikely]]
     return 0U;
   chunksRemaining--;
   if ((filePos + 8ULL) > fileBufSize)
-    errorMessage("unexpected end of CDB file");
+    errorMessage("unexpected end of reflection stream");
   unsigned int  chunkType = readUInt32Fast();
   unsigned int  chunkSize = readUInt32Fast();
   if ((filePos + std::uint64_t(chunkSize)) > fileBufSize)
-    errorMessage("unexpected end of CDB file");
+    errorMessage("unexpected end of reflection stream");
 #if ENABLE_CDB_DEBUG
   if (enableDebugPrint)
   {
@@ -340,6 +344,30 @@ inline unsigned int CDBFile::readChunk(CDBChunk& chunkBuf, size_t startPos,
   filePos = filePos + chunkSize;
   return chunkType;
 }
+
+struct BSReflDump : public BSReflStream
+{
+ protected:
+  struct CDBClassDef
+  {
+    std::vector< std::pair< std::uint32_t, std::uint32_t > >  fields;
+    bool    isUser = false;
+  };
+  std::map< std::uint32_t, CDBClassDef >  classes;
+  void dumpItem(std::string& s, Chunk& chunkBuf, bool isDiff,
+                std::uint32_t itemType, int indentCnt);
+ public:
+  BSReflDump(const unsigned char *fileData, size_t fileSize)
+    : BSReflStream(fileData, fileSize)
+  {
+  }
+  BSReflDump(const char *fileName)
+    : BSReflStream(fileName)
+  {
+  }
+  // if verboseMode is true, class definitions are also printed
+  void readAllChunks(std::string& s, int indentCnt, bool verboseMode = false);
+};
 
 #endif
 

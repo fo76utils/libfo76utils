@@ -1,6 +1,7 @@
 
 #include "common.hpp"
 #include "material.hpp"
+#include "bsmatcdb.hpp"
 
 #include <new>
 
@@ -14,59 +15,6 @@ static void printHexData(const unsigned char *p, size_t n)
   std::fwrite(s.c_str(), sizeof(char), s.length(), stdout);
 }
 #endif
-
-std::uint32_t CE2MaterialDB::calculateHash(
-    std::uint64_t& h, const std::string& fileName)
-{
-  size_t  baseNamePos = fileName.rfind('/');
-  size_t  baseNamePos2 = fileName.rfind('\\');
-  size_t  extPos = fileName.rfind('.');
-  if (baseNamePos == std::string::npos ||
-      (baseNamePos2 != std::string::npos && baseNamePos2 > baseNamePos))
-  {
-    baseNamePos = baseNamePos2;
-  }
-  if (extPos == std::string::npos ||
-      (baseNamePos != std::string::npos && extPos < baseNamePos))
-  {
-    extPos = fileName.length();
-  }
-  size_t  i = 0;
-  std::uint32_t crcValue = 0U;
-  if (baseNamePos != std::string::npos)
-  {
-    for ( ; i < baseNamePos; i++)
-    {
-      unsigned char c = (unsigned char) fileName.c_str()[i];
-      if (c >= 0x41 && c <= 0x5A)       // 'A' - 'Z'
-        c = c | 0x20;                   // convert to lower case
-      else if (c == 0x2F)               // '/'
-        c = 0x5C;                       // convert to '\\'
-      hashFunctionCRC32(crcValue, c);
-    }
-    i++;
-  }
-  h = std::uint64_t(crcValue) << 32;
-  crcValue = 0U;
-  for ( ; i < extPos; i++)
-  {
-    unsigned char c = (unsigned char) fileName.c_str()[i];
-    if (c >= 0x41 && c <= 0x5A)         // 'A' - 'Z'
-      c = c | 0x20;                     // convert to lower case
-    else if (c == 0x2F)                 // '/'
-      c = 0x5C;                         // convert to '\\'
-    hashFunctionCRC32(crcValue, c);
-  }
-  h = h | crcValue;
-  i++;
-  if ((i + 3) <= fileName.length())
-    return FileBuffer::readUInt32Fast(fileName.c_str() + i);
-  if ((i + 2) <= fileName.length())
-    return FileBuffer::readUInt16Fast(fileName.c_str() + i);
-  if (i < fileName.length())
-    return (unsigned char) fileName.c_str()[i];
-  return 0U;
-}
 
 inline const CE2MaterialObject * CE2MaterialDB::findObject(
     const std::vector< CE2MaterialObject * >& t, unsigned int objectID) const
@@ -428,7 +376,7 @@ CE2MaterialDB::~CE2MaterialDB()
 {
 }
 
-void CE2MaterialDB::loadCDBFile(CDBFile& buf)
+void CE2MaterialDB::loadCDBFile(BSReflStream& buf)
 {
   ComponentInfo componentInfo(*this, buf);
   const unsigned char *componentInfoPtr = nullptr;
@@ -437,8 +385,8 @@ void CE2MaterialDB::loadCDBFile(CDBFile& buf)
   unsigned int  chunkType;
   while ((chunkType = buf.readChunk(componentInfo, 4, true)) != 0U)
   {
-    if (chunkType == CDBFile::ChunkType_DIFF ||
-        chunkType == CDBFile::ChunkType_OBJT) [[likely]]
+    if (chunkType == BSReflStream::ChunkType_DIFF ||
+        chunkType == BSReflStream::ChunkType_OBJT) [[likely]]
     {
       if (componentID >= componentCnt) [[unlikely]]
       {
@@ -448,7 +396,7 @@ void CE2MaterialDB::loadCDBFile(CDBFile& buf)
         continue;
       }
       // read component
-      bool    isDiff = (chunkType != CDBFile::ChunkType_OBJT);
+      bool    isDiff = (chunkType != BSReflStream::ChunkType_OBJT);
       const unsigned char *cmpInfoPtr = componentInfoPtr + (componentID << 3);
       unsigned int  objectID = FileBuffer::readUInt32Fast(cmpInfoPtr);
       componentInfo.componentIndex = FileBuffer::readUInt16Fast(cmpInfoPtr + 4);
@@ -477,7 +425,10 @@ void CE2MaterialDB::loadCDBFile(CDBFile& buf)
 #if ENABLE_CDB_DEBUG
       const char  *componentTypeStr = "<Unknown>";
       if (componentInfo.componentType <= 0xFFU)
-        componentTypeStr = CDBFile::stringTable[componentInfo.componentType];
+      {
+        componentTypeStr =
+            BSReflStream::stringTable[componentInfo.componentType];
+      }
       std::printf(", object = 0x%08X:%d, component %s[%u]\n",
                   objectID, componentInfo.o->type,
                   componentTypeStr, componentInfo.componentIndex);
@@ -507,23 +458,24 @@ void CE2MaterialDB::loadCDBFile(CDBFile& buf)
 #if ENABLE_CDB_DEBUG
     std::fputc('\n', stdout);
 #endif
-    if (chunkType == CDBFile::ChunkType_STRT) [[unlikely]]      // string table
+    if (chunkType == BSReflStream::ChunkType_STRT) [[unlikely]] // string table
     {
       if ((buf.getPosition() - componentInfo.size()) != 24)
         errorMessage("duplicate string table in material database");
       continue;
     }
-    size_t  t = CDBFile::String_Unknown;
+    size_t  t = BSReflStream::String_Unknown;
     if (componentInfo.size() >= 4)
       t = buf.findString(FileBuffer::readUInt32Fast(componentInfo.data()));
 #if ENABLE_CDB_DEBUG
-    if (chunkType == CDBFile::ChunkType_MAPC)
+    if (chunkType == BSReflStream::ChunkType_MAPC)
     {
       size_t  t2 = buf.findString(componentInfo.readUInt32());
       unsigned int  n = componentInfo.readUInt32();
       std::printf("  < %s, %s >[%u]\n",
-                  CDBFile::stringTable[t], CDBFile::stringTable[t2], n);
-      if (t == CDBFile::String_BSResource_ID)
+                  BSReflStream::stringTable[t], BSReflStream::stringTable[t2],
+                  n);
+      if (t == BSReflStream::String_BSResource_ID)
       {
         for ( ; n; n--)
         {
@@ -540,7 +492,7 @@ void CE2MaterialDB::loadCDBFile(CDBFile& buf)
       }
       continue;
     }
-    if (chunkType == CDBFile::ChunkType_CLAS)
+    if (chunkType == BSReflStream::ChunkType_CLAS)
     {
       componentInfo.setPosition(componentInfo.getPosition() + 8);
       while ((componentInfo.getPosition() + 12ULL) <= componentInfo.size())
@@ -550,22 +502,23 @@ void CE2MaterialDB::loadCDBFile(CDBFile& buf)
         unsigned int  dataOffset = componentInfo.readUInt16Fast();
         unsigned int  dataSize = componentInfo.readUInt16Fast();
         std::printf("    %s, %s, 0x%04X, 0x%04X\n",
-                    CDBFile::stringTable[buf.findString(fieldName)],
-                    CDBFile::stringTable[buf.findString(fieldType)],
+                    BSReflStream::stringTable[buf.findString(fieldName)],
+                    BSReflStream::stringTable[buf.findString(fieldType)],
                     dataOffset, dataSize);
       }
       continue;
     }
 #endif
-    if (chunkType != CDBFile::ChunkType_LIST)
+    if (chunkType != BSReflStream::ChunkType_LIST)
     {
 #if ENABLE_CDB_DEBUG
-      if (chunkType == CDBFile::ChunkType_USER ||
-          chunkType == CDBFile::ChunkType_USRD)
+      if (chunkType == BSReflStream::ChunkType_USER ||
+          chunkType == BSReflStream::ChunkType_USRD)
       {
         size_t  t2 = buf.findString(componentInfo.readUInt32());
         std::printf("  %s : %s\n",
-                    CDBFile::stringTable[t], CDBFile::stringTable[t2]);
+                    BSReflStream::stringTable[t],
+                    BSReflStream::stringTable[t2]);
 #  if ENABLE_CDB_DEBUG > 1
         printHexData(componentInfo.data() + componentInfo.getPosition(),
                      componentInfo.size() - componentInfo.getPosition());
@@ -576,9 +529,9 @@ void CE2MaterialDB::loadCDBFile(CDBFile& buf)
     }
     unsigned int  n = componentInfo.readUInt32();
 #if ENABLE_CDB_DEBUG
-    std::printf("  %s[%u]\n", CDBFile::stringTable[t], n);
+    std::printf("  %s[%u]\n", BSReflStream::stringTable[t], n);
 #endif
-    if (t == CDBFile::String_BSComponentDB2_DBFileIndex_ObjectInfo)
+    if (t == BSReflStream::String_BSComponentDB2_DBFileIndex_ObjectInfo)
     {
       if ((componentInfo.getPosition() + (std::uint64_t(n) * 21UL))
           > componentInfo.size())
@@ -653,7 +606,7 @@ void CE2MaterialDB::loadCDBFile(CDBFile& buf)
         objectNameMap[h] = o;
       }
     }
-    else if (t == CDBFile::String_BSComponentDB2_DBFileIndex_ComponentInfo)
+    else if (t == BSReflStream::String_BSComponentDB2_DBFileIndex_ComponentInfo)
     {
       if ((componentInfo.getPosition() + (std::uint64_t(n) << 3))
           > componentInfo.size())
@@ -675,7 +628,7 @@ void CE2MaterialDB::loadCDBFile(CDBFile& buf)
       }
 #endif
     }
-    else if (t == CDBFile::String_BSComponentDB2_DBFileIndex_EdgeInfo)
+    else if (t == BSReflStream::String_BSComponentDB2_DBFileIndex_EdgeInfo)
     {
       if ((componentInfo.getPosition() + (std::uint64_t(n) * 12UL))
           > componentInfo.size())
@@ -722,7 +675,7 @@ void CE2MaterialDB::loadCDBFile(CDBFile& buf)
 
 void CE2MaterialDB::loadCDBFile(const unsigned char *buf, size_t bufSize)
 {
-  CDBFile   tmpBuf(buf, bufSize);
+  BSReflStream  tmpBuf(buf, bufSize);
   loadCDBFile(tmpBuf);
 }
 
@@ -730,7 +683,7 @@ void CE2MaterialDB::loadCDBFile(const BA2File& ba2File, const char *fileName)
 {
   std::vector< unsigned char >  fileBuf;
   if (!fileName || fileName[0] == '\0')
-    fileName = "materials/materialsbeta.cdb";
+    fileName = BSReflStream::getDefaultMaterialDBPath();
   while (true)
   {
     size_t  len = 0;
@@ -739,7 +692,7 @@ void CE2MaterialDB::loadCDBFile(const BA2File& ba2File, const char *fileName)
     const unsigned char *buf = nullptr;
     size_t  bufSize =
         ba2File.extractFile(buf, fileBuf, std::string(fileName, len));
-    CDBFile   tmpBuf(buf, bufSize);
+    BSReflStream  tmpBuf(buf, bufSize);
     loadCDBFile(tmpBuf);
     if (!fileName[len])
       break;
@@ -750,8 +703,9 @@ void CE2MaterialDB::loadCDBFile(const BA2File& ba2File, const char *fileName)
 const CE2Material * CE2MaterialDB::findMaterial(
     const std::string& fileName) const
 {
-  std::uint64_t tmp = 0U;
-  std::uint32_t e = calculateHash(tmp, fileName);
+  BSMaterialsCDB::BSResourceID  tmpID(fileName);
+  std::uint64_t tmp = (std::uint64_t(tmpID.ext) << 32) | tmpID.dir;
+  std::uint32_t e = tmpID.file;
   std::uint64_t h = 0xFFFFFFFFU;
   hashFunctionUInt64(h, tmp);
   hashFunctionUInt64(h, e);

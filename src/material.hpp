@@ -7,7 +7,7 @@
 #include "filebuf.hpp"
 #include "ba2file.hpp"
 #include "ddstxt.hpp"
-#include "cdb_file.hpp"
+#include "bsrefl.hpp"
 
 // CE2Material (.mat file), object type 1
 //   |
@@ -421,7 +421,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
 class CE2MaterialDB
 {
  protected:
-  class ComponentInfo : public CDBFile::CDBChunk
+  class ComponentInfo : public BSReflStream::Chunk
   {
    public:
     typedef void (*ReadFunctionType)(ComponentInfo&, bool);
@@ -429,10 +429,10 @@ class CE2MaterialDB
     CE2MaterialDB&  cdb;
     CE2MaterialObject *o;
     unsigned int  componentIndex;
-    unsigned int  componentType;        // as CDBFile::stringTable[] index
+    unsigned int  componentType;        // as BSReflStream::stringTable[] index
     std::string   stringBuf;
     std::vector< CE2MaterialObject * >  objectTable;
-    CDBFile&      cdbBuf;
+    BSReflStream& cdbBuf;
     static void readLayeredEmissivityComponent(ComponentInfo& p, bool isDiff);
     static void readAlphaBlenderSettings(ComponentInfo& p, bool isDiff);
     static void readBSFloatCurve(ComponentInfo& p, bool isDiff);
@@ -538,7 +538,7 @@ class CE2MaterialDB
     static void readTerrainSettingsComponent(ComponentInfo& p, bool isDiff);
     static void readLODMaterialID(ComponentInfo& p, bool isDiff);
     static void readMipBiasSetting(ComponentInfo& p, bool isDiff);
-    ComponentInfo(CE2MaterialDB& p, CDBFile& cdbFileBuf)
+    ComponentInfo(CE2MaterialDB& p, BSReflStream& cdbFileBuf)
       : cdb(p),
         cdbBuf(cdbFileBuf)
     {
@@ -546,7 +546,7 @@ class CE2MaterialDB
     inline bool readString();
     inline bool readAndStoreString(const std::string*& s, int type);
     // returns chunk type (e.g. 0x5453494C for "LIST")
-    unsigned int readChunk(CDBFile::CDBChunk& chunkBuf);
+    unsigned int readChunk(BSReflStream::Chunk& chunkBuf);
   };
   enum
   {
@@ -562,9 +562,6 @@ class CE2MaterialDB
   std::vector< std::uint32_t >  storedStringParams;
   // stringBuffers[0][0] = ""
   std::vector< std::vector< std::string > > stringBuffers;
-  // returns extension of fileName (0x0074616D for ".mat")
-  static std::uint32_t calculateHash(std::uint64_t& h,
-                                     const std::string& fileName);
   inline const CE2MaterialObject *findObject(
       const std::vector< CE2MaterialObject * >& t, unsigned int objectID) const;
   void initializeObject(CE2MaterialObject *o,
@@ -585,7 +582,7 @@ class CE2MaterialDB
   // separated list of multiple CDB file names
   CE2MaterialDB(const BA2File& ba2File, const char *fileName = nullptr);
   virtual ~CE2MaterialDB();
-  void loadCDBFile(CDBFile& buf);
+  void loadCDBFile(BSReflStream& buf);
   void loadCDBFile(const unsigned char *buf, size_t bufSize);
   void loadCDBFile(const BA2File& ba2File, const char *fileName = nullptr);
   const CE2Material *findMaterial(const std::string& fileName) const;

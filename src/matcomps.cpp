@@ -4,7 +4,7 @@
 
 inline bool CE2MaterialDB::ComponentInfo::readString()
 {
-  return CDBFile::CDBChunk::readString(stringBuf);
+  return BSReflStream::Chunk::readString(stringBuf);
 }
 
 inline bool CE2MaterialDB::ComponentInfo::readAndStoreString(
@@ -26,7 +26,7 @@ inline bool CE2MaterialDB::ComponentInfo::readAndStoreString(
 }
 
 unsigned int CE2MaterialDB::ComponentInfo::readChunk(
-    CDBFile::CDBChunk& chunkBuf)
+    BSReflStream::Chunk& chunkBuf)
 {
   unsigned int  chunkType = cdbBuf.readChunk(chunkBuf, 0, true);
 #if ENABLE_CDB_DEBUG
@@ -498,7 +498,7 @@ void CE2MaterialDB::ComponentInfo::readPhysicsMaterialType(
       break;
     if (p.o->type == 1 &&
         p.componentType
-        == CDBFile::String_BSMaterial_CollisionComponent) [[likely]]
+        == BSReflStream::String_BSMaterial_CollisionComponent) [[likely]]
     {
       CE2Material *m = static_cast< CE2Material * >(p.o);
       switch (tmp)
@@ -555,7 +555,8 @@ void CE2MaterialDB::ComponentInfo::readUVStreamID(
     const CE2Material::UVStream *uvStream =
         static_cast< const CE2Material::UVStream * >(
             readBSComponentDB2ID(p, isDiff, 6));
-    if (p.componentType == CDBFile::String_BSMaterial_UVStreamID) [[likely]]
+    if (p.componentType
+        == BSReflStream::String_BSMaterial_UVStreamID) [[likely]]
     {
       if (p.o->type == 2)
         static_cast< CE2Material::Blender * >(p.o)->uvStream = uvStream;
@@ -563,13 +564,13 @@ void CE2MaterialDB::ComponentInfo::readUVStreamID(
         static_cast< CE2Material::Layer * >(p.o)->uvStream = uvStream;
     }
     else if (p.componentType
-             == CDBFile::String_BSMaterial_AlphaSettingsComponent)
+             == BSReflStream::String_BSMaterial_AlphaSettingsComponent)
     {
       if (p.o->type == 1)
         static_cast< CE2Material * >(p.o)->alphaUVStream = uvStream;
     }
     else if (p.componentType
-             == CDBFile::String_BSMaterial_DetailBlenderSettingsComponent)
+             == BSReflStream::String_BSMaterial_DetailBlenderSettingsComponent)
     {
       if (p.o->type == 1)
       {
@@ -1178,7 +1179,7 @@ void CE2MaterialDB::ComponentInfo::readOffset(
   FloatVector4  tmp(0.0f);
   FloatVector4  *c = &tmp;
   if (p.o->type == 6 &&
-      p.componentType == CDBFile::String_BSMaterial_Offset) [[likely]]
+      p.componentType == BSReflStream::String_BSMaterial_Offset) [[likely]]
   {
     c = &(static_cast< CE2Material::UVStream * >(p.o)->scaleAndOffset);
   }
@@ -1555,7 +1556,7 @@ void CE2MaterialDB::ComponentInfo::readScale(
   FloatVector4  tmp(0.0f);
   FloatVector4  *c = &tmp;
   if (p.o->type == 6 &&
-      p.componentType == CDBFile::String_BSMaterial_Scale) [[likely]]
+      p.componentType == BSReflStream::String_BSMaterial_Scale) [[likely]]
   {
     c = &(static_cast< CE2Material::UVStream * >(p.o)->scaleAndOffset);
   }
@@ -1949,19 +1950,19 @@ void CE2MaterialDB::ComponentInfo::readLayeredEdgeFalloffComponent(
     m->layeredEdgeFalloff = sp;
     m->setFlags(CE2Material::Flag_LayeredEdgeFalloff, true);
   }
-  CDBFile::CDBChunk listBuf;
+  BSReflStream::Chunk listBuf;
   for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 5U, isDiff); )
   {
     if (n <= 3U)
     {
-      if (p.readChunk(listBuf) != CDBFile::ChunkType_LIST)
+      if (p.readChunk(listBuf) != BSReflStream::ChunkType_LIST)
       {
         errorMessage("unexpected chunk type for "
                      "BSMaterial::LayeredEdgeFalloffComponent");
       }
       if (listBuf.size() < 8 || !sp ||
           p.cdbBuf.findString(listBuf.readUInt32Fast())
-          != CDBFile::String_Float)
+          != BSReflStream::String_Float)
       {
         continue;
       }
@@ -2276,12 +2277,12 @@ void CE2MaterialDB::ComponentInfo::readFloat2DCurveController(
 void CE2MaterialDB::ComponentInfo::readTextureFile(
     ComponentInfo& p, bool isDiff)
 {
-  if (p.componentType == CDBFile::String_BSMaterial_TextureFile) [[likely]]
+  if (p.componentType == BSReflStream::String_BSMaterial_TextureFile) [[likely]]
   {
     readMRTextureFile(p, isDiff);
     return;
   }
-  if (p.componentType != CDBFile::String_BSMaterial_DecalSettingsComponent)
+  if (p.componentType != BSReflStream::String_BSMaterial_DecalSettingsComponent)
     return;
   CE2Material::DecalSettings  *sp = nullptr;
   if (p.o->type == 1) [[likely]]
@@ -2887,7 +2888,8 @@ void CE2MaterialDB::ComponentInfo::readChannel(
     if (!p.readEnum(tmp, "\004Zero\003One\003Two\005Three"))
       break;
     if (p.o->type == 6 &&
-        p.componentType == CDBFile::String_BSMaterial_Channel && tmp != 0xFF)
+        p.componentType == BSReflStream::String_BSMaterial_Channel &&
+        tmp != 0xFF)
     {
       static_cast< CE2Material::UVStream * >(p.o)->channel = tmp;
     }
@@ -3109,7 +3111,8 @@ void CE2MaterialDB::ComponentInfo::readMipBiasSetting(
 const CE2MaterialDB::ComponentInfo::ReadFunctionType
     CE2MaterialDB::ComponentInfo::readFunctionTable[128] =
 {
-  // indexed by string ID (returned by CDBFile::getClassName(strtOffs)) - 128
+  // indexed by string ID
+  // (returned by BSReflStream::getClassName(strtOffs)) - 128
   (ReadFunctionType) 0,         // "BSBind::ColorLerpController"
   (ReadFunctionType) 0,         // "BSBind::ComponentProperty"
   &readControllerComponent,     // "BSBind::ControllerComponent"

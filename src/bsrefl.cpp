@@ -1,24 +1,24 @@
 
 #include "common.hpp"
-#include "cdb_file.hpp"
+#include "bsrefl.hpp"
 
-void CDBFile::readStringTable()
+void BSReflStream::readStringTable()
 {
   if (fileBufSize < 24 ||
       readUInt64() != 0x0000000848544542ULL)            // "BETH", 8
   {
-    errorMessage("invalid CDB file header");
+    errorMessage("invalid reflection stream header");
   }
   if (readUInt32Fast() != 4U)
-    errorMessage("unsupported CDB file version");
+    errorMessage("unsupported reflection stream version");
   chunksRemaining = readUInt32Fast();
   if (chunksRemaining < 2U || readUInt32Fast() != ChunkType_STRT)
-    errorMessage("missing string table in CDB file");
+    errorMessage("missing string table in reflection stream");
   chunksRemaining = chunksRemaining - 2U;
   // create string table
   unsigned int  n = readUInt32Fast();
   if ((filePos + std::uint64_t(n)) > fileBufSize)
-    errorMessage("unexpected end of CDB file");
+    errorMessage("unexpected end of reflection stream");
   stringMap.resize(n, std::int16_t(-1));
   for ( ; n; n--)
   {
@@ -27,18 +27,19 @@ void CDBFile::readStringTable()
     for ( ; readUInt8Fast(); n--)
     {
       if (!n)
-        errorMessage("string table is not terminated in CDB file");
+        errorMessage("string table is not terminated in reflection stream");
       stringMap[strtOffs] = std::int16_t(findString(s));
       if (stringMap[strtOffs] < 0)
       {
         std::fprintf(stderr,
-                     "Warning: unrecognized string in CDB file: '%s'\n", s);
+                     "Warning: unrecognized string in reflection stream: "
+                     "'%s'\n", s);
       }
     }
   }
 }
 
-int CDBFile::findString(const char *s)
+int BSReflStream::findString(const char *s)
 {
   size_t  n0 = 19;
   size_t  n2 = sizeof(stringTable) / sizeof(char *);
@@ -55,7 +56,7 @@ int CDBFile::findString(const char *s)
   return -1;
 }
 
-size_t CDBFile::findString(unsigned int strtOffs) const
+std::uint32_t BSReflStream::findString(unsigned int strtOffs) const
 {
   if (strtOffs < stringMap.size())
   {
@@ -64,10 +65,10 @@ size_t CDBFile::findString(unsigned int strtOffs) const
       return size_t(n);
   }
   unsigned int  n = strtOffs - 0xFFFFFF01U;
-  return size_t(std::min(n, 18U));
+  return std::uint32_t(std::min(n, 18U));
 }
 
-bool CDBFile::CDBChunk::readEnum(unsigned char& n, const char *t)
+bool BSReflStream::Chunk::readEnum(unsigned char& n, const char *t)
 {
   if ((filePos + 2ULL) > fileBufSize) [[unlikely]]
   {
@@ -102,7 +103,403 @@ bool CDBFile::CDBChunk::readEnum(unsigned char& n, const char *t)
   return true;
 }
 
-const char * CDBFile::stringTable[1143] =
+void BSReflDump::dumpItem(std::string& s, Chunk& chunkBuf, bool isDiff,
+                          std::uint32_t itemType, int indentCnt)
+{
+  const CDBClassDef *classDef = nullptr;
+  if (itemType > String_Unknown)
+  {
+    std::map< std::uint32_t, CDBClassDef >::const_iterator
+        i = classes.find(itemType);
+    if (i != classes.end()) [[likely]]
+      classDef = &(i->second);
+    else
+      itemType = String_Unknown;
+  }
+  if (itemType > String_Unknown)
+  {
+    printToString(s, "{\n%*s\"Data\": {", indentCnt + 1, "");
+    unsigned int  nMax = (unsigned int) classDef->fields.size();
+    bool    firstField = true;
+    if (classDef->isUser)
+    {
+      Chunk userBuf;
+      unsigned int  userChunkType = readChunk(userBuf);
+      if (userChunkType != ChunkType_USER && userChunkType != ChunkType_USRD)
+      {
+        throw FO76UtilsError("unexpected chunk type in reflection stream "
+                             "at 0x%08x", (unsigned int) getPosition());
+      }
+      isDiff = (userChunkType == ChunkType_USRD);
+      std::uint32_t className1 = findString(userBuf.readUInt32());
+      if (className1 != itemType)
+      {
+        throw FO76UtilsError("USER chunk has unexpected type at 0x%08x",
+                             (unsigned int) getPosition());
+      }
+      std::uint32_t className2 = findString(userBuf.readUInt32());
+      if (className2 == className1)
+      {
+        // no type conversion
+        nMax--;
+        for (unsigned int n = 0U - 1U;
+             userBuf.getFieldNumber(n, nMax, isDiff); )
+        {
+          printToString(s, (!firstField ? ",\n%*s\"%s\": " : "\n%*s\"%s\": "),
+                        indentCnt + 2, "",
+                        stringTable[classDef->fields[n].first]);
+          dumpItem(s, userBuf, isDiff, classDef->fields[n].second,
+                   indentCnt + 2);
+          firstField = false;
+        }
+      }
+      else if (className2 < String_Unknown)
+      {
+        unsigned int  n = 0U;
+        do
+        {
+          const char  *fieldNameStr = "null";
+          if (nMax) [[likely]]
+            fieldNameStr = stringTable[classDef->fields[n].first];
+          printToString(s, (!firstField ? ",\n%*s\"%s\": " : "\n%*s\"%s\": "),
+                        indentCnt + 2, "", fieldNameStr);
+          dumpItem(s, userBuf, isDiff, className2, indentCnt + 2);
+          firstField = false;
+          className2 = findString(userBuf.readUInt32());
+        }
+        while (++n < nMax && className2 < String_Unknown);
+      }
+    }
+    else
+    {
+      nMax--;
+      for (unsigned int n = 0U - 1U; chunkBuf.getFieldNumber(n, nMax, isDiff); )
+      {
+        printToString(s, (!firstField ? ",\n%*s\"%s\": " : "\n%*s\"%s\": "),
+                      indentCnt + 2, "",
+                      stringTable[classDef->fields[n].first]);
+        dumpItem(s, chunkBuf, isDiff, classDef->fields[n].second,
+                 indentCnt + 2);
+        firstField = false;
+      }
+    }
+    if (!s.ends_with('{'))
+      printToString(s, "\n%*s", indentCnt + 1, "");
+    printToString(s, "},\n%*s\"Type\": \"%s\"\n",
+                  indentCnt + 1, "", stringTable[itemType]);
+    printToString(s, "%*s}", indentCnt, "");
+    return;
+  }
+  FileBuffer& buf2 = *(static_cast< FileBuffer * >(&chunkBuf));
+  switch (itemType)
+  {
+    case String_None:
+      printToString(s, "null");
+      break;
+    case String_String:
+      {
+        unsigned int  len = buf2.readUInt16();
+        bool    endOfString = false;
+        s += '"';
+        while (len--)
+        {
+          char    c = char(buf2.readUInt8());
+          if (!endOfString)
+          {
+            if (!c)
+            {
+              endOfString = true;
+              continue;
+            }
+            if ((unsigned char) c < 0x20 || c == '"' || c == '\\')
+            {
+              s += '\\';
+              switch (c)
+              {
+                case '\b':
+                  c = 'b';
+                  break;
+                case '\t':
+                  c = 't';
+                  break;
+                case '\n':
+                  c = 'n';
+                  break;
+                case '\f':
+                  c = 'f';
+                  break;
+                case '\r':
+                  c = 'r';
+                  break;
+                default:
+                  if ((unsigned char) c < 0x20)
+                  {
+                    printToString(s, "u%04X", (unsigned int) c);
+                    continue;
+                  }
+                  break;
+              }
+            }
+            s += c;
+          }
+        }
+        s += '"';
+      }
+      break;
+    case String_List:
+      {
+        Chunk listBuf;
+        unsigned int  chunkType = readChunk(listBuf);
+        if (chunkType != ChunkType_LIST)
+        {
+          throw FO76UtilsError("unexpected chunk type in reflection stream "
+                               "at 0x%08x", (unsigned int) getPosition());
+        }
+        std::uint32_t elementType = findString(listBuf.readUInt32());
+        std::uint32_t listSize = 0U;
+        if ((listBuf.getPosition() + 4ULL) <= listBuf.size())
+          listSize = listBuf.readUInt32();
+        printToString(s, "{\n%*s\"Data\": [", indentCnt + 1, "");
+        for (std::uint32_t i = 0U; i < listSize; i++)
+        {
+          printToString(s, "\n%*s", indentCnt + 2, "");
+          dumpItem(s, listBuf, isDiff, elementType, indentCnt + 2);
+          if ((i + 1U) < listSize)
+            printToString(s, ",");
+          else
+            printToString(s, "\n%*s", indentCnt + 1, "");
+        }
+        printToString(s, "],\n");
+        if (listSize)
+        {
+          const char  *elementTypeStr = stringTable[elementType];
+          if (elementType && elementType < String_Ref)
+          {
+            elementTypeStr = (elementType == String_String ?
+                              "BSFixedString" : "<collection>");
+          }
+          printToString(s, "%*s\"ElementType\": \"%s\",\n",
+                        indentCnt + 1, "", elementTypeStr);
+        }
+        printToString(s, "%*s\"Type\": \"<collection>\"\n", indentCnt + 1, "");
+        printToString(s, "%*s}", indentCnt, "");
+      }
+      break;
+    case String_Map:
+      {
+        Chunk mapBuf;
+        unsigned int  chunkType = readChunk(mapBuf);
+        if (chunkType != ChunkType_MAPC)
+        {
+          throw FO76UtilsError("unexpected chunk type in reflection stream "
+                               "at 0x%08x", (unsigned int) getPosition());
+        }
+        std::uint32_t keyClassName = findString(mapBuf.readUInt32());
+        std::uint32_t valueClassName = findString(mapBuf.readUInt32());
+        std::uint32_t mapSize = 0U;
+        if ((mapBuf.getPosition() + 4ULL) <= mapBuf.size())
+          mapSize = mapBuf.readUInt32();
+        printToString(s, "{\n%*s\"Data\": [", indentCnt + 1, "");
+        for (std::uint32_t i = 0U; i < mapSize; i++)
+        {
+          printToString(s, "\n%*s{", indentCnt + 2, "");
+          printToString(s, "\n%*s\"Data\": {", indentCnt + 3, "");
+          printToString(s, "\n%*s\"Key\": ", indentCnt + 4, "");
+          dumpItem(s, mapBuf, false, keyClassName, indentCnt + 4);
+          printToString(s, ",\n%*s\"Value\": ", indentCnt + 4, "");
+          dumpItem(s, mapBuf, isDiff, valueClassName, indentCnt + 4);
+          printToString(s, "\n%*s},", indentCnt + 3, "");
+          printToString(s, "\n%*s\"Type\": \"StdMapType::Pair\"\n",
+                        indentCnt + 3, "");
+          printToString(s, "%*s}", indentCnt + 2, "");
+          if ((i + 1U) < mapSize)
+            printToString(s, ",");
+          else
+            printToString(s, "\n%*s", indentCnt + 1, "");
+        }
+        printToString(s, "],\n%*s\"ElementType\": \"StdMapType::Pair\",\n",
+                      indentCnt + 1, "");
+        printToString(s, "%*s\"Type\": \"<collection>\"\n", indentCnt + 1, "");
+        printToString(s, "%*s}", indentCnt, "");
+      }
+      break;
+    case String_Ref:
+      {
+        std::uint32_t refType = findString(buf2.readUInt32());
+        printToString(s, "{\n%*s\"Data\": ", indentCnt + 1, "");
+        dumpItem(s, chunkBuf, isDiff, refType, indentCnt + 1);
+        printToString(s, ",\n%*s\"Type\": \"<ref>\"\n", indentCnt + 1, "");
+        printToString(s, "%*s}", indentCnt, "");
+      }
+      break;
+    case String_Int8:
+      printToString(s, "%d", int(std::int8_t(buf2.readUInt8())));
+      break;
+    case String_UInt8:
+      printToString(s, "%u", (unsigned int) buf2.readUInt8());
+      break;
+    case String_Int16:
+      printToString(s, "%d", int(std::int16_t(buf2.readUInt16())));
+      break;
+    case String_UInt16:
+      printToString(s, "%u", (unsigned int) buf2.readUInt16());
+      break;
+    case String_Int32:
+      printToString(s, "%d", int(buf2.readInt32()));
+      break;
+    case String_UInt32:
+      printToString(s, "%u", (unsigned int) buf2.readUInt32());
+      break;
+    case String_Int64:
+      printToString(s, "\"%lld\"", (long long) std::int64_t(buf2.readUInt64()));
+      break;
+    case String_UInt64:
+      printToString(s, "\"%llu\"", (unsigned long long) buf2.readUInt64());
+      break;
+    case String_Bool:
+      printToString(s, "%s", (!buf2.readUInt8() ? "false" : "true"));
+      break;
+    case String_Float:
+      printToString(s, "%.7g", buf2.readFloat());
+      break;
+    case String_Double:
+      // FIXME: implement this in a portable way
+      printToString(s, "%.14g",
+                    std::bit_cast< double, std::uint64_t >(buf2.readUInt64()));
+      break;
+    default:
+      printToString(s, "<unknown>");
+      chunkBuf.setPosition(chunkBuf.size());
+      break;
+  }
+}
+
+void BSReflDump::readAllChunks(std::string& s, int indentCnt, bool verboseMode)
+{
+  Chunk   chunkBuf;
+  unsigned int  chunkType;
+  bool    isArray = false;
+  bool    firstObject = true;
+  size_t  objectCnt = 0;
+  for (size_t i = filePos; (i + 8ULL) <= fileBufSize; )
+  {
+    chunkType = FileBuffer::readUInt32Fast(fileBuf + i);
+    size_t  chunkSize = FileBuffer::readUInt32Fast(fileBuf + (i + 4));
+    if (chunkType == ChunkType_DIFF || chunkType == ChunkType_OBJT ||
+        (verboseMode && chunkType == ChunkType_CLAS))
+    {
+      if (++objectCnt > 1)
+      {
+        isArray = true;
+        break;
+      }
+    }
+    if ((i + (std::uint64_t(chunkSize) + 8ULL)) >= fileBufSize)
+      break;
+    i = i + (chunkSize + 8);
+  }
+  if (isArray)
+  {
+    indentCnt++;
+    printToString(s, "{ \"Objects\": [\n%*s", indentCnt, "");
+  }
+  while ((chunkType = readChunk(chunkBuf)) != 0U)
+  {
+    if (chunkType == ChunkType_CLAS)
+    {
+      std::uint32_t className = findString(chunkBuf.readUInt32());
+      if (className < String_Unknown)
+        errorMessage("invalid class ID in reflection stream");
+      unsigned int  classVersion = chunkBuf.readUInt32();
+      unsigned int  classFlags = chunkBuf.readUInt16();
+      (void) chunkBuf.readUInt16();     // number of fields
+      unsigned int  fieldCnt = 0U;
+      if (verboseMode)
+      {
+        if (!firstObject)
+          printToString(s, ",\n%*s", indentCnt, "");
+        firstObject = false;
+        printToString(s, "{\n%*s\"Fields\": [", indentCnt + 1, "");
+      }
+      CDBClassDef&  classDef = classes[className];
+      classDef.isUser = bool(classFlags & 4U);
+      for ( ; (chunkBuf.getPosition() + 12ULL) <= chunkBuf.size(); fieldCnt++)
+      {
+        std::uint32_t fieldName = findString(chunkBuf.readUInt32Fast());
+        if (fieldName < String_Unknown)
+        {
+          errorMessage("invalid field name in class definition "
+                       "in reflection stream");
+        }
+        std::uint32_t fieldType = findString(chunkBuf.readUInt32Fast());
+        unsigned int  dataOffset = chunkBuf.readUInt16Fast();
+        unsigned int  dataSize = chunkBuf.readUInt16Fast();
+        if (verboseMode)
+        {
+          printToString(s, (!fieldCnt ? "\n%*s" : ",\n%*s"), indentCnt + 2, "");
+          printToString(s, "{\n%*s\"Name\": \"%s\",",
+                        indentCnt + 3, "", stringTable[fieldName]);
+          printToString(s, "\n%*s\"Offset\": %u,",
+                        indentCnt + 3, "", dataOffset);
+          printToString(s, "\n%*s\"Size\": %u,", indentCnt + 3, "", dataSize);
+          printToString(s, "\n%*s\"Type\": \"%s\"",
+                        indentCnt + 3, "", stringTable[fieldType]);
+          printToString(s, "\n%*s}", indentCnt + 2, "");
+        }
+        classDef.fields.emplace_back(fieldName, fieldType);
+      }
+      if (verboseMode)
+      {
+        if (fieldCnt)
+          printToString(s, "\n%*s", indentCnt + 1, "");
+        printToString(s, "],\n%*s\"Flags\": %u,",
+                      indentCnt + 1, "", classFlags);
+        printToString(s, "\n%*s\"Name\": \"%s\",",
+                      indentCnt + 1, "", stringTable[className]);
+        printToString(s, "\n%*s\"Type\": \"<class>\",", indentCnt + 1, "");
+        printToString(s, "\n%*s\"Version\": %u",
+                      indentCnt + 1, "", classVersion);
+        printToString(s, "\n%*s}", indentCnt, "");
+      }
+      continue;
+    }
+    if (chunkType == ChunkType_DIFF || chunkType == ChunkType_OBJT) [[likely]]
+    {
+      if (!firstObject)
+        printToString(s, ",\n%*s", indentCnt, "");
+      std::uint32_t className = findString(chunkBuf.readUInt32());
+      bool    isDiff = (chunkType == ChunkType_DIFF);
+      dumpItem(s, chunkBuf, isDiff, className, indentCnt);
+      firstObject = false;
+      continue;
+    }
+    if (chunkType != ChunkType_TYPE)
+    {
+      throw FO76UtilsError("unexpected reflection stream chunk type 0x%08X",
+                           chunkType);
+    }
+  }
+  if (!firstObject)
+    printToString(s, "\n");
+  if (isArray)
+  {
+    indentCnt--;
+    if (s.ends_with('\n'))
+      printToString(s, "%*s] }\n", indentCnt, "");
+    else
+      printToString(s, "] }\n");
+  }
+  bool    isIndent = true;
+  for (size_t i = 0; i < s.length(); i++)
+  {
+    if (s[i] == ' ' && isIndent)
+      s[i] = '\t';
+    else
+      isIndent = (s[i] == '\n');
+  }
+}
+
+const char * BSReflStream::stringTable[1143] =
 {
   "null",                                               //    0
   "String",                                             //    1

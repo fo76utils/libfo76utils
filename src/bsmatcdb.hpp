@@ -1,13 +1,29 @@
 
-#ifndef MAT_JSON_HPP_INCLUDED
-#define MAT_JSON_HPP_INCLUDED
+#ifndef BSMATCDB_HPP_INCLUDED
+#define BSMATCDB_HPP_INCLUDED
 
 #include "common.hpp"
 #include "filebuf.hpp"
-#include "cdb_file.hpp"
+#include "bsrefl.hpp"
 
-class CDBMaterialToJSON : public CDBFile
+class BSMaterialsCDB : public BSReflStream
 {
+ public:
+  struct BSResourceID
+  {
+    std::uint32_t dir;
+    std::uint32_t file;
+    std::uint32_t ext;
+    inline BSResourceID()
+    {
+    }
+    BSResourceID(const std::string& fileName);
+    inline bool operator<(const BSResourceID& r) const
+    {
+      return (dir < r.dir || (dir == r.dir && file < r.file) ||
+              (dir == r.dir && file == r.file && ext < r.ext));
+    }
+  };
  protected:
   struct CDBClassDef
   {
@@ -35,21 +51,6 @@ class CDBMaterialToJSON : public CDBFile
       const char    *stringValue;
     }
     data;
-  };
-  struct BSResourceID
-  {
-    std::uint32_t dir;
-    std::uint32_t file;
-    std::uint32_t ext;
-    inline BSResourceID()
-    {
-    }
-    BSResourceID(const std::string& fileName);
-    inline bool operator<(const BSResourceID& r) const
-    {
-      return (dir < r.dir || (dir == r.dir && file < r.file) ||
-              (dir == r.dir && file == r.file && ext < r.ext));
-    }
   };
   struct MaterialComponent
   {
@@ -88,23 +89,23 @@ class CDBMaterialToJSON : public CDBFile
                             size_t elementCnt = 0);
   void copyObject(CDBObject*& o);
   void copyBaseObject(MaterialObject& o);
-  void loadItem(CDBObject*& o, CDBChunk& chunkBuf, bool isDiff,
+  void loadItem(CDBObject*& o, Chunk& chunkBuf, bool isDiff,
                 std::uint32_t itemType);
   void readAllChunks();
   void dumpObject(std::string& s, const CDBObject *o, int indentCnt) const;
  public:
-  CDBMaterialToJSON(const unsigned char *fileData, size_t fileSize)
-    : CDBFile(fileData, fileSize)
+  BSMaterialsCDB(const unsigned char *fileData, size_t fileSize)
+    : BSReflStream(fileData, fileSize)
   {
     readAllChunks();
   }
-  CDBMaterialToJSON(const char *fileName)
-    : CDBFile(fileName)
+  BSMaterialsCDB(const char *fileName)
+    : BSReflStream(fileName)
   {
     readAllChunks();
   }
-  void dumpMaterial(std::string& jsonBuf,
-                    const std::string& materialPath) const;
+  void getJSONMaterial(std::string& jsonBuf,
+                       const std::string& materialPath) const;
 };
 
 #endif

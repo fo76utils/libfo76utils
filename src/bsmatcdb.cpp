@@ -1,8 +1,8 @@
 
 #include "common.hpp"
-#include "mat_json.hpp"
+#include "bsmatcdb.hpp"
 
-CDBMaterialToJSON::BSResourceID::BSResourceID(const std::string& fileName)
+BSMaterialsCDB::BSResourceID::BSResourceID(const std::string& fileName)
 {
   size_t  baseNamePos = fileName.rfind('/');
   size_t  baseNamePos2 = fileName.rfind('\\');
@@ -57,7 +57,7 @@ CDBMaterialToJSON::BSResourceID::BSResourceID(const std::string& fileName)
   file = file | ((file >> 1) & 0x20202020U);
 }
 
-CDBMaterialToJSON::MaterialComponent& CDBMaterialToJSON::findComponent(
+BSMaterialsCDB::MaterialComponent& BSMaterialsCDB::findComponent(
     MaterialObject& o, std::uint32_t name, std::uint32_t index)
 {
   std::uint32_t key = (name << 16) | index;
@@ -88,8 +88,8 @@ CDBMaterialToJSON::MaterialComponent& CDBMaterialToJSON::findComponent(
   return *p;
 }
 
-inline const CDBMaterialToJSON::MaterialObject *
-    CDBMaterialToJSON::findObject(std::uint32_t dbID) const
+inline const BSMaterialsCDB::MaterialObject *
+    BSMaterialsCDB::findObject(std::uint32_t dbID) const
 {
   if (!dbID) [[unlikely]]
     return nullptr;
@@ -108,14 +108,14 @@ inline const CDBMaterialToJSON::MaterialObject *
   return nullptr;
 }
 
-inline CDBMaterialToJSON::MaterialObject *
-    CDBMaterialToJSON::findObject(std::uint32_t dbID)
+inline BSMaterialsCDB::MaterialObject *
+    BSMaterialsCDB::findObject(std::uint32_t dbID)
 {
-  const CDBMaterialToJSON *p = this;
+  const BSMaterialsCDB *p = this;
   return const_cast< MaterialObject * >(p->findObject(dbID));
 }
 
-void * CDBMaterialToJSON::allocateSpace(size_t nBytes, size_t alignBytes)
+void * BSMaterialsCDB::allocateSpace(size_t nBytes, size_t alignBytes)
 {
   std::uintptr_t  addr0 =
       reinterpret_cast< std::uintptr_t >(objectBuffers.back().data());
@@ -140,7 +140,7 @@ void * CDBMaterialToJSON::allocateSpace(size_t nBytes, size_t alignBytes)
   return p;
 }
 
-CDBMaterialToJSON::CDBObject * CDBMaterialToJSON::allocateObject(
+BSMaterialsCDB::CDBObject * BSMaterialsCDB::allocateObject(
     std::uint32_t itemType, const CDBClassDef *classDef, size_t elementCnt)
 {
   size_t  dataSize = sizeof(CDBObject);
@@ -174,7 +174,7 @@ CDBMaterialToJSON::CDBObject * CDBMaterialToJSON::allocateObject(
   return o;
 }
 
-void CDBMaterialToJSON::copyObject(CDBObject*& o)
+void BSMaterialsCDB::copyObject(CDBObject*& o)
 {
   if (!o)
     return;
@@ -190,7 +190,7 @@ void CDBMaterialToJSON::copyObject(CDBObject*& o)
     copyObject(p->data.children[i]);
 }
 
-void CDBMaterialToJSON::copyBaseObject(MaterialObject& o)
+void BSMaterialsCDB::copyBaseObject(MaterialObject& o)
 {
   if (isRootObject(o.baseObject))
     return;
@@ -219,8 +219,8 @@ void CDBMaterialToJSON::copyBaseObject(MaterialObject& o)
   }
 }
 
-void CDBMaterialToJSON::loadItem(CDBObject*& o, CDBChunk& chunkBuf, bool isDiff,
-                                 std::uint32_t itemType)
+void BSMaterialsCDB::loadItem(CDBObject*& o, Chunk& chunkBuf, bool isDiff,
+                              std::uint32_t itemType)
 {
   const CDBClassDef *classDef = nullptr;
   if (itemType > String_Unknown)
@@ -242,7 +242,7 @@ void CDBMaterialToJSON::loadItem(CDBObject*& o, CDBChunk& chunkBuf, bool isDiff,
     unsigned int  nMax = (unsigned int) classDef->fields.size();
     if (classDef->isUser)
     {
-      CDBChunk  userBuf;
+      Chunk userBuf;
       unsigned int  userChunkType = readChunk(userBuf);
       if (userChunkType != ChunkType_USER && userChunkType != ChunkType_USRD)
       {
@@ -250,15 +250,13 @@ void CDBMaterialToJSON::loadItem(CDBObject*& o, CDBChunk& chunkBuf, bool isDiff,
                              (unsigned int) getPosition());
       }
       isDiff = (userChunkType == ChunkType_USRD);
-      std::uint32_t className1 =
-          std::uint32_t(findString(userBuf.readUInt32()));
+      std::uint32_t className1 = findString(userBuf.readUInt32());
       if (className1 != itemType)
       {
         throw FO76UtilsError("USER chunk has unexpected type at 0x%08x",
                              (unsigned int) getPosition());
       }
-      std::uint32_t className2 =
-          std::uint32_t(findString(userBuf.readUInt32()));
+      std::uint32_t className2 = findString(userBuf.readUInt32());
       if (className2 == className1)
       {
         // no type conversion
@@ -281,7 +279,7 @@ void CDBMaterialToJSON::loadItem(CDBObject*& o, CDBChunk& chunkBuf, bool isDiff,
         do
         {
           loadItem(o->data.children[n], userBuf, isDiff, className2);
-          className2 = std::uint32_t(findString(userBuf.readUInt32()));
+          className2 = findString(userBuf.readUInt32());
         }
         while (++n < nMax && className2 < String_Unknown);
       }
@@ -316,7 +314,7 @@ void CDBMaterialToJSON::loadItem(CDBObject*& o, CDBChunk& chunkBuf, bool isDiff,
     case String_List:
     case String_Map:
       {
-        CDBChunk  listBuf;
+        Chunk listBuf;
         unsigned int  chunkType = readChunk(listBuf);
         bool    isMap = (itemType == String_Map);
         if (chunkType != (!isMap ? ChunkType_LIST : ChunkType_MAPC))
@@ -325,10 +323,10 @@ void CDBMaterialToJSON::loadItem(CDBObject*& o, CDBChunk& chunkBuf, bool isDiff,
                                (unsigned int) getPosition());
         }
         std::uint32_t classNames[2];
-        classNames[0] = std::uint32_t(findString(listBuf.readUInt32()));
+        classNames[0] = findString(listBuf.readUInt32());
         classNames[1] = classNames[0];
         if (isMap)
-          classNames[1] = std::uint32_t(findString(listBuf.readUInt32()));
+          classNames[1] = findString(listBuf.readUInt32());
         std::uint32_t listSize = 0U;
         if ((listBuf.getPosition() + 4ULL) <= listBuf.size())
           listSize = listBuf.readUInt32();
@@ -390,7 +388,7 @@ void CDBMaterialToJSON::loadItem(CDBObject*& o, CDBChunk& chunkBuf, bool isDiff,
       break;
     case String_Ref:
       {
-        std::uint32_t refType = std::uint32_t(findString(buf2.readUInt32()));
+        std::uint32_t refType = findString(buf2.readUInt32());
         loadItem(o->data.children[0], chunkBuf, isDiff, refType);
         return;
       }
@@ -436,12 +434,12 @@ void CDBMaterialToJSON::loadItem(CDBObject*& o, CDBChunk& chunkBuf, bool isDiff,
   }
 }
 
-void CDBMaterialToJSON::readAllChunks()
+void BSMaterialsCDB::readAllChunks()
 {
   objectBuffers.emplace_back();
   objectBuffers.back().reserve(65536);
   std::vector< std::pair< std::uint32_t, std::uint32_t > >  componentInfo;
-  CDBChunk  chunkBuf;
+  Chunk chunkBuf;
   unsigned int  chunkType;
   size_t  componentID = 0;
   size_t  componentCnt = 0;
@@ -449,8 +447,7 @@ void CDBMaterialToJSON::readAllChunks()
   {
     if (chunkType == ChunkType_CLAS)
     {
-      std::uint32_t className =
-          std::uint32_t(findString(chunkBuf.readUInt32()));
+      std::uint32_t className = findString(chunkBuf.readUInt32());
       if (className < String_Unknown)
         errorMessage("invalid class ID in CDB file");
       if (className == String_Unknown)
@@ -462,12 +459,10 @@ void CDBMaterialToJSON::readAllChunks()
       classDef.isUser = bool(classFlags & 4U);
       while ((chunkBuf.getPosition() + 12ULL) <= chunkBuf.size())
       {
-        std::uint32_t fieldName =
-            std::uint32_t(findString(chunkBuf.readUInt32Fast()));
+        std::uint32_t fieldName = findString(chunkBuf.readUInt32Fast());
         if (fieldName < String_Unknown)
           errorMessage("invalid field name in class definition in CDB file");
-        std::uint32_t fieldType =
-            std::uint32_t(findString(chunkBuf.readUInt32Fast()));
+        std::uint32_t fieldType = findString(chunkBuf.readUInt32Fast());
         (void) chunkBuf.readUInt16Fast();       // dataOffset
         (void) chunkBuf.readUInt16Fast();       // dataSize
         classDef.fields.emplace_back(fieldName, fieldType);
@@ -476,7 +471,7 @@ void CDBMaterialToJSON::readAllChunks()
     }
     std::uint32_t className = String_None;
     if (chunkType != ChunkType_TYPE && chunkBuf.size() >= 4) [[likely]]
-      className = std::uint32_t(findString(chunkBuf.readUInt32Fast()));
+      className = findString(chunkBuf.readUInt32Fast());
     if (chunkType == ChunkType_DIFF || chunkType == ChunkType_OBJT) [[likely]]
     {
       bool    isDiff = (chunkType == ChunkType_DIFF);
@@ -588,7 +583,7 @@ void CDBMaterialToJSON::readAllChunks()
   }
 }
 
-void CDBMaterialToJSON::dumpObject(
+void BSMaterialsCDB::dumpObject(
     std::string& s, const CDBObject *o, int indentCnt) const
 {
   if (!o)
@@ -786,7 +781,7 @@ void CDBMaterialToJSON::dumpObject(
   }
 }
 
-void CDBMaterialToJSON::dumpMaterial(
+void BSMaterialsCDB::getJSONMaterial(
     std::string& jsonBuf, const std::string& materialPath) const
 {
   jsonBuf.clear();
