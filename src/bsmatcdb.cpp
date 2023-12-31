@@ -2,6 +2,11 @@
 #include "common.hpp"
 #include "bsmatcdb.hpp"
 
+#define CDB_OBJ_SORT_BY_DBID    1
+#define CDB_COMP_SORT_BY_NAME   1
+#define CDB_JSON_QUOTE_NUMBERS  0
+#define CDB_CHILD_RES_ID_ONLY   0
+
 BSMaterialsCDB::BSResourceID::BSResourceID(const std::string& fileName)
 {
   size_t  baseNamePos = fileName.rfind('/');
@@ -58,27 +63,19 @@ BSMaterialsCDB::BSResourceID::BSResourceID(const std::string& fileName)
 }
 
 BSMaterialsCDB::MaterialComponent& BSMaterialsCDB::findComponent(
-    MaterialObject& o, std::uint32_t name, std::uint32_t index)
+    MaterialObject& o, std::uint32_t key, std::uint32_t className)
 {
-  std::uint32_t key = (name << 16) | index;
   MaterialComponent *prv = nullptr;
   MaterialComponent *i = o.components;
   for ( ; i && i->key < key; i = i->next)
     prv = i;
   if (i && i->key == key)
-  {
-    if (i->usesBaseObject)
-    {
-      copyObject(i->o);
-      i->usesBaseObject = false;
-    }
     return *i;
-  }
   MaterialComponent *p =
       reinterpret_cast< MaterialComponent * >(
           allocateSpace(sizeof(MaterialComponent), alignof(MaterialComponent)));
   p->key = key;
-  p->usesBaseObject = false;
+  p->className = className;
   p->o = nullptr;
   p->next = i;
   if (!prv)
@@ -91,21 +88,9 @@ BSMaterialsCDB::MaterialComponent& BSMaterialsCDB::findComponent(
 inline const BSMaterialsCDB::MaterialObject *
     BSMaterialsCDB::findObject(std::uint32_t dbID) const
 {
-  if (!dbID) [[unlikely]]
+  if (!dbID || dbID >= objectTableSize) [[unlikely]]
     return nullptr;
-  std::uint32_t h = 0xFFFFFFFFU;
-  hashFunctionCRC32C< std::uint32_t >(h, dbID);
-  size_t  m = objectsHashMap.size() - 2;
-  size_t  k = h & m;
-  while (true)
-  {
-    if (objectsHashMap[k] == dbID) [[likely]]
-      return (objects.data() + objectsHashMap[k + 1]);
-    if (!objectsHashMap[k])
-      break;
-    k = (k + 2) & m;
-  }
-  return nullptr;
+  return objectTablePtr[dbID];
 }
 
 inline BSMaterialsCDB::MaterialObject *
@@ -128,8 +113,7 @@ void * BSMaterialsCDB::allocateSpace(size_t nBytes, size_t alignBytes)
   if ((endAddr - addr) < bytesRequired) [[unlikely]]
   {
     std::uintptr_t  bufBytes = 65536U;
-    if (bytesRequired > bufBytes)
-      throw std::bad_alloc();
+    bufBytes = std::max(bufBytes, bytesRequired);
     objectBuffers.emplace_back();
     objectBuffers.back().reserve(size_t(bufBytes));
     addr0 = reinterpret_cast< std::uintptr_t >(objectBuffers.back().data());
@@ -150,13 +134,14 @@ BSMaterialsCDB::CDBObject * BSMaterialsCDB::allocateObject(
   else if (itemType == String_Ref)
     childCnt = 1;
   else if (classDef)
-    childCnt = classDef->fields.size();
+    childCnt = classDef->fieldCnt;
   if (childCnt > 1)
     dataSize += ((childCnt - 1) * sizeof(CDBObject *));
   CDBObject *o =
       reinterpret_cast< CDBObject * >(allocateSpace(dataSize,
                                                     alignof(CDBObject)));
-  o->type = itemType;
+  o->type = std::uint16_t(itemType);
+  o->refCnt = 0;
   o->childCnt = std::uint32_t(childCnt);
   if (childCnt)
   {
@@ -178,29 +163,15 @@ void BSMaterialsCDB::copyObject(CDBObject*& o)
 {
   if (!o)
     return;
-  size_t  dataSize = sizeof(CDBObject);
-  if (o->childCnt > 1)
-    dataSize += ((o->childCnt - 1) * sizeof(CDBObject *));
-  CDBObject *p =
-      reinterpret_cast< CDBObject * >(allocateSpace(dataSize,
-                                                    alignof(CDBObject)));
-  std::memcpy(p, o, dataSize);
-  o = p;
-  for (std::uint32_t i = 0U; i < p->childCnt; i++)
-    copyObject(p->data.children[i]);
+  o->refCnt++;
+  for (std::uint32_t i = 0U; i < o->childCnt; i++)
+    copyObject(o->data.children[i]);
 }
 
 void BSMaterialsCDB::copyBaseObject(MaterialObject& o)
 {
-  if (isRootObject(o.baseObject))
-    return;
-  MaterialObject  *p = findObject(o.baseObject);
-  if (!p)
-  {
-    o.baseObject = 0U;
-    return;
-  }
-  if (!isRootObject(p->baseObject))
+  MaterialObject  *p = const_cast< MaterialObject * >(o.baseObject);
+  if (p->baseObject->baseObject)
     copyBaseObject(*p);
   o.baseObject = p->baseObject;
   o.components = nullptr;
@@ -211,8 +182,9 @@ void BSMaterialsCDB::copyBaseObject(MaterialObject& o)
                                  allocateSpace(sizeof(MaterialComponent),
                                                alignof(MaterialComponent)));
     tmp->key = i->key;
-    tmp->usesBaseObject = true;
+    tmp->className = i->className;
     tmp->o = i->o;
+    copyObject(tmp->o);
     tmp->next = nullptr;
     *prv = tmp;
     prv = &(tmp->next);
@@ -222,14 +194,24 @@ void BSMaterialsCDB::copyBaseObject(MaterialObject& o)
 void BSMaterialsCDB::loadItem(CDBObject*& o, Chunk& chunkBuf, bool isDiff,
                               std::uint32_t itemType)
 {
+  if (o && o->refCnt)
+  {
+    o->refCnt--;
+    size_t  dataSize = sizeof(CDBObject);
+    if (o->childCnt > 1)
+      dataSize += ((o->childCnt - 1) * sizeof(CDBObject *));
+    CDBObject *p =
+        reinterpret_cast< CDBObject * >(
+            allocateSpace(dataSize, alignof(CDBObject)));
+    std::memcpy(p, o, dataSize);
+    o = p;
+    o->refCnt = 0;
+  }
   const CDBClassDef *classDef = nullptr;
   if (itemType > String_Unknown)
   {
-    std::map< std::uint32_t, CDBClassDef >::const_iterator
-        i = classes.find(itemType);
-    if (i != classes.end()) [[likely]]
-      classDef = &(i->second);
-    else
+    classDef = getClassDef(itemType);
+    if (!classDef)
       itemType = String_Unknown;
   }
   if (!(o && o->type == itemType))
@@ -239,8 +221,8 @@ void BSMaterialsCDB::loadItem(CDBObject*& o, Chunk& chunkBuf, bool isDiff,
   }
   if (itemType > String_Unknown)
   {
-    unsigned int  nMax = (unsigned int) classDef->fields.size();
-    if (classDef->isUser)
+    unsigned int  nMax = classDef->fieldCnt;
+    if (classDef->isUser) [[unlikely]]
     {
       Chunk userBuf;
       unsigned int  userChunkType = readChunk(userBuf);
@@ -265,7 +247,7 @@ void BSMaterialsCDB::loadItem(CDBObject*& o, Chunk& chunkBuf, bool isDiff,
              userBuf.getFieldNumber(n, nMax, isDiff); )
         {
           loadItem(o->data.children[n], userBuf, isDiff,
-                   classDef->fields[n].second);
+                   classDef->fields[n].type);
         }
       }
       else if (className2 < String_Unknown)
@@ -283,16 +265,26 @@ void BSMaterialsCDB::loadItem(CDBObject*& o, Chunk& chunkBuf, bool isDiff,
         }
         while (++n < nMax && className2 < String_Unknown);
       }
+      return;
     }
-    else
+    nMax--;
+    if (itemType == String_BSComponentDB2_ID) [[unlikely]]
     {
-      nMax--;
-      for (unsigned int n = 0U - 1U; chunkBuf.getFieldNumber(n, nMax, isDiff); )
+      if (!nMax && classDef->fields[0].type == String_UInt32)
       {
-        loadItem(o->data.children[n], chunkBuf, isDiff,
-                 classDef->fields[n].second);
+        std::uint32_t objectID = 0U;
+        for (unsigned int n = 0U - 1U; chunkBuf.getFieldNumber(n, 0U, isDiff); )
+        {
+          if (!chunkBuf.readUInt32(objectID))
+            break;
+        }
+        o->childCnt = 0;
+        o->data.objectPtr = findObject(objectID);
+        return;
       }
     }
+    for (unsigned int n = 0U - 1U; chunkBuf.getFieldNumber(n, nMax, isDiff); )
+      loadItem(o->data.children[n], chunkBuf, isDiff, classDef->fields[n].type);
     return;
   }
   FileBuffer& buf2 = *(static_cast< FileBuffer * >(&chunkBuf));
@@ -438,37 +430,15 @@ void BSMaterialsCDB::readAllChunks()
 {
   objectBuffers.emplace_back();
   objectBuffers.back().reserve(65536);
+  std::vector< MaterialObject * > objectTable;
   std::vector< std::pair< std::uint32_t, std::uint32_t > >  componentInfo;
   Chunk chunkBuf;
   unsigned int  chunkType;
   size_t  componentID = 0;
   size_t  componentCnt = 0;
+  size_t  classCnt = 0;
   while ((chunkType = readChunk(chunkBuf)) != 0U)
   {
-    if (chunkType == ChunkType_CLAS)
-    {
-      std::uint32_t className = findString(chunkBuf.readUInt32());
-      if (className < String_Unknown)
-        errorMessage("invalid class ID in CDB file");
-      if (className == String_Unknown)
-        continue;
-      (void) chunkBuf.readUInt32();     // classVersion
-      unsigned int  classFlags = chunkBuf.readUInt16();
-      (void) chunkBuf.readUInt16();     // fieldCnt
-      CDBClassDef&  classDef = classes[className];
-      classDef.isUser = bool(classFlags & 4U);
-      while ((chunkBuf.getPosition() + 12ULL) <= chunkBuf.size())
-      {
-        std::uint32_t fieldName = findString(chunkBuf.readUInt32Fast());
-        if (fieldName < String_Unknown)
-          errorMessage("invalid field name in class definition in CDB file");
-        std::uint32_t fieldType = findString(chunkBuf.readUInt32Fast());
-        (void) chunkBuf.readUInt16Fast();       // dataOffset
-        (void) chunkBuf.readUInt16Fast();       // dataSize
-        classDef.fields.emplace_back(fieldName, fieldType);
-      }
-      continue;
-    }
     std::uint32_t className = String_None;
     if (chunkType != ChunkType_TYPE && chunkBuf.size() >= 4) [[likely]]
       className = findString(chunkBuf.readUInt32Fast());
@@ -478,17 +448,73 @@ void BSMaterialsCDB::readAllChunks()
       if (componentID < componentCnt) [[likely]]
       {
         std::uint32_t dbID = componentInfo[componentID].first;
-        std::uint32_t componentIndex = componentInfo[componentID].second;
+        std::uint32_t key = componentInfo[componentID].second;
         MaterialObject  *i = findObject(dbID);
         if (i && className > String_Unknown)
         {
-          if (!isRootObject(i->baseObject))
+          if (i->baseObject && i->baseObject->baseObject)
             copyBaseObject(*i);
-          loadItem(findComponent(*i, className, componentIndex).o,
+#if CDB_COMP_SORT_BY_NAME
+          key = (key & 0xFFFFU) | (className << 16);
+#endif
+          loadItem(findComponent(*i, key, className).o,
                    chunkBuf, isDiff, className);
         }
         componentID++;
       }
+      continue;
+    }
+    if (chunkType == ChunkType_CLAS)
+    {
+      if (className < String_Unknown)
+        errorMessage("invalid class ID in CDB file");
+      if (className == String_Unknown)
+        continue;
+      if (classCnt-- < 1)
+        errorMessage("unexpected CLAS chunk in CDB file");
+      std::uint32_t h = 0xFFFFFFFFU;
+      hashFunctionCRC32C< std::uint32_t >(h, className);
+      std::uint32_t m = std::uint32_t(classes.size() - 1);
+      for (h = h & m; classes[h].className; h = (h + 1U) & m)
+      {
+        if (classes[h].className == className)
+          break;
+      }
+      CDBClassDef&  classDef = classes[h];
+      classDef.className = className;
+      (void) chunkBuf.readUInt32();     // classVersion
+      unsigned int  classFlags = chunkBuf.readUInt16();
+      classDef.isUser = bool(classFlags & 4U);
+      classDef.fieldCnt = chunkBuf.readUInt16();
+      classDef.fields =
+          reinterpret_cast< CDBClassDef::Field * >(
+              allocateSpace(sizeof(CDBClassDef::Field) * classDef.fieldCnt,
+                            alignof(CDBClassDef::Field)));
+      for (size_t i = 0; i < classDef.fieldCnt; i++)
+      {
+        CDBClassDef::Field& f =
+            const_cast< CDBClassDef::Field * >(classDef.fields)[i];
+        f.name = findString(chunkBuf.readUInt32());
+        if (f.name < String_Unknown)
+          errorMessage("invalid field name in class definition in CDB file");
+        f.type = findString(chunkBuf.readUInt32());
+        (void) chunkBuf.readUInt16();   // dataOffset
+        (void) chunkBuf.readUInt16();   // dataSize
+      }
+      continue;
+    }
+    if (chunkType == ChunkType_TYPE) [[unlikely]]
+    {
+      classCnt = chunkBuf.readUInt32();
+      if (classCnt > 4096)
+        errorMessage("invalid number of class definitions in CDB file");
+      size_t  m = 16;
+      while (m < (classCnt << 2))
+        m = m << 1;
+      classes.clear();
+      classes.resize(m);
+      for (size_t i = 0; i < m; i++)
+        classes[i].className = 0U;
       continue;
     }
     if (chunkType != ChunkType_LIST)
@@ -500,14 +526,20 @@ void BSMaterialsCDB::readAllChunks()
     {
       if (n > ((chunkBuf.size() - chunkBuf.getPosition()) / 21))
         errorMessage("unexpected end of LIST chunk in material database");
-      size_t  m = 16;
-      while (m < (size_t(n) << 2))
-        m = m << 1;
-      objectsHashMap.clear();
-      objectsHashMap.resize(m, 0U);
-      objects.clear();
-      objects.resize(n);
-      m = m - 2;
+      const unsigned char *objectInfoPtr =
+          chunkBuf.data() + chunkBuf.getPosition();
+      std::uint32_t maxObjID = 0U;
+      for (std::uint32_t i = 0U; i < n; i++)
+      {
+        std::uint32_t dbID =
+            FileBuffer::readUInt32Fast(objectInfoPtr + (i * 21U + 12U));
+        maxObjID = std::max(maxObjID, dbID);
+      }
+      if (maxObjID > 0x007FFFFFU)
+        errorMessage("object ID is out of range in material database");
+      objectTable.resize(maxObjID + 1U, nullptr);
+      objectTablePtr = objectTable.data();
+      objectTableSize = objectTable.size();
       for (std::uint32_t i = 0U; i < n; i++)
       {
         BSResourceID  persistentID;
@@ -515,25 +547,22 @@ void BSMaterialsCDB::readAllChunks()
         persistentID.file = chunkBuf.readUInt32();
         persistentID.ext = chunkBuf.readUInt32();
         std::uint32_t dbID = chunkBuf.readUInt32();
-        if (!dbID)
+        if (!(dbID && dbID <= maxObjID))
           errorMessage("invalid object ID in material database");
-        std::uint32_t h = 0xFFFFFFFFU;
-        hashFunctionCRC32C< std::uint32_t >(h, dbID);
-        size_t  k = h & m;
-        for ( ; objectsHashMap[k]; k = (k + 2) & m)
-        {
-          if (objectsHashMap[k] == dbID)
-            errorMessage("duplicate object ID in material database");
-        }
-        objectsHashMap[k] = dbID;
-        objectsHashMap[k + 1] = i;
-        MaterialObject& o = objects[i];
-        o.persistentID = persistentID;
-        o.dbID = dbID;
-        o.baseObject = chunkBuf.readUInt32();
+        MaterialObject  *o =
+            reinterpret_cast< MaterialObject * >(
+                allocateSpace(sizeof(MaterialObject), alignof(MaterialObject)));
+        if (objectTable[dbID])
+          errorMessage("duplicate object ID in material database");
+        objectTable[dbID] = o;
+        o->persistentID = persistentID;
+        o->dbID = dbID;
+        o->baseObject = findObject(chunkBuf.readUInt32());
         (void) static_cast< FileBuffer * >(&chunkBuf)->readUInt8(); // HasData
-        o.parent = nullptr;
-        o.components = nullptr;
+        o->components = nullptr;
+        o->parent = nullptr;
+        o->children = nullptr;
+        o->next = nullptr;
       }
     }
     else if (className == String_BSComponentDB2_DBFileIndex_ComponentInfo)
@@ -543,43 +572,50 @@ void BSMaterialsCDB::readAllChunks()
       while (n--)
       {
         std::uint32_t dbID = chunkBuf.readUInt32();
-        std::uint32_t componentIndex = chunkBuf.readUInt16();
-        (void) chunkBuf.readUInt16();   // Type
-        componentInfo.emplace_back(dbID, componentIndex);
+        std::uint32_t key = chunkBuf.readUInt32();      // (type << 16) | index
+        componentInfo.emplace_back(dbID, key);
         componentCnt++;
       }
     }
     else if (className == String_BSComponentDB2_DBFileIndex_EdgeInfo)
     {
+      if (n > ((chunkBuf.size() - chunkBuf.getPosition()) / 12))
+        errorMessage("unexpected end of LIST chunk in material database");
+      const unsigned char *edgeInfoPtr =
+          chunkBuf.data() + chunkBuf.getPosition();
       while (n--)
       {
-        std::uint32_t sourceID = chunkBuf.readUInt32();
-        std::uint32_t targetID = chunkBuf.readUInt32();
-        (void) chunkBuf.readUInt16();   // Index
-        (void) chunkBuf.readUInt16();   // Type
+        // uint32_t sourceID, uint32_t targetID, uint16_t index, uint16_t type
+        std::uint32_t sourceID =
+            FileBuffer::readUInt32Fast(edgeInfoPtr + (n * 12U));
+        std::uint32_t targetID =
+            FileBuffer::readUInt32Fast(edgeInfoPtr + (n * 12U + 4U));
         MaterialObject  *o = findObject(sourceID);
         MaterialObject  *p = findObject(targetID);
         if (o && p)
+        {
+          if (o->parent)
+          {
+            throw FO76UtilsError("object 0x%08X has multiple parents in "
+                                 "material database", (unsigned int) sourceID);
+          }
           o->parent = p;
+          o->next = p->children;
+          p->children = o;
+        }
       }
     }
   }
-  for (std::vector< MaterialObject >::iterator
-           i = objects.begin(); i != objects.end(); i++)
+  for (std::vector< MaterialObject * >::iterator
+           i = objectTable.begin(); i != objectTable.end(); i++)
   {
-    MaterialObject  *p = &(*i);
-    if (!isRootObject(p->baseObject))
+    MaterialObject  *p = *i;
+    if (!p)
+      continue;
+    if (p->baseObject && p->baseObject->baseObject)
       copyBaseObject(*p);
-    while (p->parent)
-      p = const_cast< MaterialObject * >(p->parent);
-    if (p->persistentID.file == 0x0074616DU)    // "mat\0"
-      matFileObjectMap[p->persistentID].push_back(i->dbID);
-  }
-  for (std::map< BSResourceID, std::vector< std::uint32_t > >::iterator
-           i = matFileObjectMap.begin(); i != matFileObjectMap.end(); i++)
-  {
-    if (i->second.size() > 1)
-      std::sort(i->second.begin(), i->second.end());
+    if (!p->parent && p->persistentID.file == 0x0074616DU)      // "mat\0"
+      matFileObjectMap[p->persistentID] = p;
   }
 }
 
@@ -593,38 +629,35 @@ void BSMaterialsCDB::dumpObject(
   }
   if (o->type > String_Unknown)
   {
-    // structure
+    const CDBClassDef *classDef = getClassDef(o->type);
     if (o->type == String_BSComponentDB2_ID) [[unlikely]]
     {
-      const MaterialObject  *p = nullptr;
-      if (o->childCnt && o->data.children[0] &&
-          o->data.children[0]->type == String_UInt32)
+      if (classDef && classDef->fieldCnt == 1 &&
+          classDef->fields[0].type == String_UInt32)
       {
-        p = findObject(o->data.children[0]->data.uint32Value);
+        if (!o->data.objectPtr)
+        {
+          printToString(s, "\"\"");
+        }
+        else
+        {
+          printToString(s, "\"res:%08X:%08X:%08X\"",
+                        (unsigned int) o->data.objectPtr->persistentID.ext,
+                        (unsigned int) o->data.objectPtr->persistentID.dir,
+                        (unsigned int) o->data.objectPtr->persistentID.file);
+        }
+        return;
       }
-      if (!p)
-      {
-        printToString(s, "\"\"");
-      }
-      else
-      {
-        printToString(s, "\"res:%08X:%08X:%08X\"",
-                      (unsigned int) p->persistentID.ext,
-                      (unsigned int) p->persistentID.dir,
-                      (unsigned int) p->persistentID.file);
-      }
-      return;
     }
+    // structure
     printToString(s, "{\n%*s\"Data\": {", indentCnt + 2, "");
-    std::map< std::uint32_t, CDBClassDef >::const_iterator  i =
-        classes.find(o->type);
     for (std::uint32_t fieldNum = 0U; fieldNum < o->childCnt; fieldNum++)
     {
       if (!o->data.children[fieldNum])
         continue;
       const char  *fieldNameStr = "null";
-      if (i != classes.end() && fieldNum < i->second.fields.size())
-        fieldNameStr = stringTable[i->second.fields[fieldNum].first];
+      if (classDef && fieldNum < classDef->fieldCnt)
+        fieldNameStr = stringTable[classDef->fields[fieldNum].name];
       printToString(s, "\n%*s\"%s\": ", indentCnt + 4, "", fieldNameStr);
       dumpObject(s, o->data.children[fieldNum], indentCnt + 4);
       printToString(s, ",");
@@ -742,6 +775,41 @@ void BSMaterialsCDB::dumpObject(
       printToString(s, ",\n%*s\"Type\": \"<ref>\"\n", indentCnt + 2, "");
       printToString(s, "%*s}", indentCnt, "");
       break;
+#if CDB_JSON_QUOTE_NUMBERS
+    case String_Int8:
+      printToString(s, "\"%d\"", int(o->data.int8Value));
+      break;
+    case String_UInt8:
+      printToString(s, "\"%u\"", (unsigned int) o->data.uint8Value);
+      break;
+    case String_Int16:
+      printToString(s, "\"%d\"", int(o->data.int16Value));
+      break;
+    case String_UInt16:
+      printToString(s, "\"%u\"", (unsigned int) o->data.uint16Value);
+      break;
+    case String_Int32:
+      printToString(s, "\"%d\"", int(o->data.int32Value));
+      break;
+    case String_UInt32:
+      printToString(s, "\"%u\"", (unsigned int) o->data.uint32Value);
+      break;
+    case String_Int64:
+      printToString(s, "\"%lld\"", (long long) o->data.int64Value);
+      break;
+    case String_UInt64:
+      printToString(s, "\"%llu\"", (unsigned long long) o->data.uint64Value);
+      break;
+    case String_Bool:
+      printToString(s, "%s", (!o->data.boolValue ? "\"false\"" : "\"true\""));
+      break;
+    case String_Float:
+      printToString(s, "\"%f\"", o->data.floatValue);
+      break;
+    case String_Double:
+      printToString(s, "\"%f\"", o->data.doubleValue);
+      break;
+#else
     case String_Int8:
       printToString(s, "%d", int(o->data.int8Value));
       break;
@@ -775,10 +843,37 @@ void BSMaterialsCDB::dumpObject(
     case String_Double:
       printToString(s, "%.14g", o->data.doubleValue);
       break;
+#endif
     default:
       printToString(s, "\"<unknown>\"");
       break;
   }
+}
+
+const BSMaterialsCDB::CDBClassDef *
+    BSMaterialsCDB::getClassDef(std::uint32_t type) const
+{
+  std::uint32_t h = 0xFFFFFFFFU;
+  hashFunctionCRC32C< std::uint32_t >(h, type);
+  if (classes.size() < 1) [[unlikely]]
+    return nullptr;
+  std::uint32_t m = std::uint32_t(classes.size() - 1);
+  for (h = h & m; classes[h].className; h = (h + 1U) & m)
+  {
+    if (classes[h].className == type)
+      return &(classes[h]);
+  }
+  return nullptr;
+}
+
+const BSMaterialsCDB::MaterialObject *
+    BSMaterialsCDB::getMaterial(const std::string& materialPath) const
+{
+  std::map< BSResourceID, const MaterialObject * >::const_iterator  i =
+      matFileObjectMap.find(BSResourceID(materialPath));
+  if (i != matFileObjectMap.end())
+    return i->second;
+  return nullptr;
 }
 
 void BSMaterialsCDB::getJSONMaterial(
@@ -787,21 +882,27 @@ void BSMaterialsCDB::getJSONMaterial(
   jsonBuf.clear();
   if (materialPath.empty())
     return;
-  const std::vector< std::uint32_t >  *objectList;
-  {
-    std::map< BSResourceID, std::vector< std::uint32_t > >::const_iterator  i =
-        matFileObjectMap.find(BSResourceID(materialPath));
-    if (i == matFileObjectMap.end())
-      return;
-    objectList = &(i->second);
-  }
+  const MaterialObject  *i = getMaterial(materialPath);
+  if (!i)
+    return;
   jsonBuf = "{\n  \"Objects\": [\n";
-  for (std::vector< std::uint32_t >::const_iterator
-           k = objectList->begin(); k != objectList->end(); k++)
+#if CDB_OBJ_SORT_BY_DBID
+  std::vector< const MaterialObject * > objList;
+  for ( ; i; i = i->getNextChildObject())
   {
-    const MaterialObject  *i = findObject(*k);
-    if (!i)
-      continue;
+    std::vector< const MaterialObject * >::iterator j = objList.begin();
+    while (j != objList.end() && (*j)->dbID < i->dbID)
+      j++;
+    objList.insert(j, i);
+  }
+  for (size_t k = 0; k < objList.size(); k++)
+#else
+  for ( ; i; i = i->getNextChildObject())
+#endif
+  {
+#if CDB_OBJ_SORT_BY_DBID
+    i = objList[k];
+#endif
     printToString(jsonBuf, "    {\n      \"Components\": [\n");
     for (const MaterialComponent *j = i->components; j; j = j->next)
     {
@@ -821,13 +922,18 @@ void BSMaterialsCDB::getJSONMaterial(
       jsonBuf[jsonBuf.length() - 1] = '\n';
     }
     printToString(jsonBuf, "      ],\n");
-    printToString(jsonBuf, "      \"ID\": \"res:%08X:%08X:%08X\",\n",
-                  (unsigned int) i->persistentID.ext,
-                  (unsigned int) i->persistentID.dir,
-                  (unsigned int) i->persistentID.file);
+    const MaterialObject  *j = i->baseObject;
+#if CDB_CHILD_RES_ID_ONLY
+    if (i->parent)
+#endif
+    {
+      printToString(jsonBuf, "      \"ID\": \"res:%08X:%08X:%08X\",\n",
+                    (unsigned int) i->persistentID.ext,
+                    (unsigned int) i->persistentID.dir,
+                    (unsigned int) i->persistentID.file);
+    }
     const char  *parentStr = "";
-    const MaterialObject  *j;
-    if (i->baseObject && (j = findObject(i->baseObject)) != nullptr)
+    if (j)
     {
       if (j->persistentID.dir == 0x7EA3660CU)
         parentStr = "materials\\\\layered\\\\root\\\\layeredmaterials.mat";

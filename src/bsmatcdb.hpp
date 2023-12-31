@@ -24,15 +24,23 @@ class BSMaterialsCDB : public BSReflStream
               (dir == r.dir && file == r.file && ext < r.ext));
     }
   };
- protected:
   struct CDBClassDef
   {
-    std::vector< std::pair< std::uint32_t, std::uint32_t > >  fields;
-    bool    isUser = false;
+    struct Field
+    {
+      std::uint32_t name;
+      std::uint32_t type;
+    };
+    std::uint32_t className;
+    bool    isUser;
+    std::uint16_t fieldCnt;
+    const Field   *fields;
   };
+  struct MaterialObject;
   struct CDBObject
   {
-    std::uint32_t type;
+    std::uint16_t type;                 // BSReflStream::stringTable[] index
+    std::uint16_t refCnt;
     std::uint32_t childCnt;
     union
     {
@@ -49,13 +57,15 @@ class BSMaterialsCDB : public BSReflStream
       float         floatValue;
       double        doubleValue;
       const char    *stringValue;
+      // for type == String_BSComponentDB2_ID
+      const MaterialObject  *objectPtr;
     }
     data;
   };
   struct MaterialComponent
   {
-    std::uint32_t key;          // (name << 16) | index
-    bool    usesBaseObject;
+    std::uint32_t key;          // (type << 16) | index
+    std::uint32_t className;
     CDBObject *o;
     MaterialComponent *next;
     inline bool operator<(const MaterialComponent& r) const
@@ -67,21 +77,29 @@ class BSMaterialsCDB : public BSReflStream
   {
     BSResourceID  persistentID;
     std::uint32_t dbID;
-    std::uint32_t baseObject;
+    const MaterialObject  *baseObject;
+    MaterialComponent     *components;
     const MaterialObject  *parent;
-    MaterialComponent *components;
+    const MaterialObject  *children;
+    const MaterialObject  *next;
+    inline const MaterialObject *getNextChildObject() const
+    {
+      const MaterialObject  *i = children;
+      if (i)
+        return i;
+      for (i = this; !i->next && i->parent; i = i->parent)
+        ;
+      return i->next;
+    }
   };
-  std::map< std::uint32_t, CDBClassDef >  classes;
-  std::vector< std::uint32_t >  objectsHashMap;
-  std::vector< MaterialObject > objects;
-  std::map< BSResourceID, std::vector< std::uint32_t > >  matFileObjectMap;
+ protected:
+  std::vector< CDBClassDef >  classes;
+  MaterialObject  **objectTablePtr;
+  size_t  objectTableSize;
+  std::map< BSResourceID, const MaterialObject * >  matFileObjectMap;
   std::vector< std::vector< unsigned char > > objectBuffers;
   MaterialComponent& findComponent(MaterialObject& o,
-                                   std::uint32_t name, std::uint32_t index);
-  static inline bool isRootObject(std::uint32_t dbID)
-  {
-    return (dbID <= 7U);
-  }
+                                   std::uint32_t key, std::uint32_t className);
   inline MaterialObject *findObject(std::uint32_t dbID);
   inline const MaterialObject *findObject(std::uint32_t dbID) const;
   void *allocateSpace(size_t nBytes, size_t alignBytes = 16);
@@ -104,6 +122,8 @@ class BSMaterialsCDB : public BSReflStream
   {
     readAllChunks();
   }
+  const CDBClassDef *getClassDef(std::uint32_t type) const;
+  const MaterialObject *getMaterial(const std::string& materialPath) const;
   void getJSONMaterial(std::string& jsonBuf,
                        const std::string& materialPath) const;
 };
