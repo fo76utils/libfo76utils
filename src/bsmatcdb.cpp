@@ -2,10 +2,8 @@
 #include "common.hpp"
 #include "bsmatcdb.hpp"
 
-#define CDB_OBJ_SORT_BY_DBID    1
-#define CDB_COMP_SORT_BY_NAME   1
+#define CDB_COMPONENTS_SORTED   0
 #define CDB_JSON_QUOTE_NUMBERS  0
-#define CDB_CHILD_RES_ID_ONLY   0
 
 BSMaterialsCDB::BSResourceID::BSResourceID(const std::string& fileName)
 {
@@ -67,7 +65,11 @@ BSMaterialsCDB::MaterialComponent& BSMaterialsCDB::findComponent(
 {
   MaterialComponent *prv = nullptr;
   MaterialComponent *i = o.components;
+#if CDB_COMPONENTS_SORTED
   for ( ; i && i->key < key; i = i->next)
+#else
+  for ( ; i && i->key != key; i = i->next)
+#endif
     prv = i;
   if (i && i->key == key)
     return *i;
@@ -454,9 +456,6 @@ void BSMaterialsCDB::readAllChunks()
         {
           if (i->baseObject && i->baseObject->baseObject)
             copyBaseObject(*i);
-#if CDB_COMP_SORT_BY_NAME
-          key = (key & 0xFFFFU) | (className << 16);
-#endif
           loadItem(findComponent(*i, key, className).o,
                    chunkBuf, isDiff, className);
         }
@@ -583,13 +582,13 @@ void BSMaterialsCDB::readAllChunks()
         errorMessage("unexpected end of LIST chunk in material database");
       const unsigned char *edgeInfoPtr =
           chunkBuf.data() + chunkBuf.getPosition();
-      while (n--)
+      for (std::uint32_t i = 0U; i < n; i++)
       {
         // uint32_t sourceID, uint32_t targetID, uint16_t index, uint16_t type
         std::uint32_t sourceID =
-            FileBuffer::readUInt32Fast(edgeInfoPtr + (n * 12U));
+            FileBuffer::readUInt32Fast(edgeInfoPtr + (i * 12U));
         std::uint32_t targetID =
-            FileBuffer::readUInt32Fast(edgeInfoPtr + (n * 12U + 4U));
+            FileBuffer::readUInt32Fast(edgeInfoPtr + (i * 12U + 4U));
         MaterialObject  *o = findObject(sourceID);
         MaterialObject  *p = findObject(targetID);
         if (o && p)
@@ -886,23 +885,8 @@ void BSMaterialsCDB::getJSONMaterial(
   if (!i)
     return;
   jsonBuf = "{\n  \"Objects\": [\n";
-#if CDB_OBJ_SORT_BY_DBID
-  std::vector< const MaterialObject * > objList;
   for ( ; i; i = i->getNextChildObject())
   {
-    std::vector< const MaterialObject * >::iterator j = objList.begin();
-    while (j != objList.end() && (*j)->dbID < i->dbID)
-      j++;
-    objList.insert(j, i);
-  }
-  for (size_t k = 0; k < objList.size(); k++)
-#else
-  for ( ; i; i = i->getNextChildObject())
-#endif
-  {
-#if CDB_OBJ_SORT_BY_DBID
-    i = objList[k];
-#endif
     printToString(jsonBuf, "    {\n      \"Components\": [\n");
     for (const MaterialComponent *j = i->components; j; j = j->next)
     {
@@ -923,9 +907,7 @@ void BSMaterialsCDB::getJSONMaterial(
     }
     printToString(jsonBuf, "      ],\n");
     const MaterialObject  *j = i->baseObject;
-#if CDB_CHILD_RES_ID_ONLY
     if (i->parent)
-#endif
     {
       printToString(jsonBuf, "      \"ID\": \"res:%08X:%08X:%08X\",\n",
                     (unsigned int) i->persistentID.ext,
