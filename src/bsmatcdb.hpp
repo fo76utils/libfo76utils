@@ -40,25 +40,27 @@ class BSMaterialsCDB : public BSReflStream
   struct CDBObject
   {
     std::uint16_t type;                 // BSReflStream::stringTable[] index
-    std::uint16_t refCnt;
-    std::uint32_t childCnt;
+    // Size of data.children for structure, reference, list and map types.
+    // For maps, childCnt = 2 * elements, and data.children[N * 2] and
+    // data.children[N * 2 + 1] contain the key and value for element N.
+    std::uint16_t childCnt;
+    std::uint32_t refCnt;
     union
     {
       CDBObject     *children[1];
-      bool          boolValue;
-      std::int8_t   int8Value;
-      std::uint8_t  uint8Value;
-      std::int16_t  int16Value;
-      std::uint16_t uint16Value;
-      std::int32_t  int32Value;
-      std::uint32_t uint32Value;
-      std::int64_t  int64Value;
-      std::uint64_t uint64Value;
-      float         floatValue;
-      double        doubleValue;
-      const char    *stringValue;
-      // for type == String_BSComponentDB2_ID
-      const MaterialObject  *objectPtr;
+      bool          boolValue;          // valid if type == String_Bool,
+      std::int8_t   int8Value;          //   String_Int8,
+      std::uint8_t  uint8Value;         //   String_UInt8,
+      std::int16_t  int16Value;         //   String_Int16,
+      std::uint16_t uint16Value;        //   String_UInt16,
+      std::int32_t  int32Value;         //   String_Int32,
+      std::uint32_t uint32Value;        //   String_UInt32,
+      std::int64_t  int64Value;         //   String_Int64,
+      std::uint64_t uint64Value;        //   String_UInt64,
+      float         floatValue;         //   String_Float,
+      double        doubleValue;        //   String_Double,
+      const char    *stringValue;       //   String_String,
+      const MaterialObject  *objectPtr; //   or String_BSComponentDB2_ID
     }
     data;
   };

@@ -138,13 +138,13 @@ BSMaterialsCDB::CDBObject * BSMaterialsCDB::allocateObject(
   else if (classDef)
     childCnt = classDef->fieldCnt;
   if (childCnt > 1)
-    dataSize += ((childCnt - 1) * sizeof(CDBObject *));
+    dataSize += (sizeof(CDBObject *) * (childCnt - 1));
   CDBObject *o =
       reinterpret_cast< CDBObject * >(allocateSpace(dataSize,
                                                     alignof(CDBObject)));
   o->type = std::uint16_t(itemType);
+  o->childCnt = std::uint16_t(childCnt);
   o->refCnt = 0;
-  o->childCnt = std::uint32_t(childCnt);
   if (childCnt)
   {
     for (size_t i = 0; i < childCnt; i++)
@@ -201,7 +201,7 @@ void BSMaterialsCDB::loadItem(CDBObject*& o, Chunk& chunkBuf, bool isDiff,
     o->refCnt--;
     size_t  dataSize = sizeof(CDBObject);
     if (o->childCnt > 1)
-      dataSize += ((o->childCnt - 1) * sizeof(CDBObject *));
+      dataSize += (sizeof(CDBObject *) * (o->childCnt - 1));
     CDBObject *p =
         reinterpret_cast< CDBObject * >(
             allocateSpace(dataSize, alignof(CDBObject)));
@@ -321,15 +321,10 @@ void BSMaterialsCDB::loadItem(CDBObject*& o, Chunk& chunkBuf, bool isDiff,
         classNames[1] = classNames[0];
         if (isMap)
           classNames[1] = findString(listBuf.readUInt32());
-        std::uint32_t listSize = 0U;
+        std::uint64_t listSize = 0U;
         if ((listBuf.getPosition() + 4ULL) <= listBuf.size())
-          listSize = listBuf.readUInt32();
-        if (isMap)
-        {
-          if (listSize > 0x7FFFFFFFU)
-            errorMessage("invalid map size in CDB file");
-          listSize = listSize << 1;
-        }
+          listSize = listBuf.readUInt32Fast();
+        listSize = listSize << (unsigned char) isMap;
         std::uint32_t n = 0U;
         bool    appendingItems = false;
         if (isDiff && o && o->type == itemType && o->childCnt &&
@@ -339,23 +334,24 @@ void BSMaterialsCDB::loadItem(CDBObject*& o, Chunk& chunkBuf, bool isDiff,
             appendingItems = (std::uint32_t(classNames[0] - String_Int8) > 11U);
           else
             appendingItems = (o->data.children[1]->type == classNames[1]);
+          if (appendingItems)
+            listSize = listSize + o->childCnt;
         }
-        if (appendingItems)
+        if (appendingItems ||
+            !(o && o->type == itemType && o->childCnt >= listSize))
         {
-          std::uint32_t prvSize = o->childCnt;
-          if ((std::uint64_t(listSize) + prvSize) > 0xFFFFFFFFULL)
-            errorMessage("invalid list size in CDB file");
-          listSize = listSize + prvSize;
-          CDBObject *p = allocateObject(itemType, classDef, listSize);
-          for ( ; n < prvSize; n++)
-            p->data.children[n] = o->data.children[n];
+          if (listSize > 0xFFFFU)
+            errorMessage("invalid list or map size in CDB file");
+          CDBObject *p = allocateObject(itemType, classDef, size_t(listSize));
+          if (appendingItems)
+          {
+            std::uint32_t prvSize = o->childCnt;
+            for ( ; n < prvSize; n++)
+              p->data.children[n] = o->data.children[n];
+          }
           o = p;
         }
-        else if (!(o && o->type == itemType && o->childCnt >= listSize))
-        {
-          o = allocateObject(itemType, classDef, listSize);
-        }
-        o->childCnt = listSize;
+        o->childCnt = std::uint16_t(listSize);
         for ( ; n < listSize; n++)
         {
           loadItem(o->data.children[n], listBuf, isDiff, classNames[n & 1U]);
@@ -370,7 +366,7 @@ void BSMaterialsCDB::loadItem(CDBObject*& o, Chunk& chunkBuf, bool isDiff,
                 loadItem(o->data.children[k + 1U], listBuf, isDiff,
                          classNames[1]);
                 listSize = listSize - 2U;
-                o->childCnt = listSize;
+                o->childCnt = std::uint16_t(listSize);
                 n--;
                 break;
               }
