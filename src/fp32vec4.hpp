@@ -156,6 +156,9 @@ struct FloatVector4
   // decode the output of convertToX10Y10Z10()
   static inline FloatVector4 convertX10Y10Z10(const std::uint32_t& n);
   inline std::uint32_t getSignMask() const;
+  // decode/encode color in R9G9B9E5_SHAREDEXP format
+  static inline FloatVector4 convertR9G9B9E5(const std::uint32_t& n);
+  inline std::uint32_t convertToR9G9B9E5() const;
 };
 
 #if ENABLE_X86_64_AVX
@@ -1470,6 +1473,89 @@ inline std::uint32_t FloatVector4::getSignMask() const
         | (std::uint32_t(v[2] < 0.0f) << 2) | (std::uint32_t(v[3] < 0.0f) << 3);
 #endif
   return tmp;
+}
+
+inline FloatVector4 FloatVector4::convertR9G9B9E5(const std::uint32_t& n)
+{
+  FloatVector4  tmp;
+#if ENABLE_X86_64_AVX
+  static const XMM_UInt32 maskTbl =
+  {
+    0x000001FFU, 0x0003FE00U, 0x07FC0000U, 0xF8000000U
+  };
+  const XMM_Float multTbl =
+  {
+    float(1.0 / 16777216.0), float(1.0 / 8589934592.0),
+    float(1.0 / 4398046511104.0), 1.0f
+  };
+  XMM_UInt32  tmp2;
+  __asm__ ("vmovd %1, %0" : "=x" (tmp.v) : "rm" (n));
+  __asm__ ("vpshufd $0x00, %0, %0" : "+x" (tmp.v));
+  __asm__ ("vpand %1, %0, %0" : "+x" (tmp.v) : "xm" (maskTbl));
+  __asm__ ("vpshufd $0xff, %1, %0" : "=x" (tmp2) : "x" (tmp.v));
+  __asm__ ("vpsrld $0x04, %0, %0" : "+x" (tmp2));
+  __asm__ ("vcvtdq2ps %0, %0" : "+x" (tmp.v));
+  __asm__ ("vpaddd %1, %0, %0" : "+x" (tmp2) : "x" (multTbl));
+  __asm__ ("vmulps %1, %0, %0" : "+x" (tmp.v) : "x" (tmp2));
+  __asm__ ("vblendps $0x08, %1, %0, %0" : "+x" (tmp.v) : "x" (multTbl));
+#else
+  int     i = int(n >> 27) & 0x1F;
+  float   e = (i < 31 ? float(1 << i) : float(2147483648.0));
+  tmp[0] = float(int(n & 0x000001FFU)) * e * float(1.0 / 16777216.0);
+  tmp[1] = float(int(n & 0x0003FE00U)) * e * float(1.0 / 8589934592.0);
+  tmp[2] = float(int(n & 0x07FC0000U)) * e * float(1.0 / 4398046511104.0);
+  tmp[3] = 1.0f;
+#endif
+  return tmp;
+}
+
+inline std::uint32_t FloatVector4::convertToR9G9B9E5() const
+{
+  FloatVector4  c(*this);
+  c.maxValues(FloatVector4(0.0f));
+#if ENABLE_X86_64_AVX
+  const XMM_UInt32  maskMultSubMaxTbl =
+  {
+    0x7F800000U, 0x4B800000U, 0x37800000U, 0x0F800000U
+  };
+  XMM_UInt32  tmp1, tmp2, tmp3;
+  __asm__ ("vpshufd $0x00, %1, %0" : "=x" (tmp1) : "x" (maskMultSubMaxTbl));
+  __asm__ ("vpand %2, %1, %0" : "=x" (tmp2) : "x" (c.v), "x" (tmp1));
+  __asm__ ("vpshufd $0xc9, %1, %0" : "=x" (tmp1) : "x" (tmp2));
+  __asm__ ("vpmaxud %1, %0, %0" : "+x" (tmp1) : "x" (tmp2));
+  __asm__ ("vpshufd $0xd2, %0, %0" : "+x" (tmp2));
+  __asm__ ("vpmaxud %1, %0, %0" : "+x" (tmp1) : "x" (tmp2));
+  __asm__ ("vpsubusw %2, %1, %0"
+           : "=x" (tmp3) : "x" (tmp1), "x" (maskMultSubMaxTbl));
+  __asm__ ("vpshufd $0xaa, %0, %0" : "+x" (tmp3));
+  __asm__ ("vpshufd $0xff, %1, %0" : "=x" (tmp1) : "x" (maskMultSubMaxTbl));
+  __asm__ ("vpshufd $0x55, %1, %0" : "=x" (tmp2) : "x" (maskMultSubMaxTbl));
+  __asm__ ("vpminuw %1, %0, %0" : "+x" (tmp3) : "x" (tmp1));
+  __asm__ ("vpsubd %1, %0, %0" : "+x" (tmp2) : "x" (tmp3));
+  __asm__ ("vmulps %1, %0, %0" : "+x" (c.v) : "x" (tmp2));
+  c.minValues(FloatVector4(511.0f));
+  __asm__ ("vcvtps2dq %1, %0" : "=x" (tmp2) : "x" (c.v));
+  return (tmp2[0] | (tmp2[1] << 9) | (tmp2[2] << 18) | (tmp3[0] << 4));
+#else
+  float   maxVal = std::max(c[0], c[1]);
+  maxVal = std::max(maxVal, c[2]);
+  int     e;
+  if (maxVal >= (1.0f / 32768.0f) && maxVal < 32768.0f)
+    e = int(float(std::log2(maxVal))) + 16;
+  else if (!(maxVal >= (1.0f / 32768.0f)))
+    e = 0;
+  else
+    e = 31;
+  if (e < 25)
+    c *= float(1 << (24 - e));
+  else
+    c /= float(1 << (e - 24));
+  c.minValues(FloatVector4(511.0f));
+  std::uint32_t r = std::uint32_t(roundFloat(c[0]));
+  std::uint32_t g = std::uint32_t(roundFloat(c[1]));
+  std::uint32_t b = std::uint32_t(roundFloat(c[2]));
+  return (r | (g << 9) | (b << 18) | (std::uint32_t(e) << 27));
+#endif
 }
 
 #endif

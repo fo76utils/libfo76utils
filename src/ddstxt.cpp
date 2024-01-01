@@ -14,7 +14,7 @@ extern "C" bool detexDecompressBlockBPTC(
     const std::uint8_t *bitstring, std::uint32_t mode_mask,
     std::uint32_t flags, std::uint8_t *pixel_buffer);           // BC7
 
-const DDSTexture::DXGIFormatInfo DDSTexture::dxgiFormatInfoTable[31] =
+const DDSTexture::DXGIFormatInfo DDSTexture::dxgiFormatInfoTable[32] =
 {
   {                             //  0: DXGI_FORMAT_UNKNOWN = 0x00
     (size_t (*)(std::uint32_t *, const unsigned char *, unsigned int)) 0,
@@ -110,6 +110,9 @@ const DDSTexture::DXGIFormatInfo DDSTexture::dxgiFormatInfoTable[31] =
   },
   {                             // 30: FORMAT_R8G8B8_UNORM_SRGB = 0x7F
     &decodeLine_RGB, "R8G8B8_UNORM_SRGB", false, true, 3, 3
+  },
+  {                             // 31: DXGI_FORMAT_R9G9B9E5_SHAREDEXP = 0x43
+    &decodeLine_RGB9E5, "R9G9B9E5_SHAREDEXP", false, false, 3, 4
   }
 };
 
@@ -119,7 +122,7 @@ const unsigned char DDSTexture::dxgiFormatMap[128] =
    0,  0,  0,  0,   0,  0,  0,  0,   0,  0,  0,  0,   2,  3,  0,  0,    // 0x10
    0,  0,  0,  0,   0,  0,  0,  0,   0,  0,  0,  0,   0,  0,  0,  0,    // 0x20
    0,  4,  0,  0,   0,  0,  0,  0,   0,  0,  0,  0,   0,  5,  6,  0,    // 0x30
-   0,  0,  0,  0,   0,  0,  0,  7,   8,  0,  9, 10,   0, 11, 12,  0,    // 0x40
+   0,  0,  0, 31,   0,  0,  0,  7,   8,  0,  9, 10,   0, 11, 12,  0,    // 0x40
   13, 14,  0, 15,  16,  0,  0, 17,  18,  0,  0, 19,   0, 20,  0, 21,    // 0x50
   22,  0, 23, 24,   0,  0,  0,  0,   0,  0,  0,  0,   0,  0,  0,  0,    // 0x60
    0,  0,  0,  0,   0,  0,  0,  0,   0,  0, 25, 26,  27, 28, 29, 30     // 0x70
@@ -472,6 +475,17 @@ size_t DDSTexture::decodeLine_RGBA64F(
     *dst = std::uint32_t(c);
   }
   return (size_t(w) << 3);
+}
+
+size_t DDSTexture::decodeLine_RGB9E5(
+    std::uint32_t *dst, const unsigned char *src, unsigned int w)
+{
+  for (unsigned int x = 0; x < w; x++, dst++, src = src + 4)
+  {
+    std::uint32_t b = FileBuffer::readUInt32Fast(src);
+    *dst = std::uint32_t(FloatVector4::convertR9G9B9E5(b).srgbCompress());
+  }
+  return (size_t(w) << 2);
 }
 
 void DDSTexture::loadTextureData(

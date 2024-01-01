@@ -73,11 +73,7 @@ void SFCubeMapFilter::processImage_Copy(
       for (int x = 0; x < w; x++, p = p + 4)
       {
         FloatVector4  c(inBuf[(n * h + y) * w + x]);
-        std::uint32_t tmp = std::uint32_t(c.srgbCompress());
-        p[0] = (unsigned char) (tmp & 0xFF);
-        p[1] = (unsigned char) ((tmp >> 8) & 0xFF);
-        p[2] = (unsigned char) ((tmp >> 16) & 0xFF);
-        p[3] = 0xFF;
+        pixelStoreFunction(p, c);
       }
     }
     outBufP = outBufP + faceDataSize;
@@ -111,12 +107,7 @@ void SFCubeMapFilter::processImage_Diffuse(
             totalWeight += weight;
           }
         }
-        c /= totalWeight;
-        std::uint32_t tmp = std::uint32_t(c.srgbCompress());
-        p[0] = (unsigned char) (tmp & 0xFF);
-        p[1] = (unsigned char) ((tmp >> 8) & 0xFF);
-        p[2] = (unsigned char) ((tmp >> 16) & 0xFF);
-        p[3] = 0xFF;
+        pixelStoreFunction(p, c / totalWeight);
       }
     }
     outBufP = outBufP + faceDataSize;
@@ -201,15 +192,29 @@ void SFCubeMapFilter::processImage_Specular(
       for (int x = 0; x < w; x++, p = p + 4, tmpBufPtr++)
       {
         FloatVector4  c(*tmpBufPtr);
-        std::uint32_t tmp = std::uint32_t((c / c[3]).srgbCompress());
-        p[0] = (unsigned char) (tmp & 0xFF);
-        p[1] = (unsigned char) ((tmp >> 8) & 0xFF);
-        p[2] = (unsigned char) ((tmp >> 16) & 0xFF);
-        p[3] = 0xFF;
+        pixelStoreFunction(p, c / c[3]);
       }
     }
     outBufP = outBufP + faceDataSize;
   }
+}
+
+void SFCubeMapFilter::pixelStore_R8G8B8A8(unsigned char *p, FloatVector4 c)
+{
+  std::uint32_t tmp = std::uint32_t(c.srgbCompress());
+  p[0] = (unsigned char) (tmp & 0xFF);
+  p[1] = (unsigned char) ((tmp >> 8) & 0xFF);
+  p[2] = (unsigned char) ((tmp >> 16) & 0xFF);
+  p[3] = 0xFF;
+}
+
+void SFCubeMapFilter::pixelStore_R9G9B9E5(unsigned char *p, FloatVector4 c)
+{
+  std::uint32_t tmp = c.convertToR9G9B9E5();
+  p[0] = (unsigned char) (tmp & 0xFF);
+  p[1] = (unsigned char) ((tmp >> 8) & 0xFF);
+  p[2] = (unsigned char) ((tmp >> 16) & 0xFF);
+  p[3] = (unsigned char) ((tmp >> 24) & 0xFF);
 }
 
 void SFCubeMapFilter::threadFunction(
@@ -295,7 +300,8 @@ SFCubeMapFilter::~SFCubeMapFilter()
 {
 }
 
-size_t SFCubeMapFilter::convertImage(unsigned char *buf, size_t bufSize)
+size_t SFCubeMapFilter::convertImage(
+    unsigned char *buf, size_t bufSize, bool outFmtFloat)
 {
   if (bufSize < 148)
     return bufSize;
@@ -340,6 +346,16 @@ size_t SFCubeMapFilter::convertImage(unsigned char *buf, size_t bufSize)
   if (bufSize != sizeRequired1 && bufSize != sizeRequired2)
     return bufSize;
   faceDataSize = faceDataSize * sizeof(std::uint32_t);
+  if (!outFmtFloat)
+  {
+    pixelStoreFunction = &pixelStore_R8G8B8A8;
+    buf[128] = 0x1D;                    // DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
+  }
+  else
+  {
+    pixelStoreFunction = &pixelStore_R9G9B9E5;
+    buf[128] = 0x43;                    // DXGI_FORMAT_R9G9B9E5_SHAREDEXP
+  }
 
   inBuf.resize(w0 * h0 * 6, FloatVector4(0.0f));
   FloatVector4  scale(0.0f);
@@ -469,7 +485,6 @@ size_t SFCubeMapFilter::convertImage(unsigned char *buf, size_t bufSize)
   buf[28] = (unsigned char) (maxMip + 1);
   buf[108] = buf[108] | 0x08;           // DDSCAPS_COMPLEX
   buf[113] = buf[113] | 0xFE;           // DDSCAPS2_CUBEMAP*
-  buf[128] = 0x1D;                      // DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
   size_t  newSize = faceDataSize * 6 + 148;
   return newSize;
 }
@@ -482,7 +497,8 @@ SFCubeMapCache::~SFCubeMapCache()
 {
 }
 
-size_t SFCubeMapCache::convertImage(unsigned char *buf, size_t bufSize)
+size_t SFCubeMapCache::convertImage(
+    unsigned char *buf, size_t bufSize, bool outFmtFloat)
 {
   std::uint32_t h = 0xFFFFFFFFU;
   size_t  i = 0;
@@ -501,7 +517,7 @@ size_t SFCubeMapCache::convertImage(unsigned char *buf, size_t bufSize)
     return v.size();
   }
   SFCubeMapFilter cubeMapFilter;
-  size_t  newSize = cubeMapFilter.convertImage(buf, bufSize);
+  size_t  newSize = cubeMapFilter.convertImage(buf, bufSize, outFmtFloat);
   if (newSize && newSize < bufSize)
   {
     v.resize(newSize);
