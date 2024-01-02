@@ -130,6 +130,15 @@ class DDSTexture
   {
     return dxgiFormatInfoTable[dxgiFormatMap[dxgiFormat]].name;
   }
+  // get pointer to raw texture data and its total size
+  inline const std::uint32_t *data() const
+  {
+    return textureData[0];
+  }
+  inline size_t size() const
+  {
+    return (size_t(textureDataSize) * (maxTextureNum + 1U));
+  }
   // no interpolation, returns color in RGBA format (LSB = red, MSB = alpha)
   inline const std::uint32_t& getPixelN(int x, int y, int mipLevel) const
   {
