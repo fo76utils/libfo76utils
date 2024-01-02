@@ -446,6 +446,7 @@ size_t SFCubeMapFilter::convertImage(
       }
       if (m > (mipCnt - 9) && m < (mipCnt - 2))
         transpose8x4(inBuf);
+      outBufP = outBufP + (size_t(w * h) * sizeof(std::uint32_t));
     }
     // calculate mipmaps
     int     w2 = (w + 1) >> 1;
@@ -469,7 +470,6 @@ size_t SFCubeMapFilter::convertImage(
         }
       }
     }
-    outBufP = outBufP + (size_t(w * h) * sizeof(std::uint32_t));
     w = w2;
     h = h2;
     inBuf.resize(size_t(w * h) * 6);
