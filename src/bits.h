@@ -28,7 +28,7 @@ uint32_t detexBlock128ExtractBits(detexBlock128 *block, int nu_bits);
 
 /* Return bitfield from bit0 to bit1 from 64-bit bitstring. */
 static DETEX_INLINE_ONLY uint32_t detexGetBits64(uint64_t data, int bit0, int bit1) {
-        return (data & (((uint64_t)1 << (bit1 + 1)) - 1)) >> bit0;
+        return (data & (((uint64_t)1 << bit1) | (((uint64_t)1 << bit1) - 1))) >> bit0;
 }
 
 /* Return reversed bitfield (bit1 to bit0) from 64-bit bitstring. */
@@ -36,13 +36,9 @@ static DETEX_INLINE_ONLY uint32_t detexGetBits64Reversed(uint64_t data, int bit0
         // Assumes bit0 > bit1.
         // Reverse the bits.
         uint32_t val = 0;
-        for (int i = 0; i <= bit0 - bit1; i++) {
-                int shift_right = bit0 - 2 * i;
-                if (shift_right >= 0)
-                        val |= (data & ((uint64_t)1 << (bit0 - i))) >> shift_right;
-                else
-                        val |= (data & ((uint64_t)1 << (bit0 - i))) << (- shift_right);
-        }
+        data = data >> bit1;
+        for (int i = bit1; i <= bit0; i++, data = data >> 1)
+                val = (val << 1) | (data & 1U);
         return val;
 }
 
