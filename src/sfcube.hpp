@@ -8,6 +8,7 @@
 class SFCubeMapFilter
 {
  protected:
+  static const int  filterMipRange = 6; // roughness = 1.0 at this mip level
   std::vector< FloatVector4 > inBuf;
   std::vector< FloatVector4 > cubeCoordTable;
   std::uint32_t faceDataSize;

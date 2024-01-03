@@ -226,16 +226,16 @@ void SFCubeMapFilter::threadFunction(
   {
     p->processImage_Copy(outBufP, w, h, y0, y1);
   }
-  else if (m < (maxMip - 1))
+  else if (m <= filterMipRange)
   {
-    float   roughness = 1.0f;   // at 4x4 resolution
-    if (m < (maxMip - 3))
+    float   roughness = 1.0f;   // at mip level = filterMipRange
+    if (m < filterMipRange)
     {
-      float   tmp = float(m) / float(maxMip - 2);
-      // 8x8 resolution is also used to approximate the diffuse filter,
-      // with roughness = 6/7
-      tmp = tmp * float((maxMip - 2) * 48) / float((maxMip - 3) * 49);
-      roughness = 1.0f - float(std::sqrt(1.0 - tmp));
+      float   tmp = float(m) / float(filterMipRange);
+      // mip level = filterMipRange - 1 is also used to approximate
+      // the diffuse filter, with roughness = 6/7
+      tmp = tmp * float(filterMipRange * 48) / float((filterMipRange - 1) * 49);
+      roughness = 1.0f - float(std::sqrt(1.0f - tmp));
     }
     p->processImage_Specular(outBufP, w, h, y0, y1, roughness);
   }
@@ -465,9 +465,9 @@ size_t SFCubeMapFilter::convertImage(
     threads[i] = nullptr;
   int     w = int(w0);
   int     maxMip = int(std::bit_width(width)) - 1;
-  for (int m = 0; m < mipCnt; m++)
+  for (int m = maxMip - (mipCnt - 1); m <= maxMip; m++)
   {
-    if (w <= int(width))
+    if (m >= 0)
     {
       cubeCoordTable.resize(size_t(w * w) * 6, FloatVector4(0.0f));
       for (int n = 0; n < 6; n++)
@@ -478,7 +478,7 @@ size_t SFCubeMapFilter::convertImage(
             cubeCoordTable[(n * w + y) * w + x] = convertCoord(x, y, w, n);
         }
       }
-      if (m > (mipCnt - 9) && m < (mipCnt - 2))
+      if (m > 0 && m <= filterMipRange)
       {
         // specular: reorder data for more efficient use of SIMD
         transpose4x8(inBuf);
@@ -493,8 +493,7 @@ size_t SFCubeMapFilter::convertImage(
         for (int i = 0; i < threadCnt; i++)
         {
           threads[i] = new std::thread(threadFunction, this, outBufP,
-                                       w, w, m + maxMip - (mipCnt - 1), maxMip,
-                                       i * w / threadCnt,
+                                       w, w, m, maxMip, i * w / threadCnt,
                                        (i + 1) * w / threadCnt);
         }
         for (int i = 0; i < threadCnt; i++)
@@ -516,7 +515,7 @@ size_t SFCubeMapFilter::convertImage(
         }
         throw;
       }
-      if (m > (mipCnt - 9) && m < (mipCnt - 2))
+      if (m > 0 && m <= filterMipRange)
         transpose8x4(inBuf);
       outBufP = outBufP + (size_t(w * w) * sizeof(std::uint32_t));
     }
