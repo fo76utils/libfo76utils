@@ -8,14 +8,10 @@
 class SFCubeMapFilter
 {
  protected:
-  enum
-  {
-    width = 256,
-    height = 256
-  };
   std::vector< FloatVector4 > inBuf;
   std::vector< FloatVector4 > cubeCoordTable;
-  size_t  faceDataSize;
+  std::uint32_t faceDataSize;
+  std::uint32_t width;
   void (*pixelStoreFunction)(unsigned char *p, FloatVector4 c);
   static FloatVector4 convertCoord(int x, int y, int w, int n);
   void processImage_Copy(unsigned char *outBufP, int w, int h, int y0, int y1);
@@ -32,7 +28,7 @@ class SFCubeMapFilter
   // returns the number of mip levels, or 0 on error
   int readImageData(const unsigned char *buf, size_t bufSize);
  public:
-  SFCubeMapFilter();
+  SFCubeMapFilter(size_t outputWidth = 256);
   ~SFCubeMapFilter();
   // Returns the new buffer size. If outFmtFloat is true, the output format is
   // DXGI_FORMAT_R9G9B9E5_SHAREDEXP instead of DXGI_FORMAT_R8G8B8A8_UNORM_SRGB.
@@ -51,7 +47,8 @@ class SFCubeMapCache
   SFCubeMapCache();
   ~SFCubeMapCache();
   size_t convertImage(unsigned char *buf, size_t bufSize,
-                      bool outFmtFloat = false, size_t bufCapacity = 0);
+                      bool outFmtFloat = false, size_t bufCapacity = 0,
+                      size_t outputWidth = 256);
 };
 
 #endif

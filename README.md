@@ -18,7 +18,7 @@ Defining the macro BUILD\_CE2UTILS enables the use of default paths and environm
 * **matcomps.cpp**, **material.cpp**, **material.hpp**, **mat_dump.cpp**: Starfield material database support (class CE2MaterialDB).
 * **mman.c**, **mman.h**: [mman-win32](https://github.com/alitrack/mman-win32) for memory mapping on Windows.
 * **sdlvideo.cpp**, **sdlvideo.hpp**, **courb24.cpp**: class SDLDisplay: video output, keyboard/mouse input, and console using SDL 2. Enabled only if compiled with the macro HAVE\_SDL2 defined. Supports full screen mode and downsampling from higher than the native display resolution.
-* **sfcube.cpp**, **sfcube.hpp**: class SFCubeMapFilter, SFCubeMapCache: cube map pre-filtering for PBR, converts a DDS cube map with at least 256x256 resolution per face to R8G8B8A8\_UNORM\_SRGB or R9G9B9E5\_SHAREDEXP, and generates and filters mipmaps for roughness = 0.0, 0.103, 0.220, 0.358, 0.535, 0.857 and 1.0 at mip levels 0 to 6, respectively.
+* **sfcube.cpp**, **sfcube.hpp**: class SFCubeMapFilter, SFCubeMapCache: cube map pre-filtering for PBR, converts a DDS cube map with at least 128x128 resolution per face to R8G8B8A8\_UNORM\_SRGB or R9G9B9E5\_SHAREDEXP, and generates and filters mipmaps for roughness = 0.0, 0.103, 0.220, 0.358, 0.535, 0.857 and 1.0 at mip levels 0 to 6, respectively.
 * **stringdb.cpp**, **stringdb.hpp**: class StringDB: support for reading Creation Engine strings files.
 * **viewrtbl.cpp**: Tables of common view transformations used by the NIF and world space viewers.
 * **zlib.cpp**, **zlib.hpp**: class ZLibDecompressor, decodes zlib, LZ4 and headerless LZ4 streams.
