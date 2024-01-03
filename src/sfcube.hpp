@@ -11,8 +11,7 @@ class SFCubeMapFilter
   enum
   {
     width = 256,
-    height = 256,
-    dxgiFormat = 0x0A           // DXGI_FORMAT_R16G16B16A16_FLOAT
+    height = 256
   };
   std::vector< FloatVector4 > inBuf;
   std::vector< FloatVector4 > cubeCoordTable;
@@ -30,13 +29,18 @@ class SFCubeMapFilter
                              int w, int h, int m, int maxMip, int y0, int y1);
   static void transpose4x8(std::vector< FloatVector4 >& v);
   static void transpose8x4(std::vector< FloatVector4 >& v);
+  // returns the number of mip levels, or 0 on error
+  int readImageData(const unsigned char *buf, size_t bufSize);
  public:
   SFCubeMapFilter();
   ~SFCubeMapFilter();
   // Returns the new buffer size. If outFmtFloat is true, the output format is
   // DXGI_FORMAT_R9G9B9E5_SHAREDEXP instead of DXGI_FORMAT_R8G8B8A8_UNORM_SRGB.
+  // The buffer must have sufficient capacity for width * height * 8 * 4 + 148
+  // bytes, which may be greater than bufSize if the input format is not
+  // R16G16B16A16_FLOAT.
   size_t convertImage(unsigned char *buf, size_t bufSize,
-                      bool outFmtFloat = false);
+                      bool outFmtFloat = false, size_t bufCapacity = 0);
 };
 
 class SFCubeMapCache
@@ -47,7 +51,7 @@ class SFCubeMapCache
   SFCubeMapCache();
   ~SFCubeMapCache();
   size_t convertImage(unsigned char *buf, size_t bufSize,
-                      bool outFmtFloat = false);
+                      bool outFmtFloat = false, size_t bufCapacity = 0);
 };
 
 #endif
