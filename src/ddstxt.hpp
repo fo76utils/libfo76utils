@@ -309,5 +309,15 @@ inline FloatVector4 DDSTexture::getPixelBC_Inline(
   return getPixelB(textureData[mipLevel], x0, y0, xf, yf, xMask, yMask);
 }
 
+extern "C" bool detexDecompressBlockBPTC_FLOAT(
+    const std::uint8_t *bitstring, std::uint32_t mode_mask,
+    std::uint32_t flags, std::uint8_t *pixel_buffer);           // BC6U
+extern "C" bool detexDecompressBlockBPTC_SIGNED_FLOAT(
+    const std::uint8_t *bitstring, std::uint32_t mode_mask,
+    std::uint32_t flags, std::uint8_t *pixel_buffer);           // BC6S
+extern "C" bool detexDecompressBlockBPTC(
+    const std::uint8_t *bitstring, std::uint32_t mode_mask,
+    std::uint32_t flags, std::uint8_t *pixel_buffer);           // BC7
+
 #endif
 

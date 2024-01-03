@@ -4,16 +4,6 @@
 
 #include <new>
 
-extern "C" bool detexDecompressBlockBPTC_FLOAT(
-    const std::uint8_t *bitstring, std::uint32_t mode_mask,
-    std::uint32_t flags, std::uint8_t *pixel_buffer);           // BC6U
-extern "C" bool detexDecompressBlockBPTC_SIGNED_FLOAT(
-    const std::uint8_t *bitstring, std::uint32_t mode_mask,
-    std::uint32_t flags, std::uint8_t *pixel_buffer);           // BC6S
-extern "C" bool detexDecompressBlockBPTC(
-    const std::uint8_t *bitstring, std::uint32_t mode_mask,
-    std::uint32_t flags, std::uint8_t *pixel_buffer);           // BC7
-
 const DDSTexture::DXGIFormatInfo DDSTexture::dxgiFormatInfoTable[32] =
 {
   {                             //  0: DXGI_FORMAT_UNKNOWN = 0x00
