@@ -554,7 +554,7 @@ void SDLDisplay::blitSurface()
 #endif
 }
 
-void SDLDisplay::clearSurface(std::uint32_t c)
+void SDLDisplay::clearSurface(std::uint32_t c, bool forceTransparent)
 {
   size_t  n = size_t(imageWidth) * size_t(imageHeight);
 #ifdef HAVE_SDL2
@@ -572,21 +572,22 @@ void SDLDisplay::clearSurface(std::uint32_t c)
 #endif
   if (!(c && c <= 0x0FFFFFFFU))
   {
-    memsetUInt32(p, c, n);
+    memsetUInt32(p, (!forceTransparent ? c : (c & 0x00FFFFFFU)), n);
   }
   else if (!(c & 0x08000000U))
   {
     std::uint32_t c0, c1;
 #if USE_PIXELFMT_RGB10A2
+    std::uint32_t a = (!forceTransparent ? 0xC0000000U : 0U);
     c0 = ((c & 0x000FU) << 26) | ((c & 0x00F0U) << 12) | ((c & 0x0F00U) >> 2)
-         | 0xC0000000U;
+         | a;
     c1 = ((c & 0x00F000U) << 14) | (c & 0x0F0000U) | ((c & 0xF00000U) >> 14)
-         | 0xC0000000U;
+         | a;
 #else
+    std::uint32_t a = (!forceTransparent ? 0xFF000000U : 0U);
     c0 = ((c & 0x000FU) << 4) | ((c & 0x00F0U) << 8) | ((c & 0x0F00U) << 12)
-         | 0xFF000000U;
-    c1 = ((c & 0x00F000U) >> 8) | ((c & 0x0F0000U) >> 4) | (c & 0xF00000U)
-         | 0xFF000000U;
+         | a;
+    c1 = ((c & 0x00F000U) >> 8) | ((c & 0x0F0000U) >> 4) | (c & 0xF00000U) | a;
 #endif
     unsigned int  gridSize = 8U << (c >> 24);
 #if ENABLE_X86_64_AVX
@@ -609,15 +610,16 @@ void SDLDisplay::clearSurface(std::uint32_t c)
   }
   else
   {
+    float   a = (!forceTransparent ? 7.4375f : 0.0f);
     FloatVector4  c0_f(float(int(c & 0000000007U)),
                        float(int((c & 0000000070U) >> 3)),
-                       float(int((c & 0000000700U) >> 6)), 7.0f);
+                       float(int((c & 0000000700U) >> 6)), a);
     FloatVector4  c1_f(float(int((c & 0000007000U) >> 9)),
                        float(int((c & 0000070000U) >> 12)),
-                       float(int((c & 0000700000U) >> 15)), 7.0f);
+                       float(int((c & 0000700000U) >> 15)), a);
     FloatVector4  c2_f(float(int((c & 0007000000U) >> 18)),
                        float(int((c & 0070000000U) >> 21)),
-                       float(int((c & 0700000000U) >> 24)), 7.0f);
+                       float(int((c & 0700000000U) >> 24)), a);
     c0_f *= (240.0f / 7.0f);
     c1_f *= (240.0f / 7.0f);
     c2_f *= (240.0f / 7.0f);

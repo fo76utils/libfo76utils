@@ -286,7 +286,7 @@ class SDLDisplay
   // c = 0x0scccbbb:
   //     fill with checkerboard pattern, b = color0 (R4G4B4 format),
   //     c = color1, s = log2(grid size) - 3 (0 to 7 for 8 to 1024 pixels)
-  void clearSurface(std::uint32_t c = 0U);
+  void clearSurface(std::uint32_t c = 0U, bool forceTransparent = false);
   void copyFromDrawSurface(std::vector< std::uint32_t >& buf);
   void copyToDrawSurface(const std::vector< std::uint32_t >& buf);
   // waitTime = number of milliseconds to wait before polling for events.
