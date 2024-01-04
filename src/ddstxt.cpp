@@ -1,6 +1,7 @@
 
 #include "common.hpp"
 #include "ddstxt.hpp"
+#include "fp32vec8.hpp"
 
 #include <new>
 
@@ -760,17 +761,10 @@ void DDSTexture::loadTexture(FileBuffer& buf, int mipOffset)
     {
       // normalize FP16 format cube maps
       size_t  srcDataSize = sizeRequired * 6;
-      FloatVector4  avgLevel(0.0f);
-      for (size_t i = 0; i < srcDataSize; i = i + 8)
-      {
-        FloatVector4  tmp(FloatVector4::convertFloat16(
-                              FileBuffer::readUInt64Fast(srcPtr + i), true));
-        avgLevel += tmp.maxValues(FloatVector4(0.0f));
-      }
-      avgLevel /= float(int(srcDataSize >> 3));
+      FloatVector4  avgLevel(calculateAvgLevelFP16(srcPtr, srcDataSize));
       float   tmp = avgLevel[0] + avgLevel[1] + avgLevel[2];
-      tmp = 16777216.0f / std::min(std::max(tmp * 5.0f, 1.0f), 65536.0f);
-      scale = std::uint32_t(roundFloat(tmp));
+      tmp = std::min(std::max(tmp * (12.5f / 3.0f), 1.0f), 65536.0f);
+      scale = std::uint32_t(roundFloat(16777216.0f / tmp));
     }
     memsetUInt32(textureDataBuf, scale, totalDataSize / sizeof(std::uint32_t));
   }
@@ -1090,5 +1084,39 @@ FloatVector4 DDSTexture::cubeMap(float x, float y, float z,
     c0 = (c0 * (1.0f - mf)) + (c1 * mf);
   }
   return c0;
+}
+
+FloatVector4 DDSTexture::calculateAvgLevelFP16(
+    const unsigned char *p, size_t nBytes)
+{
+  FloatVector4  s(0.0f);
+  size_t  n = nBytes >> 3;
+  if (n < 1)
+    return s;
+  for (size_t i = 0; i < n; )
+  {
+    size_t  j = std::min< size_t >(n - i, 8192);
+    i = i + j;
+#if ENABLE_X86_64_AVX
+    FloatVector8  tmp(0.0f);
+    for ( ; j > 1; j = j - 2, p = p + 16)
+    {
+      FloatVector8  c(reinterpret_cast< const std::uint16_t * >(p), false);
+      tmp += c.maxValues(FloatVector8(0.0f)).minValues(FloatVector8(65536.0f));
+    }
+    FloatVector4  tmp2(tmp[0], tmp[1], tmp[2], tmp[3]);
+    tmp2 += FloatVector4(tmp[4], tmp[5], tmp[6], tmp[7]);
+#else
+    FloatVector4  tmp2(0.0f);
+#endif
+    for ( ; j > 0; j--, p = p + 8)
+    {
+      FloatVector4  c(FloatVector4::convertFloat16(
+                          FileBuffer::readUInt64Fast(p)));
+      tmp2 += c.maxValues(FloatVector4(0.0f)).minValues(FloatVector4(65536.0f));
+    }
+    s += tmp2;
+  }
+  return (s / float(int(n)));
 }
 

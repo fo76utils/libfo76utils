@@ -202,20 +202,13 @@ void SFCubeMapFilter::processImage_Specular(
 
 void SFCubeMapFilter::pixelStore_R8G8B8A8(unsigned char *p, FloatVector4 c)
 {
-  std::uint32_t tmp = std::uint32_t(c.srgbCompress());
-  p[0] = (unsigned char) (tmp & 0xFF);
-  p[1] = (unsigned char) ((tmp >> 8) & 0xFF);
-  p[2] = (unsigned char) ((tmp >> 16) & 0xFF);
-  p[3] = 0xFF;
+  std::uint32_t tmp = std::uint32_t(c.srgbCompress()) | 0xFF000000U;
+  FileBuffer::writeUInt32Fast(p, tmp);
 }
 
 void SFCubeMapFilter::pixelStore_R9G9B9E5(unsigned char *p, FloatVector4 c)
 {
-  std::uint32_t tmp = c.convertToR9G9B9E5();
-  p[0] = (unsigned char) (tmp & 0xFF);
-  p[1] = (unsigned char) ((tmp >> 8) & 0xFF);
-  p[2] = (unsigned char) ((tmp >> 16) & 0xFF);
-  p[3] = (unsigned char) ((tmp >> 24) & 0xFF);
+  FileBuffer::writeUInt32Fast(p, c.convertToR9G9B9E5());
 }
 
 void SFCubeMapFilter::threadFunction(
@@ -312,21 +305,20 @@ int SFCubeMapFilter::readImageData(const unsigned char *buf, size_t bufSize)
     inBuf.resize(w0 * h0 * 6, FloatVector4(0.0f));
     for (size_t n = 0; n < 6; n++)
     {
+      const unsigned char *p1 = buf + ((n * ((bufSize - 148) / 6)) + 148);
+      FloatVector4  *p2 = inBuf.data() + (n * w0 * h0);
       for (size_t y = 0; y < h0; y++)
       {
-        for (size_t x = 0; x < w0; x++)
+        FloatVector4  tmpScale(0.0f);
+        for (size_t x = 0; x < w0; x++, p1 = p1 + sizeof(std::uint64_t), p2++)
         {
-          size_t  i = y * w0 + x;
-          size_t  j = n * w0 * h0 + i;
-          i = i * sizeof(std::uint64_t);
-          i = i + (n * ((bufSize - 148) / 6)) + 148;
-          std::uint64_t tmp = FileBuffer::readUInt64Fast(buf + i);
+          std::uint64_t tmp = FileBuffer::readUInt64Fast(p1);
           FloatVector4  c(FloatVector4::convertFloat16(tmp));
-          c.maxValues(FloatVector4(0.0f));
-          c.minValues(FloatVector4(65536.0f));
-          inBuf[j] = c;
-          scale += c;
+          c.maxValues(FloatVector4(0.0f)).minValues(FloatVector4(65536.0f));
+          *p2 = c;
+          tmpScale += c;
         }
+        scale += tmpScale;
       }
     }
   }
@@ -346,25 +338,25 @@ int SFCubeMapFilter::readImageData(const unsigned char *buf, size_t bufSize)
     std::uint8_t  tmpBuf[128];
     for (size_t n = 0; n < 6; n++)
     {
-      for (size_t y = 0; y < h0; y = y + 4)
+      const unsigned char *p1 = buf + ((n * ((bufSize - 148) / 6)) + 148);
+      FloatVector4  *p2 = inBuf.data() + (n * w0 * h0);
+      for (size_t y = 0; y < h0; y = y + 4, p2 = p2 + (w0 * 3))
       {
-        for (size_t x = 0; x < w0; x = x + 4)
+        FloatVector4  tmpScale(0.0f);
+        for (size_t x = 0; x < w0; x = x + 4, p1 = p1 + 16, p2 = p2 + 4)
         {
-          size_t  i = (y >> 2) * (w0 >> 2) + (x >> 2);
-          i = (i << 4) + (n * ((bufSize - 148) / 6)) + 148;
-          size_t  j = n * w0 * h0 + (y * w0 + x);
-          (void) decompressFunc(reinterpret_cast< const std::uint8_t * >(
-                                    buf + i), 0xFFFFFFFFU, 0U, tmpBuf);
-          for (i = 0; i < 16; i++)
+          (void) decompressFunc(reinterpret_cast< const std::uint8_t * >(p1),
+                                0xFFFFFFFFU, 0U, tmpBuf);
+          for (size_t i = 0; i < 16; i++)
           {
             std::uint64_t tmp = FileBuffer::readUInt64Fast(&(tmpBuf[i << 3]));
             FloatVector4  c(FloatVector4::convertFloat16(tmp));
-            c.maxValues(FloatVector4(0.0f));
-            c.minValues(FloatVector4(65536.0f));
-            inBuf[j + ((i >> 2) * w0) + (i & 3)] = c;
-            scale += c;
+            c.maxValues(FloatVector4(0.0f)).minValues(FloatVector4(65536.0f));
+            p2[((i >> 2) * w0) + (i & 3)] = c;
+            tmpScale += c;
           }
         }
+        scale += tmpScale;
       }
     }
   }
@@ -406,7 +398,7 @@ int SFCubeMapFilter::readImageData(const unsigned char *buf, size_t bufSize)
   {
     // normalize float formats
     scale[0] = scale[0] + scale[1] + scale[2];
-    scale[0] = (15.0f / 3.0f) * scale[0] / float(int(inBuf.size()));
+    scale[0] = (12.5f / 3.0f) * scale[0] / float(int(inBuf.size()));
     scale = FloatVector4(1.0f / std::min(std::max(scale[0], 1.0f), 65536.0f));
     for (size_t i = 0; i < inBuf.size(); i++)
       inBuf[i] = inBuf[i] * scale;
@@ -544,18 +536,13 @@ size_t SFCubeMapFilter::convertImage(
     inBuf.resize(size_t(w * w) * 6);
   }
 
-  buf[8] = 0x0F;        // DDSD_CAPS, DDSD_HEIGHT, DDSD_WIDTH, DDSD_PITCH
-  buf[9] = 0x10;        // DDSD_PIXELFORMAT
-  buf[10] = 0x02;       // DDSD_MIPMAPCOUNT
-  buf[11] = 0x00;
-  buf[12] = (unsigned char) (width & 0xFF);
-  buf[13] = (unsigned char) (width >> 8);
-  buf[16] = (unsigned char) (width & 0xFF);
-  buf[17] = (unsigned char) (width >> 8);
-  buf[20] = (unsigned char) ((sizeof(std::uint32_t) * width) & 0xFF);
-  buf[21] = (unsigned char) ((sizeof(std::uint32_t) * width) >> 8);
-  buf[22] = 0x00;
-  buf[23] = 0x00;
+  // DDSD_CAPS, DDSD_HEIGHT, DDSD_WIDTH, DDSD_PITCH,
+  // DDSD_PIXELFORMAT, DDSD_MIPMAPCOUNT
+  FileBuffer::writeUInt32Fast(buf + 8, 0x0002100FU);
+  FileBuffer::writeUInt32Fast(buf + 12, width); // height
+  FileBuffer::writeUInt32Fast(buf + 16, width); // width
+  FileBuffer::writeUInt32Fast(buf + 20,         // pitch
+                              std::uint32_t(width * sizeof(std::uint32_t)));
   buf[28] = (unsigned char) (maxMip + 1);
   buf[108] = buf[108] | 0x08;           // DDSCAPS_COMPLEX
   buf[113] = buf[113] | 0xFE;           // DDSCAPS2_CUBEMAP*

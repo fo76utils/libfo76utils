@@ -208,6 +208,8 @@ class DDSTexture
   inline FloatVector4 getPixelT_Inline(float x, float y, float mipLevel) const;
   inline FloatVector4 getPixelBM_Inline(float x, float y, int mipLevel) const;
   inline FloatVector4 getPixelBC_Inline(float x, float y, int mipLevel) const;
+  static FloatVector4 calculateAvgLevelFP16(const unsigned char *p,
+                                            size_t nBytes);
 };
 
 inline bool DDSTexture::convertTexCoord(
