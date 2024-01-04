@@ -520,7 +520,7 @@ void CE2MaterialDB::loadCDBFile(BSReflStream& buf)
                     BSReflStream::stringTable[t],
                     BSReflStream::stringTable[t2]);
 #  if ENABLE_CDB_DEBUG > 1
-        printHexData(componentInfo.data() + componentInfo.getPosition(),
+        printHexData(componentInfo.getReadPtr(),
                      componentInfo.size() - componentInfo.getPosition());
 #  endif
       }
@@ -540,8 +540,7 @@ void CE2MaterialDB::loadCDBFile(BSReflStream& buf)
       }
       if (componentInfo.objectTable.begin() != componentInfo.objectTable.end())
         errorMessage("duplicate ObjectInfo list in material database");
-      const unsigned char *objectInfoPtr =
-          componentInfo.data() + componentInfo.getPosition();
+      const unsigned char *objectInfoPtr = componentInfo.getReadPtr();
       unsigned int  objectCnt = n;
       std::uint32_t maxObjID = 0U;
       for (const unsigned char *p = objectInfoPtr; n; n--, p = p + 21)
@@ -615,7 +614,7 @@ void CE2MaterialDB::loadCDBFile(BSReflStream& buf)
       }
       if (componentInfoPtr)
         errorMessage("duplicate ComponentInfo list in material database");
-      componentInfoPtr = componentInfo.data() + componentInfo.getPosition();
+      componentInfoPtr = componentInfo.getReadPtr();
       componentCnt = n;
 #if ENABLE_CDB_DEBUG
       while (n--)
@@ -635,8 +634,7 @@ void CE2MaterialDB::loadCDBFile(BSReflStream& buf)
       {
         errorMessage("unexpected end of LIST chunk in material database");
       }
-      const unsigned char *edgeInfoPtr =
-          componentInfo.data() + componentInfo.getPosition();
+      const unsigned char *edgeInfoPtr = componentInfo.getReadPtr();
       for (const unsigned char *p = edgeInfoPtr; n; n--, p = p + 12)
       {
         std::uint32_t childObjectID = FileBuffer::readUInt32Fast(p);

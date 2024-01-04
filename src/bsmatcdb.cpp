@@ -299,7 +299,7 @@ void BSMaterialsCDB::loadItem(CDBObject*& o, Chunk& chunkBuf, bool isDiff,
           errorMessage("unexpected end of CDB file");
         char    *s =
             reinterpret_cast< char * >(allocateSpace(len + 1U, sizeof(char)));
-        std::memcpy(s, buf2.data() + buf2.getPosition(), len);
+        std::memcpy(s, buf2.getReadPtr(), len);
         s[len] = '\0';
         o->data.stringValue = s;
         buf2.setPosition(buf2.getPosition() + len);
@@ -521,8 +521,7 @@ void BSMaterialsCDB::readAllChunks()
     {
       if (n > ((chunkBuf.size() - chunkBuf.getPosition()) / 21))
         errorMessage("unexpected end of LIST chunk in material database");
-      const unsigned char *objectInfoPtr =
-          chunkBuf.data() + chunkBuf.getPosition();
+      const unsigned char *objectInfoPtr = chunkBuf.getReadPtr();
       std::uint32_t maxObjID = 0U;
       for (std::uint32_t i = 0U; i < n; i++)
       {
@@ -576,8 +575,7 @@ void BSMaterialsCDB::readAllChunks()
     {
       if (n > ((chunkBuf.size() - chunkBuf.getPosition()) / 12))
         errorMessage("unexpected end of LIST chunk in material database");
-      const unsigned char *edgeInfoPtr =
-          chunkBuf.data() + chunkBuf.getPosition();
+      const unsigned char *edgeInfoPtr = chunkBuf.getReadPtr();
       for (std::uint32_t i = 0U; i < n; i++)
       {
         // uint32_t sourceID, uint32_t targetID, uint16_t index, uint16_t type

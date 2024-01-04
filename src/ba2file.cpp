@@ -170,7 +170,7 @@ void BA2File::loadBA2Textures(
     (void) buf.readUInt32Fast();        // extension ("dds\0")
     (void) buf.readUInt32Fast();        // unknown
     (void) buf.readUInt8Fast();         // unknown
-    const unsigned char *fileData = buf.data() + buf.getPosition();
+    const unsigned char *fileData = buf.getReadPtr();
     size_t  chunkCnt = buf.readUInt8Fast();
     (void) buf.readUInt16Fast();        // chunk header size
     (void) buf.readUInt16Fast();        // texture width

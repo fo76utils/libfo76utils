@@ -53,7 +53,7 @@ unsigned int ESMFile::loadRecords(size_t& groupCnt, FileBuffer& buf,
   {
     if ((buf.getPosition() + recordHdrSize) > endPos)
       errorMessage("end of group in ESM input file");
-    const unsigned char *p = buf.data() + buf.getPosition();
+    const unsigned char *p = buf.getReadPtr();
     unsigned int  recordType = buf.readUInt32Fast();
     unsigned int  recordSize = buf.readUInt32Fast();
     unsigned int  flags = buf.readUInt32Fast();

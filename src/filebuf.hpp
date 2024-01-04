@@ -47,6 +47,9 @@ class FileBuffer
   static inline std::uint16_t readUInt16Fast(const void *p);
   static inline std::uint32_t readUInt32Fast(const void *p);
   static inline std::uint64_t readUInt64Fast(const void *p);
+  static inline void writeUInt16Fast(void *p, std::uint16_t n);
+  static inline void writeUInt32Fast(void *p, std::uint32_t n);
+  static inline void writeUInt64Fast(void *p, std::uint64_t n);
   static inline bool checkType(unsigned int id, const char *s);
   inline size_t size() const
   {
@@ -79,6 +82,10 @@ class FileBuffer
   inline const unsigned char *getDataPtr() const
   {
     return fileBuf;
+  }
+  inline const unsigned char *getReadPtr() const
+  {
+    return fileBuf + filePos;
   }
   void setBuffer(const unsigned char *fileData, size_t fileSize);
   FileBuffer();
@@ -170,6 +177,47 @@ inline std::uint64_t FileBuffer::readUInt64Fast(const void *p)
           | (std::uint64_t(q[2]) << 16) | (std::uint64_t(q[3]) << 24)
           | (std::uint64_t(q[4]) << 32) | (std::uint64_t(q[5]) << 40)
           | (std::uint64_t(q[6]) << 48) | (std::uint64_t(q[7]) << 56));
+#endif
+}
+
+inline void FileBuffer::writeUInt16Fast(void *p, std::uint16_t n)
+{
+#if defined(__i386__) || defined(__x86_64__) || defined(__x86_64)
+  *(reinterpret_cast< std::uint16_t * >(p)) = n;
+#else
+  unsigned char *q = reinterpret_cast< unsigned char * >(p);
+  q[0] = (unsigned char) (n & 0xFFU);
+  q[1] = (unsigned char) ((n >> 8) & 0xFFU);
+#endif
+}
+
+inline void FileBuffer::writeUInt32Fast(void *p, std::uint32_t n)
+{
+#if defined(__i386__) || defined(__x86_64__) || defined(__x86_64)
+  *(reinterpret_cast< std::uint32_t * >(p)) = n;
+#else
+  unsigned char *q = reinterpret_cast< unsigned char * >(p);
+  q[0] = (unsigned char) (n & 0xFFU);
+  q[1] = (unsigned char) ((n >> 8) & 0xFFU);
+  q[2] = (unsigned char) ((n >> 16) & 0xFFU);
+  q[3] = (unsigned char) ((n >> 24) & 0xFFU);
+#endif
+}
+
+inline void FileBuffer::writeUInt64Fast(void *p, std::uint64_t n)
+{
+#if defined(__i386__) || defined(__x86_64__) || defined(__x86_64)
+  *(reinterpret_cast< std::uint64_t * >(p)) = n;
+#else
+  unsigned char *q = reinterpret_cast< unsigned char * >(p);
+  q[0] = (unsigned char) (n & 0xFFU);
+  q[1] = (unsigned char) ((n >> 8) & 0xFFU);
+  q[2] = (unsigned char) ((n >> 16) & 0xFFU);
+  q[3] = (unsigned char) ((n >> 24) & 0xFFU);
+  q[4] = (unsigned char) ((n >> 32) & 0xFFU);
+  q[5] = (unsigned char) ((n >> 40) & 0xFFU);
+  q[6] = (unsigned char) ((n >> 48) & 0xFFU);
+  q[7] = (unsigned char) ((n >> 56) & 0xFFU);
 #endif
 }
 
