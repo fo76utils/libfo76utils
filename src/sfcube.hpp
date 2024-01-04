@@ -14,7 +14,9 @@ class SFCubeMapFilter
   std::uint32_t faceDataSize;
   std::uint32_t width;
   void (*pixelStoreFunction)(unsigned char *p, FloatVector4 c);
+ public:
   static FloatVector4 convertCoord(int x, int y, int w, int n);
+ protected:
   void processImage_Copy(unsigned char *outBufP, int w, int h, int y0, int y1);
   void processImage_Diffuse(unsigned char *outBufP,
                             int w, int h, int y0, int y1);
