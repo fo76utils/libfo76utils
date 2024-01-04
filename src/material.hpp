@@ -169,6 +169,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     Flag_UseDetailBlender = 0x00200000,
     Flag_LayeredEdgeFalloff = 0x00400000,
     Flag_GlobalLayerData = 0x00800000
+    // Flag_TSMarker = 0x01000000
   };
   enum
   {
