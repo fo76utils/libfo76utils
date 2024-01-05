@@ -3,7 +3,9 @@
 #include "bsmatcdb.hpp"
 
 #define CDB_COMPONENTS_SORTED   0
-#define CDB_JSON_QUOTE_NUMBERS  0
+#define CDB_JSON_QUOTE_NUMBERS  1
+#define CDB_SORT_STRUCT_MEMBERS 1
+#define CDB_COPY_CONTROLLERS    0
 
 BSMaterialsCDB::BSResourceID::BSResourceID(const std::string& fileName)
 {
@@ -163,11 +165,12 @@ BSMaterialsCDB::CDBObject * BSMaterialsCDB::allocateObject(
 
 void BSMaterialsCDB::copyObject(CDBObject*& o)
 {
-  if (!o)
-    return;
   o->refCnt++;
   for (std::uint32_t i = 0U; i < o->childCnt; i++)
-    copyObject(o->data.children[i]);
+  {
+    if (o->data.children[i])
+      copyObject(o->data.children[i]);
+  }
 }
 
 void BSMaterialsCDB::copyBaseObject(MaterialObject& o)
@@ -186,7 +189,13 @@ void BSMaterialsCDB::copyBaseObject(MaterialObject& o)
     tmp->key = i->key;
     tmp->className = i->className;
     tmp->o = i->o;
-    copyObject(tmp->o);
+#if !CDB_COPY_CONTROLLERS
+    if (tmp->className == String_BSBind_ControllerComponent) [[unlikely]]
+      tmp->o = allocateObject(tmp->className, getClassDef(tmp->className), 0);
+    else
+#endif
+    if (tmp->o) [[likely]]
+      copyObject(tmp->o);
     tmp->next = nullptr;
     *prv = tmp;
     prv = &(tmp->next);
@@ -644,6 +653,34 @@ void BSMaterialsCDB::dumpObject(
     }
     // structure
     printToString(s, "{\n%*s\"Data\": {", indentCnt + 2, "");
+#if CDB_SORT_STRUCT_MEMBERS
+    const char  *prvFieldName = nullptr;
+    while (true)
+    {
+      const char    *fieldNameStr = nullptr;
+      std::uint32_t fieldNum = 0U;
+      for (std::uint32_t i = 0U; i < o->childCnt; i++)
+      {
+        if (!o->data.children[i])
+          continue;
+        const char  *tmpFieldName = "null";
+        if (classDef && i < classDef->fieldCnt)
+          tmpFieldName = stringTable[classDef->fields[i].name];
+        if ((!prvFieldName || std::strcmp(tmpFieldName, prvFieldName) > 0) &&
+            (!fieldNameStr || std::strcmp(tmpFieldName, fieldNameStr) < 0))
+        {
+          fieldNameStr = tmpFieldName;
+          fieldNum = i;
+        }
+      }
+      if (!fieldNameStr)
+        break;
+      prvFieldName = fieldNameStr;
+      printToString(s, "\n%*s\"%s\": ", indentCnt + 4, "", fieldNameStr);
+      dumpObject(s, o->data.children[fieldNum], indentCnt + 4);
+      printToString(s, ",");
+    }
+#else
     for (std::uint32_t fieldNum = 0U; fieldNum < o->childCnt; fieldNum++)
     {
       if (!o->data.children[fieldNum])
@@ -655,6 +692,7 @@ void BSMaterialsCDB::dumpObject(
       dumpObject(s, o->data.children[fieldNum], indentCnt + 4);
       printToString(s, ",");
     }
+#endif
     if (s.ends_with(','))
     {
       s[s.length() - 1] = '\n';
@@ -885,6 +923,20 @@ void BSMaterialsCDB::getJSONMaterial(
     for (const MaterialComponent *j = i->components; j; j = j->next)
     {
       jsonBuf += "        ";
+#if CDB_SORT_STRUCT_MEMBERS
+      size_t  prvLen = jsonBuf.length();
+      dumpObject(jsonBuf, j->o, 8);
+      size_t  n = jsonBuf.rfind("\n          \"Type\"");
+      if (n != std::string::npos && n > prvLen)
+      {
+        jsonBuf.resize(n + 11);
+        printToString(jsonBuf, "\"Index\": %u,\n",
+                      (unsigned int) (j->key & 0xFFFFU));
+        printToString(jsonBuf, "          \"Type\": \"%s\"\n",
+                      stringTable[j->className]);
+        printToString(jsonBuf, "        },\n");
+      }
+#else
       dumpObject(jsonBuf, j->o, 8);
       if (jsonBuf.ends_with("\n        }"))
       {
@@ -893,6 +945,7 @@ void BSMaterialsCDB::getJSONMaterial(
                       (unsigned int) (j->key & 0xFFFFU));
         printToString(jsonBuf, "        },\n");
       }
+#endif
     }
     if (jsonBuf.ends_with(",\n"))
     {
