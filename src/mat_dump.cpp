@@ -36,7 +36,7 @@ const char * CE2Material::materialFlagNames[32] =
   "Use detail blender",                 // 21 (0x00200000)
   "Layered edge falloff",               // 22 (0x00400000)
   "Global layer data",                  // 23 (0x00800000)
-  "",                                   // 24 (0x01000000)
+  "Is marker",                          // 24 (0x01000000)
   "",                                   // 25 (0x02000000)
   "",                                   // 26 (0x04000000)
   "",                                   // 27 (0x08000000)
