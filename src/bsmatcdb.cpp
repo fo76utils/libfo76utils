@@ -654,29 +654,29 @@ void BSMaterialsCDB::dumpObject(
     // structure
     printToString(s, "{\n%*s\"Data\": {", indentCnt + 2, "");
 #if CDB_SORT_STRUCT_MEMBERS
-    const char  *prvFieldName = nullptr;
+    int     prvFieldNameID = -1;
     while (true)
     {
-      const char    *fieldNameStr = nullptr;
-      std::uint32_t fieldNum = 0U;
+      int     fieldNameID = 0x7FFFFFFF;
+      int     fieldNum = -1;
       for (std::uint32_t i = 0U; i < o->childCnt; i++)
       {
         if (!o->data.children[i])
           continue;
-        const char  *tmpFieldName = "null";
+        int     tmpFieldNameID = String_None;
         if (classDef && i < classDef->fieldCnt)
-          tmpFieldName = stringTable[classDef->fields[i].name];
-        if ((!prvFieldName || std::strcmp(tmpFieldName, prvFieldName) > 0) &&
-            (!fieldNameStr || std::strcmp(tmpFieldName, fieldNameStr) < 0))
+          tmpFieldNameID = int(classDef->fields[i].name);
+        if (tmpFieldNameID > prvFieldNameID && tmpFieldNameID < fieldNameID)
         {
-          fieldNameStr = tmpFieldName;
-          fieldNum = i;
+          fieldNameID = tmpFieldNameID;
+          fieldNum = int(i);
         }
       }
-      if (!fieldNameStr)
+      if (fieldNum < 0)
         break;
-      prvFieldName = fieldNameStr;
-      printToString(s, "\n%*s\"%s\": ", indentCnt + 4, "", fieldNameStr);
+      prvFieldNameID = fieldNameID;
+      printToString(s, "\n%*s\"%s\": ",
+                    indentCnt + 4, "", stringTable[fieldNameID]);
       dumpObject(s, o->data.children[fieldNum], indentCnt + 4);
       printToString(s, ",");
     }
@@ -929,12 +929,11 @@ void BSMaterialsCDB::getJSONMaterial(
       size_t  n = jsonBuf.rfind("\n          \"Type\"");
       if (n != std::string::npos && n > prvLen)
       {
-        jsonBuf.resize(n + 11);
-        printToString(jsonBuf, "\"Index\": %u,\n",
-                      (unsigned int) (j->key & 0xFFFFU));
-        printToString(jsonBuf, "          \"Type\": \"%s\"\n",
-                      stringTable[j->className]);
-        printToString(jsonBuf, "        },\n");
+        char    tmpBuf[64];
+        std::sprintf(tmpBuf, "\n          \"Index\": %u,",
+                     (unsigned int) (j->key & 0xFFFFU));
+        jsonBuf.insert(n, tmpBuf);
+        printToString(jsonBuf, ",\n");
       }
 #else
       dumpObject(jsonBuf, j->o, 8);
