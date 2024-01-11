@@ -66,6 +66,7 @@ class BA2File
   unsigned int getBSAUnpackedSize(const unsigned char*& dataPtr,
                                   const FileDeclaration& fd) const;
  public:
+  BA2File();
   BA2File(const char *pathName,
           const std::vector< std::string > *includePatterns = 0,
           const std::vector< std::string > *excludePatterns = 0,
@@ -77,6 +78,11 @@ class BA2File
   // includePatterns, excludePatterns, and fileNames are tab separated lists
   BA2File(const char *pathName, const char *includePatterns,
           const char *excludePatterns = 0, const char *fileNames = 0);
+  // load a single archive file or directory
+  void loadArchivePath(const char *pathName,
+                       const std::vector< std::string > *includePatterns = 0,
+                       const std::vector< std::string > *excludePatterns = 0,
+                       const std::set< std::string > *fileNames = 0);
   virtual ~BA2File();
   void getFileList(std::vector< std::string >& fileList,
                    bool disableSorting = false) const;

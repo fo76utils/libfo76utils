@@ -9,7 +9,7 @@
 
 inline BA2File::FileDeclaration::FileDeclaration(
     const std::string& fName, std::uint32_t h, std::int32_t p)
-  : fileData((unsigned char *) 0),
+  : fileData(nullptr),
     packedSize(0U),
     unpackedSize(0U),
     archiveType(0),
@@ -47,38 +47,51 @@ inline std::uint32_t BA2File::hashFunction(const std::string& s)
   return std::uint32_t(h & 0xFFFFFFFFU);
 }
 
+static inline bool checkNamePattern(
+    const std::string& fileName, const std::string& pattern)
+{
+  size_t  n = pattern.length() - 4;
+  if (!(n & ~(size_t(1))) && pattern[0] == '.')
+  {
+    if (fileName.length() < pattern.length()) [[unlikely]]
+      return false;
+    const char  *s1 = fileName.c_str() + (fileName.length() - 4);
+    const char  *s2 = pattern.c_str() + n;
+    if (FileBuffer::readUInt32Fast(s1) != FileBuffer::readUInt32Fast(s2))
+      return false;
+    if (!n)
+      return true;
+    return (*(s1 - 1) == '.');
+  }
+  return (fileName.find(pattern) != std::string::npos);
+}
+
 BA2File::FileDeclaration * BA2File::addPackedFile(const std::string& fileName)
 {
   bool    nameMatches = false;
   if (fileNamesPtr && fileNamesPtr->begin() != fileNamesPtr->end())
-  {
     nameMatches = (fileNamesPtr->find(fileName) != fileNamesPtr->end());
-  }
-  if (includePatternsPtr && includePatternsPtr->size() > 0 && !nameMatches)
+  if (includePatternsPtr &&
+      includePatternsPtr->begin() != includePatternsPtr->end())
   {
-    const std::vector< std::string >& includePatterns = *includePatternsPtr;
-    for (size_t i = 0; i < includePatterns.size(); i++)
-    {
-      if (fileName.find(includePatterns[i]) != std::string::npos)
-      {
-        nameMatches = true;
-        break;
-      }
-    }
+    std::vector< std::string >::const_iterator  i =
+        includePatternsPtr->begin();
+    for ( ; !nameMatches && i != includePatternsPtr->end(); i++)
+      nameMatches = checkNamePattern(fileName, *i);
   }
   else if (!(fileNamesPtr && fileNamesPtr->begin() != fileNamesPtr->end()))
   {
     nameMatches = true;
   }
   if (!nameMatches)
-    return (FileDeclaration *) 0;
-  if (excludePatternsPtr && excludePatternsPtr->size() > 0)
+    return nullptr;
+  if (excludePatternsPtr)
   {
-    const std::vector< std::string >& excludePatterns = *excludePatternsPtr;
-    for (size_t i = 0; i < excludePatterns.size(); i++)
+    std::vector< std::string >::const_iterator  i;
+    for (i = excludePatternsPtr->begin(); i != excludePatternsPtr->end(); i++)
     {
-      if (fileName.find(excludePatterns[i]) != std::string::npos)
-        return (FileDeclaration *) 0;
+      if (checkNamePattern(fileName, *i))
+        return nullptr;
     }
   }
   std::uint32_t h = hashFunction(fileName);
@@ -109,7 +122,7 @@ void BA2File::loadBA2General(
   size_t  nameOffs = buf.readUInt64();
   if (nameOffs > buf.size() || (fileCnt * 36ULL + hdrSize) > nameOffs)
     errorMessage("invalid BA2 file header");
-  std::vector< FileDeclaration * >  fileDecls(fileCnt, (FileDeclaration *) 0);
+  std::vector< FileDeclaration * >  fileDecls(fileCnt, nullptr);
   buf.setPosition(nameOffs);
   std::string fileName;
   for (size_t i = 0; i < fileCnt; i++)
@@ -148,7 +161,7 @@ void BA2File::loadBA2Textures(
   size_t  nameOffs = buf.readUInt64();
   if (nameOffs > buf.size() || (fileCnt * 48ULL + hdrSize) > nameOffs)
     errorMessage("invalid BA2 file header");
-  std::vector< FileDeclaration * >  fileDecls(fileCnt, (FileDeclaration *) 0);
+  std::vector< FileDeclaration * >  fileDecls(fileCnt, nullptr);
   buf.setPosition(nameOffs);
   std::string fileName;
   for (size_t i = 0; i < fileCnt; i++)
@@ -409,7 +422,7 @@ void BA2File::loadArchivesFromDir(const char *pathName)
       }
     }
     closedir(d);
-    d = (DIR *) 0;
+    d = nullptr;
     for (std::set< std::string >::iterator i = archiveNames1.begin();
          i != archiveNames1.end(); i++)
     {
@@ -432,7 +445,7 @@ void BA2File::loadArchivesFromDir(const char *pathName)
 void BA2File::loadArchiveFile(const char *fileName)
 {
   {
-    if (BRANCH_UNLIKELY(!fileName || *fileName == '\0'))
+    if (!fileName || *fileName == '\0') [[unlikely]]
     {
       std::string dataPath;
       if (!FileBuffer::getDefaultDataPath(dataPath))
@@ -468,8 +481,6 @@ void BA2File::loadArchiveFile(const char *fileName)
     }
   }
 
-  if (fileMap.size() < size_t(nameHashMask + 1))
-    fileMap.resize(size_t(nameHashMask + 1), std::int32_t(-1));
   FileBuffer  *bufp = new FileBuffer(fileName);
   try
   {
@@ -536,11 +547,20 @@ unsigned int BA2File::getBSAUnpackedSize(const unsigned char*& dataPtr,
   return unpackedSize;
 }
 
+BA2File::BA2File()
+  : fileMap(size_t(nameHashMask + 1), std::int32_t(-1)),
+    includePatternsPtr(nullptr),
+    excludePatternsPtr(nullptr),
+    fileNamesPtr(nullptr)
+{
+}
+
 BA2File::BA2File(const char *pathName,
                  const std::vector< std::string > *includePatterns,
                  const std::vector< std::string > *excludePatterns,
                  const std::set< std::string > *fileNames)
-  : includePatternsPtr(includePatterns),
+  : fileMap(size_t(nameHashMask + 1), std::int32_t(-1)),
+    includePatternsPtr(includePatterns),
     excludePatternsPtr(excludePatterns),
     fileNamesPtr(fileNames)
 {
@@ -551,7 +571,8 @@ BA2File::BA2File(const std::vector< std::string >& pathNames,
                  const std::vector< std::string > *includePatterns,
                  const std::vector< std::string > *excludePatterns,
                  const std::set< std::string > *fileNames)
-  : includePatternsPtr(includePatterns),
+  : fileMap(size_t(nameHashMask + 1), std::int32_t(-1)),
+    includePatternsPtr(includePatterns),
     excludePatternsPtr(excludePatterns),
     fileNamesPtr(fileNames)
 {
@@ -561,9 +582,10 @@ BA2File::BA2File(const std::vector< std::string >& pathNames,
 
 BA2File::BA2File(const char *pathName, const char *includePatterns,
                  const char *excludePatterns, const char *fileNames)
-  : includePatternsPtr((std::vector< std::string > *) 0),
-    excludePatternsPtr((std::vector< std::string > *) 0),
-    fileNamesPtr((std::set< std::string > *) 0)
+  : fileMap(size_t(nameHashMask + 1), std::int32_t(-1)),
+    includePatternsPtr(nullptr),
+    excludePatternsPtr(nullptr),
+    fileNamesPtr(nullptr)
 {
   std::vector< std::string >  tmpIncludePatterns;
   std::vector< std::string >  tmpExcludePatterns;
@@ -611,6 +633,17 @@ BA2File::BA2File(const char *pathName, const char *includePatterns,
   loadArchiveFile(pathName);
 }
 
+void BA2File::loadArchivePath(
+    const char *pathName, const std::vector< std::string > *includePatterns,
+    const std::vector< std::string > *excludePatterns,
+    const std::set< std::string > *fileNames)
+{
+  includePatternsPtr = includePatterns;
+  excludePatternsPtr = excludePatterns;
+  fileNamesPtr = fileNames;
+  loadArchiveFile(pathName);
+}
+
 BA2File::~BA2File()
 {
   for (size_t i = 0; i < archiveFiles.size(); i++)
@@ -641,7 +674,7 @@ const BA2File::FileDeclaration * BA2File::findFile(
       return &fd;
     n = fd.prv;
   }
-  return (FileDeclaration *) 0;
+  return nullptr;
 }
 
 long BA2File::getFileSize(const std::string& fileName, bool packedSize) const
@@ -806,7 +839,7 @@ void BA2File::extractBlock(
   {
     if (offs >= fileBuf.size() || (offs + packedSize) > fileBuf.size())
       errorMessage("invalid packed data offset or size");
-    if (BRANCH_UNLIKELY(fileDecl.archiveType == 2))
+    if (fileDecl.archiveType == 2) [[unlikely]]
     {
       n = ZLibDecompressor::decompressLZ4Raw(
               buf.data() + n, unpackedSize, p, packedSize);
@@ -883,7 +916,7 @@ size_t BA2File::extractFile(
     const unsigned char*& fileData, std::vector< unsigned char >& buf,
     const std::string& fileName) const
 {
-  fileData = (unsigned char *) 0;
+  fileData = nullptr;
   buf.clear();
   const FileDeclaration *fd = findFile(fileName);
   if (!fd)
