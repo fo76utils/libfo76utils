@@ -163,12 +163,10 @@ void SFCubeMapFilter::processImage_Specular(
               continue;
             FloatVector8  v2w(&(j[6]));
             d.maxValues(FloatVector8(0.0f));
-            FloatVector8  g1 = d;
-            // g2 = geometry function denominator * 2.0 (a = k * 2.0)
-            FloatVector8  g2 = d * (2.0f - a) + a;
+            FloatVector8  nDotL = d;
             // D denominator = (N·H * N·H * (a2 - 1.0) + 1.0)² * 4.0
             d = (d + 1.0f) * (a2 - 1.0f) + 2.0f;
-            FloatVector8  weight = g1 * v2w / (g2 * d * d);
+            FloatVector8  weight = nDotL * v2w / (d * d);
             c_r += (FloatVector8(&(k[0])) * weight);
             c_g += (FloatVector8(&(k[2])) * weight);
             c_b += (FloatVector8(&(k[4])) * weight);
@@ -222,14 +220,10 @@ void SFCubeMapFilter::threadFunction(
   else if (m <= filterMipRange)
   {
     float   roughness = 1.0f;   // at mip level = filterMipRange
+    // mip level = filterMipRange is also used to approximate
+    // the diffuse filter, with roughness = 1.0
     if (m < filterMipRange)
-    {
-      float   tmp = float(m) / float(filterMipRange);
-      // mip level = filterMipRange - 1 is also used to approximate
-      // the diffuse filter, with roughness = 6/7
-      tmp = tmp * float(filterMipRange * 48) / float((filterMipRange - 1) * 49);
-      roughness = 1.0f - float(std::sqrt(1.0f - tmp));
-    }
+      roughness = (10.0f - float(std::sqrt(float(m) * -16.0f + 100.0f))) / 8.0f;
     p->processImage_Specular(outBufP, w, h, y0, y1, roughness);
   }
   else
