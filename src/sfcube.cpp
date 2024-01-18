@@ -15,11 +15,10 @@
 
 FloatVector4 SFCubeMapFilter::convertCoord(int x, int y, int w, int n)
 {
-  FloatVector4  v(0.0f);
+  FloatVector4  v((float) w);
   switch (n)
   {
     case 0:
-      v[0] = float(w);
       v[1] = float(w - (y << 1));
       v[2] = float(w - (x << 1));
       v += FloatVector4(0.0f, -1.0f, -1.0f, 0.0f);
@@ -32,7 +31,6 @@ FloatVector4 SFCubeMapFilter::convertCoord(int x, int y, int w, int n)
       break;
     case 2:
       v[0] = float((x << 1) - w);
-      v[1] = float(w);
       v[2] = float((y << 1) - w);
       v += FloatVector4(1.0f, 0.0f, 1.0f, 0.0f);
       break;
@@ -45,7 +43,6 @@ FloatVector4 SFCubeMapFilter::convertCoord(int x, int y, int w, int n)
     case 4:
       v[0] = float((x << 1) - w);
       v[1] = float(w - (y << 1));
-      v[2] = float(w);
       v += FloatVector4(1.0f, -1.0f, 0.0f, 0.0f);
       break;
     case 5:
@@ -56,10 +53,9 @@ FloatVector4 SFCubeMapFilter::convertCoord(int x, int y, int w, int n)
       break;
   }
   // normalize vector
-  float   scale = 1.0f / float(std::sqrt(v.dotProduct3(v)));
+  v *= (1.0f / float(std::sqrt(v.dotProduct3(v))));
   // v[3] = scale factor to account for variable angular resolution
-  v[3] = float(w);
-  v *= scale;
+  v[3] = v[3] * v[3] * v[3];
   return v;
 }
 
