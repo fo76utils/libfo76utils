@@ -757,7 +757,7 @@ void DDSTexture::loadTexture(FileBuffer& buf, int mipOffset)
   if (BRANCH_UNLIKELY(dxgiFormat == 0x0A))
   {                                     // DXGI_FORMAT_R16G16B16A16_FLOAT
     std::uint32_t scale = 16777216U;
-    if (maxTextureNum == 5)
+    if (maxTextureNum >= 5)
     {
       // normalize FP16 format cube maps
       size_t  srcDataSize = sizeRequired * 6;

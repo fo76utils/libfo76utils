@@ -116,7 +116,7 @@ class DDSTexture
   }
   inline bool getIsCubeMap() const
   {
-    return (maxTextureNum == 5);
+    return (maxTextureNum >= 5);
   }
   inline size_t getTextureCount() const
   {
