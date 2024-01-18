@@ -692,6 +692,27 @@ long BA2File::getFileSize(const std::string& fileName, bool packedSize) const
   return long(fd->unpackedSize);
 }
 
+static const unsigned char dxgiFormatSizeTable[128] =
+{
+  // block size | (isCompressed << 7)
+  0x00, 0x10, 0x10, 0x10, 0x10, 0x0C, 0x0C, 0x0C,       // 0x00
+  0x0C, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08,
+  0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x04,       // 0x10
+  0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04,
+  0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04,       // 0x20
+  0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04,
+  0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,       // 0x30
+  0x02, 0x02, 0x02, 0x02, 0x01, 0x01, 0x01, 0x01,
+  0x01, 0x01, 0x00, 0x04, 0x00, 0x00, 0x88, 0x88,       // 0x40
+  0x88, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x88,
+  0x88, 0x88, 0x90, 0x90, 0x90, 0x02, 0x02, 0x04,       // 0x50
+  0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x90, 0x90,
+  0x90, 0x90, 0x90, 0x90, 0x00, 0x00, 0x00, 0x00,       // 0x60
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00,       // 0x70
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+
 int BA2File::extractBA2Texture(std::vector< unsigned char >& buf,
                                const FileDeclaration& fileDecl,
                                int mipOffset) const
@@ -704,6 +725,7 @@ int BA2File::extractBA2Texture(std::vector< unsigned char >& buf,
   unsigned int  height = ((unsigned int) p[4] << 8) | p[3];
   int     mipCnt = p[7];
   unsigned char dxgiFormat = p[8];
+  bool    isCubeMap = bool(p[9] & 1);
   size_t  offs = size_t(p - fileBuf.data()) + 11;
   buf.resize(148);
   for ( ; chunkCnt-- > 0; offs = offs + 24)
@@ -733,89 +755,53 @@ int BA2File::extractBA2Texture(std::vector< unsigned char >& buf,
     }
   }
   // write DDS header
-  unsigned int  pitch = width;
-  bool    compressedTexture = true;
-  switch (dxgiFormat)
+  if (dxgiFormat >= 0x80 || !dxgiFormatSizeTable[dxgiFormat])
   {
-    case 0x0A:                  // DXGI_FORMAT_R16G16B16A16_FLOAT
-    case 0x0B:                  // DXGI_FORMAT_R16G16B16A16_UNORM
-      pitch = width << 3;
-    case 0x3D:                  // DXGI_FORMAT_R8_UNORM
-      compressedTexture = false;
-      break;
-    case 0x1B:                  // DXGI_FORMAT_R8G8B8A8_TYPELESS
-    case 0x1C:                  // DXGI_FORMAT_R8G8B8A8_UNORM
-    case 0x1D:                  // DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
-    case 0x1F:                  // DXGI_FORMAT_R8G8B8A8_SNORM
-    case 0x57:                  // DXGI_FORMAT_B8G8R8A8_UNORM
-    case 0x5A:                  // DXGI_FORMAT_B8G8R8A8_TYPELESS
-    case 0x5B:                  // DXGI_FORMAT_B8G8R8A8_UNORM_SRGB
-      pitch = width << 2;
-      compressedTexture = false;
-      break;
-    case 0x46:                  // DXGI_FORMAT_BC1_TYPELESS
-    case 0x47:                  // DXGI_FORMAT_BC1_UNORM
-    case 0x48:                  // DXGI_FORMAT_BC1_UNORM_SRGB
-    case 0x4F:                  // DXGI_FORMAT_BC4_TYPELESS
-    case 0x50:                  // DXGI_FORMAT_BC4_UNORM
-    case 0x51:                  // DXGI_FORMAT_BC4_SNORM
-      pitch = (((width + 3) >> 2) * ((height + 3) >> 2)) << 3;
-      break;
-    case 0x49:                  // DXGI_FORMAT_BC2_TYPELESS
-    case 0x4A:                  // DXGI_FORMAT_BC2_UNORM
-    case 0x4B:                  // DXGI_FORMAT_BC2_UNORM_SRGB
-    case 0x4C:                  // DXGI_FORMAT_BC3_TYPELESS
-    case 0x4D:                  // DXGI_FORMAT_BC3_UNORM
-    case 0x4E:                  // DXGI_FORMAT_BC3_UNORM_SRGB
-    case 0x52:                  // DXGI_FORMAT_BC5_TYPELESS
-    case 0x53:                  // DXGI_FORMAT_BC5_UNORM
-    case 0x54:                  // DXGI_FORMAT_BC5_SNORM
-    case 0x5E:                  // DXGI_FORMAT_BC6H_TYPELESS
-    case 0x5F:                  // DXGI_FORMAT_BC6H_UF16
-    case 0x60:                  // DXGI_FORMAT_BC6H_SF16
-    case 0x61:                  // DXGI_FORMAT_BC7_TYPELESS
-    case 0x62:                  // DXGI_FORMAT_BC7_UNORM
-    case 0x63:                  // DXGI_FORMAT_BC7_UNORM_SRGB
-      pitch = (((width + 3) >> 2) * ((height + 3) >> 2)) << 4;
-      break;
-    default:
-      throw FO76UtilsError("unsupported DXGI_FORMAT 0x%02X",
-                           (unsigned int) dxgiFormat);
+    throw FO76UtilsError("unsupported DXGI_FORMAT 0x%02X",
+                         (unsigned int) dxgiFormat);
   }
-  buf[0] = 0x44;                // 'D'
-  buf[1] = 0x44;                // 'D'
-  buf[2] = 0x53;                // 'S'
-  buf[3] = 0x20;                // ' '
-  buf[4] = 124;                 // size of DDS_HEADER
+  unsigned int  pitch = dxgiFormatSizeTable[dxgiFormat];
+  bool    compressedTexture = bool(pitch & 0x80U);
   if (!compressedTexture)
-    buf[8] = 0x0F;              // DDSD_PITCH + same flags as below
+    pitch = (pitch & 0x7FU) * width;
   else
-    buf[8] = 0x07;              // DDSD_CAPS, DDSD_HEIGHT, DDSD_WIDTH
-  buf[9] = 0x10;                // DDSD_PIXELFORMAT
+    pitch = (pitch & 0x7FU) * ((width + 3) >> 2) * ((height + 3) >> 2);
+  unsigned char *hdr = buf.data();
+  hdr[0] = 0x44;                // 'D'
+  hdr[1] = 0x44;                // 'D'
+  hdr[2] = 0x53;                // 'S'
+  hdr[3] = 0x20;                // ' '
+  hdr[4] = 124;                 // size of DDS_HEADER
   if (!compressedTexture)
-    buf[10] = 0x02;             // DDSD_MIPMAPCOUNT
+    hdr[8] = 0x0F;              // DDSD_PITCH + same flags as below
   else
-    buf[10] = 0x0A;             // DDSD_MIPMAPCOUNT, DDSD_LINEARSIZE
-  buf[12] = (unsigned char) (height & 0xFF);    // height
-  buf[13] = (unsigned char) (height >> 8);
-  buf[16] = (unsigned char) (width & 0xFF);     // width
-  buf[17] = (unsigned char) (width >> 8);
-  buf[20] = (unsigned char) (pitch & 0xFF);
-  buf[21] = (unsigned char) ((pitch >> 8) & 0xFF);
-  buf[22] = (unsigned char) ((pitch >> 16) & 0xFF);
-  buf[23] = (unsigned char) ((pitch >> 24) & 0xFF);
-  buf[28] = (unsigned char) mipCnt;     // mipmap count
-  buf[76] = 32;                 // size of DDS_PIXELFORMAT
-  buf[80] = 0x04;               // DDPF_FOURCC
-  buf[84] = 0x44;               // 'D'
-  buf[85] = 0x58;               // 'X'
-  buf[86] = 0x31;               // '1'
-  buf[87] = 0x30;               // '0'
-  buf[108] = 0x08;              // DDSCAPS_COMPLEX
-  buf[109] = 0x10;              // DDSCAPS_TEXTURE
-  buf[110] = 0x40;              // DDSCAPS_MIPMAP
-  buf[128] = dxgiFormat;        // DXGI_FORMAT
-  buf[132] = 3;                 // D3D10_RESOURCE_DIMENSION_TEXTURE2D
+    hdr[8] = 0x07;              // DDSD_CAPS, DDSD_HEIGHT, DDSD_WIDTH
+  hdr[9] = 0x10;                // DDSD_PIXELFORMAT
+  if (!compressedTexture)
+    hdr[10] = 0x02;             // DDSD_MIPMAPCOUNT
+  else
+    hdr[10] = 0x0A;             // DDSD_MIPMAPCOUNT, DDSD_LINEARSIZE
+  FileBuffer::writeUInt32Fast(hdr + 12, height);        // height
+  FileBuffer::writeUInt32Fast(hdr + 16, width);         // width
+  FileBuffer::writeUInt32Fast(hdr + 20, pitch);
+  hdr[28] = (unsigned char) mipCnt;     // mipmap count
+  hdr[76] = 32;                 // size of DDS_PIXELFORMAT
+  hdr[80] = 0x04;               // DDPF_FOURCC
+  hdr[84] = 0x44;               // 'D'
+  hdr[85] = 0x58;               // 'X'
+  hdr[86] = 0x31;               // '1'
+  hdr[87] = 0x30;               // '0'
+  hdr[108] = 0x08;              // DDSCAPS_COMPLEX
+  hdr[109] = 0x10;              // DDSCAPS_TEXTURE
+  hdr[110] = 0x40;              // DDSCAPS_MIPMAP
+  hdr[128] = dxgiFormat;        // DXGI_FORMAT
+  hdr[132] = 3;                 // D3D10_RESOURCE_DIMENSION_TEXTURE2D
+  hdr[140] = 1;                 // arraySize
+  if (isCubeMap) [[unlikely]]
+  {
+    hdr[113] = 0xFE;            // DDSCAPS2_CUBEMAP*
+    hdr[136] = 0x04;            // DDS_RESOURCE_MISC_TEXTURECUBE
+  }
   // return the remaining number of mip levels to be skipped
   return mipOffset;
 }
