@@ -1499,6 +1499,7 @@ int SDLDisplay::browseList(
         case SDLKeySymBackspace:
         case SDLKeySymEscape:
           itemSelected = -1;
+          [[fallthrough]];
         case SDLKeySymReturn:
         case 0x0020:
           doneFlag = true;
@@ -1771,6 +1772,7 @@ int SDLDisplay::browseFile(
           break;
         case SDLKeySymLeft:             // left: parent directory
           fileSelected = 1;
+          [[fallthrough]];
         case SDLKeySymReturn:
         case 0x0020:
         case SDLKeySymRight:            // right: enter selected directory
@@ -2053,6 +2055,7 @@ bool SDLDisplay::consoleInput(
           if (tmpBuf.size() > 0)
             break;
           historyPos = cmdHistory1.end();
+          [[fallthrough]];
         case SDLKeySymUp:
         case SDLKeySymDown:
           if (d1 != SDLKeySymDown)

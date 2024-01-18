@@ -211,7 +211,7 @@ void SFCubeMapFilter::pixelStore_R9G9B9E5(unsigned char *p, FloatVector4 c)
 
 void SFCubeMapFilter::threadFunction(
     SFCubeMapFilter *p, unsigned char *outBufP,
-    int w, int h, int m, int maxMip, int y0, int y1)
+    int w, int h, int m, int y0, int y1)
 {
   if (m == 0)
   {
@@ -362,7 +362,7 @@ int SFCubeMapFilter::readImageData(const unsigned char *buf, size_t bufSize)
     {
       DDSTexture  t(buf, bufSize, 0);
       if (t.getWidth() != int(w0) || t.getHeight() != int(h0) ||
-          t.getTextureCount() != 6)
+          !t.getIsCubeMap())
       {
         return 0;
       }
@@ -478,8 +478,8 @@ size_t SFCubeMapFilter::convertImage(
           threadCnt = w >> 3;
         for (int i = 0; i < threadCnt; i++)
         {
-          threads[i] = new std::thread(threadFunction, this, outBufP,
-                                       w, w, m, maxMip, i * w / threadCnt,
+          threads[i] = new std::thread(threadFunction, this, outBufP, w, w, m,
+                                       i * w / threadCnt,
                                        (i + 1) * w / threadCnt);
         }
         for (int i = 0; i < threadCnt; i++)
