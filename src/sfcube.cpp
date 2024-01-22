@@ -468,7 +468,7 @@ void SFCubeMapFilter::upsampleImage(
 
 SFCubeMapFilter::SFCubeMapFilter(size_t outputWidth)
 {
-  if (outputWidth < 128 || outputWidth > 2048 ||
+  if (outputWidth < 16 || outputWidth > 2048 ||
       (outputWidth & (outputWidth - 1)))
   {
     errorMessage("SFCubeMapFilter: invalid output dimensions");
@@ -491,7 +491,7 @@ size_t SFCubeMapFilter::convertImage(
   size_t  h0 = FileBuffer::readUInt32Fast(buf + 12);
   if (FileBuffer::readUInt32Fast(buf) != 0x20534444 ||          // "DDS "
       FileBuffer::readUInt32Fast(buf + 84) != 0x30315844 ||     // "DX10"
-      w0 != h0 || w0 < 32 || w0 > 32768 || (w0 & (w0 - 1)))
+      w0 != h0 || w0 < 16 || w0 > 32768 || (w0 & (w0 - 1)))
   {
     return bufSize;
   }
