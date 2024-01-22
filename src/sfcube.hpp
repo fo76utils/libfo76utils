@@ -8,28 +8,37 @@
 class SFCubeMapFilter
 {
  protected:
-  static const int  filterMipRange = 6; // roughness = 1.0 at this mip level
-  std::vector< FloatVector4 > inBuf;
-  std::vector< FloatVector4 > cubeCoordTable;
+  // roughness = (5.0 - sqrt(25.0 - mipLevel * 4.0)) / 4.0
+  static const float  defaultRoughnessTable[7];
+  FloatVector4  *imageBuf;
   std::uint32_t faceDataSize;
   std::uint32_t width;
+  std::vector< FloatVector4 > cubeCoordTable;
+  const float   *roughnessTable;
+  size_t  roughnessTableSize;
   void (*pixelStoreFunction)(unsigned char *p, FloatVector4 c);
  public:
   static FloatVector4 convertCoord(int x, int y, int w, int n);
  protected:
-  void processImage_Copy(unsigned char *outBufP, int w, int h, int y0, int y1);
-  void processImage_Diffuse(unsigned char *outBufP,
-                            int w, int h, int y0, int y1);
+  void processImage_Copy(unsigned char *outBufP, int w, int y0, int y1);
+  void processImage_Diffuse(unsigned char *outBufP, int w, int y0, int y1);
   void processImage_Specular(unsigned char *outBufP,
-                             int w, int h, int y0, int y1, float roughness);
+                             int w, int y0, int y1, float roughness);
   static void pixelStore_R8G8B8A8(unsigned char *p, FloatVector4 c);
   static void pixelStore_R9G9B9E5(unsigned char *p, FloatVector4 c);
+  // filterMode = 0: disabled, 1: specular (w is required to be even),
+  // 2: diffuse (same as specular with roughness = 1.0, but allows w = 1)
   static void threadFunction(SFCubeMapFilter *p, unsigned char *outBufP,
-                             int w, int h, int m, int y0, int y1);
-  static void transpose4x8(std::vector< FloatVector4 >& v);
-  static void transpose8x4(std::vector< FloatVector4 >& v);
+                             int w, int y0, int y1, float roughness,
+                             int filterMode);
+  static void transpose4x8(FloatVector4 *v, size_t n);
+  static void transpose8x4(FloatVector4 *v, size_t n);
   // returns the number of mip levels, or 0 on error
-  int readImageData(const unsigned char *buf, size_t bufSize);
+  int readImageData(std::vector< FloatVector4 >& imageData,
+                    const unsigned char *buf, size_t bufSize);
+  static void upsampleImage(
+      std::vector< FloatVector4 >& outBuf, int outWidth,
+      const std::vector< FloatVector4 >& inBuf, int inWidth);
  public:
   SFCubeMapFilter(size_t outputWidth = 256);
   ~SFCubeMapFilter();
@@ -40,6 +49,7 @@ class SFCubeMapFilter
   // R16G16B16A16_FLOAT.
   size_t convertImage(unsigned char *buf, size_t bufSize,
                       bool outFmtFloat = false, size_t bufCapacity = 0);
+  void setRoughnessTable(const float *p, size_t n);
 };
 
 class SFCubeMapCache
