@@ -21,7 +21,7 @@ class DDSTexture
   };
   static const DXGIFormatInfo dxgiFormatInfoTable[32];
   static const unsigned char  dxgiFormatMap[128];
-  static const unsigned char  cubeWrapTable[108];
+  static const unsigned char  cubeWrapTable[54];
   unsigned int  xMaskMip0;              // width - 1
   unsigned int  yMaskMip0;              // height - 1
   std::uint32_t maxMipLevel;
@@ -95,7 +95,8 @@ class DDSTexture
   inline bool convertTexCoord_Cube(
       int& x0, int& y0, float& xf, float& yf,
       unsigned int& xMask, float x, float y, int mipLevel) const;
-  static inline FloatVector4 getPixel_CubeWrap(
+  static inline void getPixel_CubeWrap(
+      FloatVector4& c, float& scale, float weight,
       const std::uint32_t *p, int x, int y, int n, size_t faceDataSize,
       unsigned int xMask);
   static FloatVector4 getPixelB_CubeWrap(
@@ -215,16 +216,16 @@ class DDSTexture
   FloatVector4 getPixelBC(float x, float y, int mipLevel) const;
   // trilinear filtering with clamped texture coordinates
   FloatVector4 getPixelTC(float x, float y, float mipLevel) const;
-  // cube map with bilinear filtering, faces are expected to be
-  // in Fallout 4 order (right, left, front, back, bottom, top)
-  // x = -1.0 to 1.0: left to right
-  // y = -1.0 to 1.0: back to front
+  // cube map with trilinear filtering, faces are expected to be
+  // in +X, -X, +Y, -Y, +Z, -Z order (E, W, N, S, top, bottom)
+  // x = -1.0 to 1.0: W to E
+  // y = -1.0 to 1.0: S to N
   // z = -1.0 to 1.0: bottom to top
   FloatVector4 cubeMap(float x, float y, float z, float mipLevel) const;
   // wrap cube map texture coordinates for seamless filtering
   // (n = face number from 0 to 5, xMask = face width - 1)
-  static inline void wrapCubeMapCoord(int& x, int& y, int& n, int xMask,
-                                      bool altFace = false);
+  // returns false if x and y are both out of range
+  static inline bool wrapCubeMapCoord(int& x, int& y, int& n, int xMask);
   inline FloatVector4 getPixelB_Inline(float x, float y, int mipLevel) const;
   inline FloatVector4 getPixelT_Inline(float x, float y, float mipLevel) const;
   inline FloatVector4 getPixelBM_Inline(float x, float y, int mipLevel) const;
@@ -356,12 +357,12 @@ inline FloatVector4 DDSTexture::getPixelBC_Inline(
   return getPixelB_Clamp(textureData[mipLevel], x0, y0, xf, yf, xMask, yMask);
 }
 
-inline void DDSTexture::wrapCubeMapCoord(
-    int& x, int& y, int& n, int xMask, bool altFace)
+inline bool DDSTexture::wrapCubeMapCoord(int& x, int& y, int& n, int xMask)
 {
   if (!((x | y) & ~xMask)) [[likely]]
-    return;
-  const unsigned char *p = &(cubeWrapTable[n * 9 + (!altFace ? 0 : 54)]);
+    return true;
+  bool    r = !(x & y & ~xMask);
+  const unsigned char *p = &(cubeWrapTable[n * 9]);
   p = p + (x > xMask ? 1 : (x < 0 ? 2 : 0));
   p = p + (y > xMask ? 3 : (y < 0 ? 6 : 0));
   n = *p;
@@ -374,6 +375,7 @@ inline void DDSTexture::wrapCubeMapCoord(
   x = x & xMask;
   y = y & xMask;
   n = n & 7;
+  return r;
 }
 
 extern "C" bool detexDecompressBlockBPTC_FLOAT(

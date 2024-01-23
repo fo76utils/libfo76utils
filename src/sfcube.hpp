@@ -15,7 +15,8 @@ class SFCubeMapFilter
   std::uint32_t width;
   std::vector< FloatVector4 > cubeCoordTable;
   const float   *roughnessTable;
-  size_t  roughnessTableSize;
+  int     roughnessTableSize;
+  float   normalizeLevel;
   void (*pixelStoreFunction)(unsigned char *p, FloatVector4 c);
  public:
   static FloatVector4 convertCoord(int x, int y, int w, int n);
@@ -50,6 +51,12 @@ class SFCubeMapFilter
   size_t convertImage(unsigned char *buf, size_t bufSize,
                       bool outFmtFloat = false, size_t bufCapacity = 0);
   void setRoughnessTable(const float *p, size_t n);
+  // input data in FP16 formats is normalized to have an average level of
+  // at most 'n' (default: 1.0 / 12.5)
+  inline void setNormalizeLevel(float n)
+  {
+    normalizeLevel = 1.0f / ((n > 0.0f ? n : 65536.0f) * 3.0f);
+  }
 };
 
 class SFCubeMapCache

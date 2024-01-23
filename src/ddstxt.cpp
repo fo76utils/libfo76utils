@@ -988,7 +988,7 @@ FloatVector4 DDSTexture::getPixelTC(float x, float y, float mipLevel) const
   return c0;
 }
 
-const unsigned char DDSTexture::cubeWrapTable[108] =
+const unsigned char DDSTexture::cubeWrapTable[54] =
 {
   // index = face * 9 + V_wrap (0: none, 1: +, 2: -) * 3 + U_wrap
   // value = new_face + mirror_U * 0x10 + mirror_V * 0x20 + swap_UV * 0x40
@@ -997,14 +997,7 @@ const unsigned char DDSTexture::cubeWrapTable[108] =
   0x02, 0x60, 0x51,  0x04, 0x64, 0x01,  0x35, 0x30, 0x55,
   0x03, 0x50, 0x61,  0x35, 0x30, 0x65,  0x04, 0x54, 0x01,
   0x04, 0x00, 0x01,  0x03, 0x63, 0x61,  0x02, 0x60, 0x62,
-  0x05, 0x01, 0x00,  0x33, 0x51, 0x63,  0x32, 0x62, 0x50,
-  // index + 54 = alternate face for corners
-  0x00, 0x05, 0x04,  0x63, 0x55, 0x03,  0x52, 0x32, 0x54,
-  0x01, 0x04, 0x05,  0x53, 0x03, 0x65,  0x62, 0x64, 0x32,
-  0x02, 0x60, 0x51,  0x04, 0x00, 0x54,  0x35, 0x65, 0x31,
-  0x03, 0x50, 0x61,  0x35, 0x55, 0x31,  0x04, 0x00, 0x64,
-  0x04, 0x00, 0x01,  0x03, 0x50, 0x53,  0x02, 0x52, 0x51,
-  0x05, 0x01, 0x00,  0x33, 0x53, 0x60,  0x32, 0x61, 0x52
+  0x05, 0x01, 0x00,  0x33, 0x51, 0x63,  0x32, 0x62, 0x50
 };
 
 inline bool DDSTexture::convertTexCoord_Cube(
@@ -1023,40 +1016,38 @@ inline bool DDSTexture::convertTexCoord_Cube(
   return bool(xMask);
 }
 
-inline FloatVector4 DDSTexture::getPixel_CubeWrap(
+inline void DDSTexture::getPixel_CubeWrap(
+    FloatVector4& c, float& scale, float weight,
     const std::uint32_t *p, int x, int y, int n, size_t faceDataSize,
     unsigned int xMask)
 {
-  int     x1 = x;
-  int     y1 = y;
-  int     n1 = n;
-  wrapCubeMapCoord(x1, y1, n1, int(xMask), false);
-  unsigned int  w = xMask + 1U;
-  FloatVector4  c(p + ((size_t(n1) * faceDataSize)
-                       + ((unsigned int) y1 * w + (unsigned int) x1)));
-  if (x & y & ~(int(xMask))) [[unlikely]]
+  if (!wrapCubeMapCoord(x, y, n, int(xMask))) [[unlikely]]
   {
-    wrapCubeMapCoord(x, y, n, int(xMask), true);
-    c += FloatVector4(p + ((size_t(n) * faceDataSize)
-                           + ((unsigned int) y * w + (unsigned int) x)));
-    c *= 0.5f;
+    scale = 1.0f / (1.0f - weight);
+    return;
   }
-  return c;
+  c += (FloatVector4(p + ((size_t(n) * faceDataSize)
+                          + ((unsigned int) y * (xMask + 1U)
+                          + (unsigned int) x))) * weight);
 }
 
 FloatVector4 DDSTexture::getPixelB_CubeWrap(
     const std::uint32_t *p, int x0, int y0, int n, size_t faceDataSize,
     float xf, float yf, unsigned int xMask)
 {
+  FloatVector4  c(0.0f);
+  float   scale = 1.0f;
+  float   weight3 = xf * yf;
+  float   weight2 = yf - weight3;
+  float   weight1 = xf - weight3;
+  float   weight0 = (1.0f - xf) - weight2;
   int     x1 = x0 + 1;
   int     y1 = y0 + 1;
-  FloatVector4  c0(getPixel_CubeWrap(p, x0, y0, n, faceDataSize, xMask));
-  FloatVector4  c1(getPixel_CubeWrap(p, x1, y0, n, faceDataSize, xMask));
-  FloatVector4  c2(getPixel_CubeWrap(p, x0, y1, n, faceDataSize, xMask));
-  FloatVector4  c3(getPixel_CubeWrap(p, x1, y1, n, faceDataSize, xMask));
-  c0 = (c0 * (1.0f - xf)) + (c1 * xf);
-  c2 = (c2 * (1.0f - xf)) + (c3 * xf);
-  return (c0 + ((c2 - c0) * yf));
+  getPixel_CubeWrap(c, scale, weight0, p, x0, y0, n, faceDataSize, xMask);
+  getPixel_CubeWrap(c, scale, weight1, p, x1, y0, n, faceDataSize, xMask);
+  getPixel_CubeWrap(c, scale, weight2, p, x0, y1, n, faceDataSize, xMask);
+  getPixel_CubeWrap(c, scale, weight3, p, x1, y1, n, faceDataSize, xMask);
+  return (c * scale);
 }
 
 inline FloatVector4 DDSTexture::getPixelB_Cube(
@@ -1088,7 +1079,7 @@ FloatVector4 DDSTexture::cubeMap(float x, float y, float z,
   float   ym = float(std::fabs(y));
   float   zm = float(std::fabs(z));
   size_t  n = 0;
-  if (xm >= ym && xm >= zm)             // right (0), left (1)
+  if (xm >= ym && xm >= zm)             // +X (0), -X (1)
   {
     float   tmp = 1.0f / xm;
     if (x < 0.0f)
@@ -1096,10 +1087,10 @@ FloatVector4 DDSTexture::cubeMap(float x, float y, float z,
       z = -z;
       n = 1;
     }
-    x = z * tmp;
-    y = y * tmp;
+    x = z * tmp * -0.5f + 0.5f;
+    y = y * tmp * -0.5f + 0.5f;
   }
-  else if (ym >= xm && ym >= zm)        // front (2), back (3)
+  else if (ym >= xm && ym >= zm)        // +Y (2), -Y (3)
   {
     float   tmp = 1.0f / ym;
     n = 2;
@@ -1108,42 +1099,39 @@ FloatVector4 DDSTexture::cubeMap(float x, float y, float z,
       z = -z;
       n = 3;
     }
-    x = x * tmp;
-    y = z * tmp;
+    x = x * tmp * 0.5f + 0.5f;
+    y = z * tmp * 0.5f + 0.5f;
   }
-  else                                  // bottom (4), top (5)
+  else                                  // +Z (4), -Z (5)
   {
     float   tmp = 1.0f / zm;
     n = 4;
-    if (z >= 0.0f)
+    if (z < 0.0f)
     {
       x = -x;
       n = 5;
     }
-    x = x * tmp;
-    y = y * tmp;
+    x = x * tmp * 0.5f + 0.5f;
+    y = y * tmp * -0.5f + 0.5f;
   }
-  x = (x + 1.0f) * 0.5f;
-  y = (1.0f - y) * 0.5f;
   if (maxTextureNum < 5 || xMaskMip0 != yMaskMip0) [[unlikely]]
     return getPixelTC(x, y, mipLevel);
   mipLevel = std::max(mipLevel, 0.0f);
   int     m0 = int(mipLevel);
-  float   mf = mipLevel - float(m0);
+  float   mf = float(m0);
   int     x0, y0;
   float   xf, yf;
   unsigned int  xMask;
-  const std::uint32_t *p = textureData[m0];
   if (!convertTexCoord_Cube(x0, y0, xf, yf, xMask, x, y, m0)) [[unlikely]]
-    return FloatVector4(p);
-  FloatVector4  c0(getPixelB_Cube(p, x0, y0, n, textureDataSize,
-                                  xf, yf, xMask));
-  if (mf >= (1.0f / 512.0f) && mf < (511.0f / 512.0f)) [[likely]]
+    mipLevel = mf;
+  FloatVector4  c0(getPixelB_Cube(textureData[m0], x0, y0, n,
+                                  textureDataSize, xf, yf, xMask));
+  if (mf != mipLevel) [[likely]]
   {
+    mf = mipLevel - mf;
     getNextMipTexCoord(x0, y0, xf, yf);
-    p = textureData[m0 + 1];
-    FloatVector4  c1(getPixelB_Cube(p, x0, y0, n, textureDataSize,
-                                    xf, yf, xMask >> 1));
+    FloatVector4  c1(getPixelB_Cube(textureData[m0 + 1], x0, y0, n,
+                                    textureDataSize, xf, yf, xMask >> 1));
     c0 = (c0 * (1.0f - mf)) + (c1 * mf);
   }
   return c0;

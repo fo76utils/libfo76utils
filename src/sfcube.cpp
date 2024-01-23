@@ -348,12 +348,27 @@ int SFCubeMapFilter::readImageData(
       }
     }
   }
+  else if (buf[128] == 0x43)
+  {
+    // DXGI_FORMAT_R9G9B9E5_SHAREDEXP: assume the texture is already filtered,
+    // no normalization
+    sizeRequired = sizeRequired * sizeof(std::uint32_t) + 148;
+    if (bufSize < sizeRequired || ((bufSize - 148) % 24) != 0)
+      return 0;
+    imageData.resize(w0 * h0 * 6, FloatVector4(0.0f));
+    for (size_t n = 0; n < 6; n++)
+    {
+      const unsigned char *p1 = buf + ((n * ((bufSize - 148) / 6)) + 148);
+      FloatVector4  *p2 = imageData.data() + (n * w0 * h0);
+      for (size_t y = 0; y < h0; y++)
+      {
+        for (size_t x = 0; x < w0; x++, p1 = p1 + sizeof(std::uint32_t), p2++)
+          *p2 = FloatVector4::convertR9G9B9E5(FileBuffer::readUInt32Fast(p1));
+      }
+    }
+  }
   else
   {
-#if 0
-    if (buf[128] == 0x43)       // DXGI_FORMAT_R9G9B9E5_SHAREDEXP:
-      return 0;                 // assume the texture is already filtered
-#endif
     try
     {
       DDSTexture  t(buf, bufSize, 0);
@@ -388,30 +403,28 @@ int SFCubeMapFilter::readImageData(
   {
     // normalize float formats
     scale[0] = scale[0] + scale[1] + scale[2];
-    scale[0] = (12.5f / 3.0f) * scale[0] / float(int(imageData.size()));
-    scale = FloatVector4(1.0f / std::min(std::max(scale[0], 1.0f), 65536.0f));
-    for (size_t i = 0; i < imageData.size(); i++)
-      imageData[i] = imageData[i] * scale;
+    scale[0] = normalizeLevel * scale[0] / float(int(imageData.size()));
+    if (scale[0] > 1.0f)
+    {
+      scale = FloatVector4(1.0f / std::min(scale[0], 65536.0f));
+      for (size_t i = 0; i < imageData.size(); i++)
+        imageData[i] = imageData[i] * scale;
+    }
   }
   return int(std::bit_width((unsigned long) w0));
 }
 
-static FloatVector4 getCubeMapPixel(
+static inline void getCubeMapPixel(
+    FloatVector4& c, float& scale, float weight,
     const FloatVector4 *inBuf, int x, int y, int n, int w)
 {
-  int     x1 = x;
-  int     y1 = y;
-  int     n1 = n;
-  DDSTexture::wrapCubeMapCoord(x1, y1, n1, w - 1, false);
-  FloatVector4  c(inBuf[(size_t(n1) * size_t(w) + size_t(y1)) * size_t(w)
-                        + size_t(x1)]);
-  if (x & y & ~(w - 1)) [[unlikely]]
+  if (!DDSTexture::wrapCubeMapCoord(x, y, n, w - 1)) [[unlikely]]
   {
-    DDSTexture::wrapCubeMapCoord(x, y, n, w - 1, true);
-    c += inBuf[(size_t(n) * size_t(w) + size_t(y)) * size_t(w) + size_t(x)];
-    c *= 0.5f;
+    scale = 1.0f / (1.0f - weight);
+    return;
   }
-  return c;
+  c += (inBuf[(size_t(n) * size_t(w) + size_t(y)) * size_t(w) + size_t(x)]
+        * weight);
 }
 
 void SFCubeMapFilter::upsampleImage(
@@ -439,28 +452,32 @@ void SFCubeMapFilter::upsampleImage(
         int     x0 = int(xi);
         xf -= xi;
         int     x1 = x0 + 1;
-        FloatVector4  c0, c1, c2, c3;
+        FloatVector4  c(0.0f);
+        float   weight3 = xf * yf;
+        float   weight2 = yf - weight3;
+        float   weight1 = xf - weight3;
+        float   weight0 = (1.0f - xf) - weight2;
         if (!((x0 | y0 | x1 | y1) & ~(inWidth - 1))) [[likely]]
         {
-          c0 = inPtr[(size_t(n) * size_t(inWidth) + size_t(y0))
-                     * size_t(inWidth) + size_t(x0)];
-          c1 = inPtr[(size_t(n) * size_t(inWidth) + size_t(y0))
-                     * size_t(inWidth) + size_t(x1)];
-          c2 = inPtr[(size_t(n) * size_t(inWidth) + size_t(y1))
-                     * size_t(inWidth) + size_t(x0)];
-          c3 = inPtr[(size_t(n) * size_t(inWidth) + size_t(y1))
-                     * size_t(inWidth) + size_t(x1)];
+          c = inPtr[(size_t(n) * size_t(inWidth) + size_t(y0))
+                    * size_t(inWidth) + size_t(x0)] * weight0;
+          c += (inPtr[(size_t(n) * size_t(inWidth) + size_t(y0))
+                      * size_t(inWidth) + size_t(x1)] * weight1);
+          c += (inPtr[(size_t(n) * size_t(inWidth) + size_t(y1))
+                      * size_t(inWidth) + size_t(x0)] * weight2);
+          c += (inPtr[(size_t(n) * size_t(inWidth) + size_t(y1))
+                      * size_t(inWidth) + size_t(x1)] * weight3);
+          *outPtr = c;
         }
         else
         {
-          c0 = getCubeMapPixel(inPtr, x0, y0, n, inWidth);
-          c1 = getCubeMapPixel(inPtr, x1, y0, n, inWidth);
-          c2 = getCubeMapPixel(inPtr, x0, y1, n, inWidth);
-          c3 = getCubeMapPixel(inPtr, x1, y1, n, inWidth);
+          float   scale = 1.0f;
+          getCubeMapPixel(c, scale, weight0, inPtr, x0, y0, n, inWidth);
+          getCubeMapPixel(c, scale, weight1, inPtr, x1, y0, n, inWidth);
+          getCubeMapPixel(c, scale, weight2, inPtr, x0, y1, n, inWidth);
+          getCubeMapPixel(c, scale, weight3, inPtr, x1, y1, n, inWidth);
+          *outPtr = c * scale;
         }
-        c0 = (c0 * (1.0f - xf)) + (c1 * xf);
-        c2 = (c2 * (1.0f - xf)) + (c3 * xf);
-        *outPtr = c0 + ((c2 - c0) * yf);
       }
     }
   }
@@ -475,7 +492,8 @@ SFCubeMapFilter::SFCubeMapFilter(size_t outputWidth)
   }
   width = std::uint32_t(outputWidth);
   roughnessTable = &(defaultRoughnessTable[0]);
-  roughnessTableSize = sizeof(defaultRoughnessTable) / sizeof(float);
+  roughnessTableSize = int(sizeof(defaultRoughnessTable) / sizeof(float));
+  normalizeLevel = float(12.5 / 3.0);
 }
 
 SFCubeMapFilter::~SFCubeMapFilter()
@@ -554,7 +572,7 @@ size_t SFCubeMapFilter::convertImage(
       }
     }
     float   roughness = 1.0f;
-    if (size_t(m) < roughnessTableSize)
+    if (m < roughnessTableSize)
       roughness = roughnessTable[m];
     int     filterMode = int(roughness >= 0.015625f);
     if (filterMode)
@@ -670,6 +688,6 @@ void SFCubeMapFilter::setRoughnessTable(const float *p, size_t n)
     n = std::min< size_t >(n, sizeof(defaultRoughnessTable) / sizeof(float));
   }
   roughnessTable = p;
-  roughnessTableSize = n;
+  roughnessTableSize = int(n);
 }
 
