@@ -504,20 +504,20 @@ size_t SFCubeMapFilter::convertImage(
     unsigned char *buf, size_t bufSize, bool outFmtFloat, size_t bufCapacity)
 {
   if (bufSize < 148)
-    return bufSize;
+    return 0;
   size_t  w0 = FileBuffer::readUInt32Fast(buf + 16);
   size_t  h0 = FileBuffer::readUInt32Fast(buf + 12);
   if (FileBuffer::readUInt32Fast(buf) != 0x20534444 ||          // "DDS "
       FileBuffer::readUInt32Fast(buf + 84) != 0x30315844 ||     // "DX10"
       w0 != h0 || w0 < 16 || w0 > 32768 || (w0 & (w0 - 1)))
   {
-    return bufSize;
+    return 0;
   }
   std::vector< FloatVector4 > inBuf1;
   int     mipCnt = readImageData(inBuf1, buf, bufSize);
   size_t  newSize = faceDataSize * 6 + 148;
   if (mipCnt < 1 || std::max(bufSize, bufCapacity) < newSize)
-    return bufSize;
+    return 0;
   imageBuf = inBuf1.data();
   std::vector< FloatVector4 > inBuf2;
 
@@ -672,12 +672,13 @@ size_t SFCubeMapCache::convertImage(
   SFCubeMapFilter cubeMapFilter(outputWidth);
   size_t  newSize =
       cubeMapFilter.convertImage(buf, bufSize, outFmtFloat, bufCapacity);
-  if (newSize && newSize < bufSize)
+  if (newSize)
   {
     v.resize(newSize);
     std::memcpy(v.data(), buf, newSize);
+    return newSize;
   }
-  return newSize;
+  return bufSize;
 }
 
 void SFCubeMapFilter::setRoughnessTable(const float *p, size_t n)

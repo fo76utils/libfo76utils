@@ -45,9 +45,9 @@ class SFCubeMapFilter
   ~SFCubeMapFilter();
   // Returns the new buffer size. If outFmtFloat is true, the output format is
   // DXGI_FORMAT_R9G9B9E5_SHAREDEXP instead of DXGI_FORMAT_R8G8B8A8_UNORM_SRGB.
-  // The buffer must have sufficient capacity for width * height * 8 * 4 + 148
-  // bytes, which may be greater than bufSize if the input format is not
-  // R16G16B16A16_FLOAT.
+  // The buffer must have sufficient capacity for width * width * 8 * 4 + 148
+  // bytes.
+  // On error, 0 is returned and no changes are made to the contents of buf.
   size_t convertImage(unsigned char *buf, size_t bufSize,
                       bool outFmtFloat = false, size_t bufCapacity = 0);
   void setRoughnessTable(const float *p, size_t n);
