@@ -434,20 +434,20 @@ void SFCubeMapFilter::upsampleImage(
   outBuf.resize(size_t(outWidth) * size_t(outWidth) * 6, FloatVector4(0.0f));
   const FloatVector4  *inPtr = inBuf.data();
   FloatVector4  *outPtr = outBuf.data();
-  float   scale = float(inWidth) / float(outWidth);
-  float   offset = scale * 0.5f - 0.5f;
+  float   xyScale = float(inWidth) / float(outWidth);
+  float   offset = xyScale * 0.5f - 0.5f;
   for (int n = 0; n < 6; n++)
   {
     for (int y = 0; y < outWidth; y++)
     {
-      float   yf = float(y) * scale + offset;
+      float   yf = float(y) * xyScale + offset;
       float   yi = float(std::floor(yf));
       int     y0 = int(yi);
       yf -= yi;
       int     y1 = y0 + 1;
       for (int x = 0; x < outWidth; x++, outPtr++)
       {
-        float   xf = float(x) * scale + offset;
+        float   xf = float(x) * xyScale + offset;
         float   xi = float(std::floor(xf));
         int     x0 = int(xi);
         xf -= xi;
