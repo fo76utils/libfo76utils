@@ -21,7 +21,7 @@ class DDSTexture
   };
   static const DXGIFormatInfo dxgiFormatInfoTable[32];
   static const unsigned char  dxgiFormatMap[128];
-  static const unsigned char  cubeWrapTable[54];
+  static const unsigned char  cubeWrapTable[24];
   unsigned int  xMaskMip0;              // width - 1
   unsigned int  yMaskMip0;              // height - 1
   std::uint32_t maxMipLevel;
@@ -222,9 +222,10 @@ class DDSTexture
   // y = -1.0 to 1.0: S to N
   // z = -1.0 to 1.0: bottom to top
   FloatVector4 cubeMap(float x, float y, float z, float mipLevel) const;
-  // wrap cube map texture coordinates for seamless filtering
-  // (n = face number from 0 to 5, xMask = face width - 1)
-  // returns false if x and y are both out of range
+  // Wrap cube map texture coordinates for seamless filtering (n = face number
+  // from 0 to 5, xMask = face width - 1). If x and y are both out of range,
+  // false is returned, and x, y and n are not changed (the sample should be
+  // discarded).
   static inline bool wrapCubeMapCoord(int& x, int& y, int& n, int xMask);
   inline FloatVector4 getPixelB_Inline(float x, float y, int mipLevel) const;
   inline FloatVector4 getPixelT_Inline(float x, float y, float mipLevel) const;
@@ -361,21 +362,17 @@ inline bool DDSTexture::wrapCubeMapCoord(int& x, int& y, int& n, int xMask)
 {
   if (!((x | y) & ~xMask)) [[likely]]
     return true;
-  bool    r = !(x & y & ~xMask);
-  const unsigned char *p = &(cubeWrapTable[n * 9]);
-  p = p + (x > xMask ? 1 : (x < 0 ? 2 : 0));
-  p = p + (y > xMask ? 3 : (y < 0 ? 6 : 0));
-  n = *p;
-  if (n & 0x10)
-    x = ~x;
-  if (n & 0x20)
-    y = ~y;
-  if (n & 0x40)
+  if (x & y & ~xMask) [[unlikely]]
+    return false;
+  const unsigned char *p = &(cubeWrapTable[n << 2]);
+  p = p + ((x | y) < 0 ? 1 : 0) + ((unsigned int) x < (unsigned int) y ? 2 : 0);
+  unsigned char tmp = *p;
+  x = (!(tmp & 0x20) ? x : ~x) & xMask;
+  y = (!(tmp & 0x40) ? y : ~y) & xMask;
+  if (tmp & 0x80)
     std::swap(x, y);
-  x = x & xMask;
-  y = y & xMask;
-  n = n & 7;
-  return r;
+  n = tmp & 7;
+  return true;
 }
 
 extern "C" bool detexDecompressBlockBPTC_FLOAT(

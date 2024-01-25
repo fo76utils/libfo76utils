@@ -63,91 +63,52 @@ def vectorToCubeCoord(x, y, z, w):
 
 cubeWrapTable = []
 
-for i in range(54):
+for i in range(24):
     cubeWrapTable += [0]
 
 for n in range(6):
-    for yi in range(3):
-        for xi in range(3):
-            if xi != 0 and yi != 0:
-                continue
-            x = 64.0
-            y = 64.0
-            if xi == 1:
-                x = 257.0
-            elif xi == 2:
-                x = -1.5
-            elif yi == 1:
-                y = 257.0
-            elif yi == 2:
-                y = -1.5
-            vx, vy, vz = cubeCoordToVector(x, y, 256, n)
-            xc, yc, nn = vectorToCubeCoord(vx, vy, vz, 256)
-            x = math.fmod(x + 256.5, 256.0) - 0.5
-            y = math.fmod(y + 256.5, 256.0) - 0.5
-            # print("%f, %f, %d -> %f, %f, %d" % (x, y, n, xc, yc, nn))
-            if (xc >= 32.0 and xc < 224.0) != (x >= 32.0 and x < 224.0):
-                nn = nn | 0x40
-                tmp = xc
-                xc = yc
-                yc = tmp
-            if (xc < 128.0) != (x < 128.0):
-                nn = nn | 0x10
-            if (yc < 128.0) != (y < 128.0):
-                nn = nn | 0x20
-            cubeWrapTable[(n * 9) + (yi * 3) + xi] = nn | (nn << 8)
+    for i in range(4):
+        xi = (1 - ((i & 1) << 1)) & (((i & 2) >> 1) - 1)
+        yi = (1 - ((i & 1) << 1)) & -((i & 2) >> 1)
+        x = 64.0
+        y = 64.0
+        if xi != 0:
+            x = 127.75 + (129.25 * xi)
+        if yi != 0:
+            y = 127.75 + (129.25 * yi)
+        vx, vy, vz = cubeCoordToVector(x, y, 256, n)
+        xc, yc, nn = vectorToCubeCoord(vx, vy, vz, 256)
+        x = math.fmod(x + 256.5, 256.0) - 0.5
+        y = math.fmod(y + 256.5, 256.0) - 0.5
+        # print("%f, %f, %d -> %f, %f, %d" % (x, y, n, xc, yc, nn))
+        if (xc >= 32.0 and xc < 224.0) != (x >= 32.0 and x < 224.0):
+            nn = nn | 0x80
+            tmp = xc
+            xc = yc
+            yc = tmp
+        if (xc < 128.0) != (x < 128.0):
+            nn = nn | 0x20
+        if (yc < 128.0) != (y < 128.0):
+            nn = nn | 0x40
+        cubeWrapTable[(n * 4) + i] = nn
 
+cubeFaceNames = ["+X", "-X", "+Y", "-Y", "+Z", "-Z"]
+s = "\nconst unsigned char DDSTexture::cubeWrapTable[24] =\n{\n  "
+s += "// value = new_face + mirror_U * 0x20 + mirror_V * 0x40 + swap_UV * 0x80"
+s += "\n  // +U   -U     +V    -V\n"
 for n in range(6):
-    for yi in range(3):
-        for xi in range(3):
-            if xi == 0 or yi == 0:
-                continue
-            n1 = cubeWrapTable[(n * 9) + xi]
-            xi1 = 0
-            yi1 = yi
-            if (n1 & 0x20) != 0:
-                yi1 = 3 - yi1
-            if (n1 & 0x40) != 0:
-                xi1 = yi1
-                yi1 = 0
-            n2a = cubeWrapTable[((n1 & 7) * 9) + (yi1 * 3) + xi1] & 0xFF
-            if (n1 & 0x40) != 0:
-                n2a = (n2a & 0x47) | ((n2a & 0x10) << 1) | ((n2a & 0x20) >> 1)
-            n2a = n2a ^ (n1 & 0x70)
-            n1 = cubeWrapTable[(n * 9) + (yi * 3)]
-            xi1 = xi
-            yi1 = 0
-            if (n1 & 0x10) != 0:
-                xi1 = 3 - xi1
-            if (n1 & 0x40) != 0:
-                yi1 = xi1
-                xi1 = 0
-            n2b = cubeWrapTable[((n1 & 7) * 9) + (yi1 * 3) + xi1] & 0xFF
-            if (n1 & 0x40) != 0:
-                n2b = (n2b & 0x47) | ((n2b & 0x10) << 1) | ((n2b & 0x20) >> 1)
-            n2b = n2b ^ (n1 & 0x70)
-            if (((n * 9) + (yi * 3) + xi) & 1) == 0:
-                n2 = n2a | (n2b << 8)
-            else:
-                n2 = n2b | (n2a << 8)
-            cubeWrapTable[(n * 9) + (yi * 3) + xi] = n2
-
-s = "\nconst unsigned char DDSTexture::cubeWrapTable[108] =\n{\n  "
-s += "// index = face * 9 + V_wrap (0: none, 1: +, 2: -) * 3 + U_wrap\n  "
-s += "// value = new_face + mirror_U * 0x10 + mirror_V * 0x20 + swap_UV * 0x40"
-s += "\n"
-for f in range(2):
-    if f == 1:
-        s += "  // index + 54 = alternate face for corners\n"
-    for n in range(6):
-        for yi in range(3):
+    for i in range(4):
+        if (i & 1) == 0:
             s += " "
-            for xi in range(3):
-                nn = (n * 9) + (yi * 3) + xi
-                s += " 0x%02X" % ((cubeWrapTable[nn] >> (f << 3)) & 0xFF)
-                if not (f == 1 and n == 5 and yi == 2 and xi == 2):
-                    s += ","
-        s += "\n"
+        nn = (n * 4) + i
+        s += " 0x%02X" % (cubeWrapTable[nn])
+        if not (n == 5 and i == 3):
+            s += ","
+        else:
+            s += " "
+        if i == 3:
+            s += "      // face %d (%s)" % (n, cubeFaceNames[n])
+    s += "\n"
 s += "};\n"
 print(s)
 
