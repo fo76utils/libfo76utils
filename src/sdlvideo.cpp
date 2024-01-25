@@ -68,7 +68,7 @@ static const FloatVector4 fontTextureDecodeTable[16] =
 void SDLDisplay::drawCharacterFG(std::uint32_t *p,
                                  int x, int y, std::uint32_t c, float fgAlpha)
 {
-  if (BRANCH_UNLIKELY(c & 0x4000U))     // underline
+  if (c & 0x4000U) [[unlikely]]         // underline
     drawCharacterFG(p, x, y, (c & 0xFFFF8000U) | 0x005FU, fgAlpha);
   size_t  n0 = 0;
   size_t  n2 = sizeof(courB24CharacterTable) / sizeof(unsigned short);
@@ -187,7 +187,7 @@ std::uint32_t SDLDisplay::decodeUTF8Character()
   int     n = 0;
   do
   {
-    if (BRANCH_UNLIKELY(c < 0xC0U))
+    if (c < 0xC0U) [[unlikely]]
     {
       c = 0xFFFDU;                      // invalid continuation byte
       n = 1;
@@ -197,7 +197,7 @@ std::uint32_t SDLDisplay::decodeUTF8Character()
     {
       if (printBufCnt < 2)
         return 0U;
-      if (BRANCH_UNLIKELY((printBuf[1] & 0xC0) != 0x80))
+      if ((printBuf[1] & 0xC0) != 0x80) [[unlikely]]
       {
         c = 0xFFFDU;                    // unexpected end of sequence
         n = 1;
@@ -214,7 +214,7 @@ std::uint32_t SDLDisplay::decodeUTF8Character()
         return 0U;
       std::uint32_t c1 = printBuf[1];
       std::uint32_t c2 = printBuf[2];
-      if (BRANCH_UNLIKELY((c1 & 0xC0) != 0x80 || (c2 & 0xC0) != 0x80))
+      if ((c1 & 0xC0) != 0x80 || (c2 & 0xC0) != 0x80) [[unlikely]]
       {
         c = 0xFFFDU;                    // unexpected end of sequence
         n = ((c1 & 0xC0) != 0x80 ? 1 : 2);
@@ -236,7 +236,7 @@ std::uint32_t SDLDisplay::decodeUTF8Character()
       return 0U;
   }
   while (false);
-  if (BRANCH_UNLIKELY(n < printBufCnt))
+  if (n < printBufCnt) [[unlikely]]
   {
     for (int i = n; i < printBufCnt; i++)
       printBuf[i - n] = printBuf[i];
@@ -279,8 +279,8 @@ SDLDisplay::SDLDisplay(int w, int h, const char *windowTitle,
     windowTitle = "";
   if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS) != 0)
     errorMessage("error initializing SDL");
-  sdlWindow = (SDL_Window *) 0;
-  sdlScreen = (SDL_Surface *) 0;
+  sdlWindow = nullptr;
+  sdlScreen = nullptr;
   try
 #endif
   {
@@ -469,7 +469,7 @@ void SDLDisplay::enableConsole()
 #  if defined(_WIN32) || defined(_WIN64)
   if (!std::getenv("TERM") && AttachConsole((DWORD) -1))
   {
-    std::FILE *tmp = (std::FILE *) 0;
+    std::FILE *tmp = nullptr;
     (void) freopen_s(&tmp, "CONOUT$", "w", stdout);
     (void) freopen_s(&tmp, "CONOUT$", "w", stderr);
     (void) freopen_s(&tmp, "CONIN$", "r", stdin);
@@ -548,8 +548,7 @@ void SDLDisplay::blitSurface()
 #endif
   }
 #ifdef HAVE_SDL2
-  SDL_BlitSurface(sdlScreen, (SDL_Rect *) 0,
-                  SDL_GetWindowSurface(sdlWindow), (SDL_Rect *) 0);
+  SDL_BlitSurface(sdlScreen, nullptr, SDL_GetWindowSurface(sdlWindow), nullptr);
   SDL_UpdateWindowSurface(sdlWindow);
 #endif
 }
@@ -668,7 +667,7 @@ void SDLDisplay::pollEvents(std::vector< SDLEvent >& buf, int waitTime,
 {
   buf.clear();
 #ifdef HAVE_SDL2
-  if (BRANCH_UNLIKELY(textInputMode != textInputEnabled))
+  if (textInputMode != textInputEnabled) [[unlikely]]
   {
     textInputEnabled = textInputMode;
     if (!textInputMode)
@@ -728,13 +727,13 @@ void SDLDisplay::pollEvents(std::vector< SDLEvent >& buf, int waitTime,
         }
         break;
       case SDL_TEXTINPUT:
-        if (BRANCH_LIKELY(textInputMode))
+        if (textInputMode) [[likely]]
         {
           std::uint32_t c = 0U;
           for (size_t i = 0; true; i++)
           {
             unsigned char b = 0;
-            if (BRANCH_LIKELY(i < SDL_TEXTINPUTEVENT_TEXT_SIZE))
+            if (i < SDL_TEXTINPUTEVENT_TEXT_SIZE) [[likely]]
               b = (unsigned char) event.text.text[i];
             if ((b & 0xC0) == 0x80 && (c & 0x80000000U))
             {
@@ -868,7 +867,7 @@ void SDLDisplay::drawText(int y0Dst, int y0Src, int lineCnt,
         }
         catch (...)
         {
-          threads[k] = (std::thread *) 0;
+          threads[k] = nullptr;
           drawTextThreadFunc(this, y0Src + yOffs, y0Dst + yOffs, n,
                              isBackground, alpha);
         }
@@ -880,7 +879,7 @@ void SDLDisplay::drawText(int y0Dst, int y0Src, int lineCnt,
         {
           threads[k]->join();
           delete threads[k];
-          threads[k] = (std::thread *) 0;
+          threads[k] = nullptr;
         }
       }
     }
@@ -907,7 +906,7 @@ void SDLDisplay::printString(const char *s)
   for ( ; *s; s++)
   {
     int     bufSize = int(sizeof(printBuf) / sizeof(unsigned char));
-    if (BRANCH_LIKELY(printBufCnt < bufSize))
+    if (printBufCnt < bufSize) [[likely]]
     {
       printBuf[printBufCnt] = (unsigned char) *s;
       printBufCnt++;
@@ -920,7 +919,7 @@ void SDLDisplay::printString(const char *s)
     if (c >= 0x20U && c != 0x7FU)
     {
       // printable character
-      do
+      while (true)
       {
         if (c >= 0x80U)
         {
@@ -934,8 +933,9 @@ void SDLDisplay::printString(const char *s)
           printBufCnt = 0;
         }
         printCharacter(c);
+        if (printBufCnt < 1) [[likely]]
+          break;
       }
-      while (BRANCH_UNLIKELY(printBufCnt > 0));
       continue;
     }
     // control characters
@@ -1077,7 +1077,7 @@ void SDLDisplay::printString(const char *s)
 #ifdef HAVE_SDL2
 static void convertUTF8ToUInt32(
     std::vector< std::uint32_t >& v, const char *s,
-    size_t maxLen = 1024, size_t *insertPosPtr = (size_t *) 0)
+    size_t maxLen = 1024, size_t *insertPosPtr = nullptr)
 {
   if (!s)
     return;
@@ -1878,7 +1878,7 @@ __attribute__ ((__format__ (__printf__, 2, 3)))
 void SDLDisplay::consolePrint(const char *fmt, ...)
 {
 #ifdef HAVE_SDL2
-  if (BRANCH_UNLIKELY(textBuf.size() >= 0x00200000))
+  if (textBuf.size() >= 0x00200000) [[unlikely]]
   {
     int     n = 0x00080000 / textWidth;
     printYPos = (printYPos > n ? (printYPos - n) : 0);
