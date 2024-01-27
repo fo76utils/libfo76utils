@@ -151,6 +151,8 @@ void SFCubeMapFilter::processImage_Specular(
           FloatVector8  c_g(0.0f);
           FloatVector8  c_b(0.0f);
           FloatVector8  totalWeight(0.0f);
+          FloatVector8  a2m1(a2 - 1.0f);
+          FloatVector8  a2p1(a2 + 1.0f);
           const FloatVector4  *k = imageBuf + j0;
           for (j = cubeCoordTable.begin() + j0;
                (j + 8) <= (cubeCoordTable.begin() + j1); j = j + 8, k = k + 8)
@@ -168,7 +170,7 @@ void SFCubeMapFilter::processImage_Specular(
             FloatVector8  nDotL = d;
             // D denominator = (N·H * N·H * (a2 - 1.0) + 1.0)² * 4.0
             //               = ((R·L + 1.0) * (a2 - 1.0) + 2.0)²
-            d = d * (a2 - 1.0f) + (a2 + 1.0f);
+            d = d * a2m1 + a2p1;
             FloatVector8  weight = nDotL * v2w / (d * d);
             c_r += (FloatVector8(k) * weight);
             c_g += (FloatVector8(k + 2) * weight);
