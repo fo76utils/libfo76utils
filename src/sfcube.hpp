@@ -8,12 +8,19 @@
 class SFCubeMapFilter
 {
  protected:
+  enum
+  {
+    minWidth = 16
+  };
   // roughness = (5.0 - sqrt(25.0 - mipLevel * 4.0)) / 4.0
   static const float  defaultRoughnessTable[7];
   FloatVector4  *imageBuf;
   std::uint32_t faceDataSize;
   std::uint32_t width;
-  std::vector< FloatVector4 > cubeCoordTable;
+  // width * width * 3 * 10 floats (X, Y, Z, W only for the +X, +Y, +Z faces):
+  //   vec8 X, vec8 Y, vec8 Z, vec8 W, vec8 R0, vec8 G0, vec8 B0,
+  //   vec8 R1, vec8 G1, vec8 B1
+  float   *cubeFilterTable;
   const float   *roughnessTable;
   int     roughnessTableSize;
   float   normalizeLevel;
@@ -21,19 +28,19 @@ class SFCubeMapFilter
  public:
   static FloatVector4 convertCoord(int x, int y, int w, int n);
  protected:
-  void processImage_Copy(unsigned char *outBufP, int w, int y0, int y1);
-  void processImage_Diffuse(unsigned char *outBufP, int w, int y0, int y1);
-  void processImage_Specular(unsigned char *outBufP,
-                             int w, int y0, int y1, float roughness);
+  void processImage_Specular(unsigned char *outBufP, int w,
+                             size_t startPos, size_t endPos, float roughness);
+  void processImage_Copy(unsigned char *outBufP, int w,
+                         size_t startPos, size_t endPos,
+                         const FloatVector4 *inBufP);
   static void pixelStore_R8G8B8A8(unsigned char *p, FloatVector4 c);
   static void pixelStore_R9G9B9E5(unsigned char *p, FloatVector4 c);
-  // filterMode = 0: disabled, 1: specular (w is required to be even),
-  // 2: diffuse (same as specular with roughness = 1.0, but allows w = 1)
+  // filterMode = 0: disabled
+  //              1: specular (roughness = 1.0 simulates diffuse filter)
   static void threadFunction(SFCubeMapFilter *p, unsigned char *outBufP,
-                             int w, int y0, int y1, float roughness,
-                             int filterMode);
-  static void transpose4x8(FloatVector4 *v, size_t n);
-  static void transpose8x4(FloatVector4 *v, size_t n);
+                             int w, size_t startPos, size_t endPos,
+                             float roughness, int filterMode);
+  void createFilterTable(int w);
   // returns the number of mip levels, or 0 on error
   int readImageData(std::vector< FloatVector4 >& imageData,
                     const unsigned char *buf, size_t bufSize);
