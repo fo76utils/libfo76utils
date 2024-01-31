@@ -79,6 +79,8 @@ struct FloatVector8
   inline FloatVector8& squareRoot();
   inline FloatVector8& squareRootFast();
   inline FloatVector8& rsqrtFast();     // elements must be positive
+  inline FloatVector8& rcpFast();       // approximates 1.0 / v
+  inline FloatVector8& rcpSqr();        // 1.0 / v²
   inline FloatVector8& log2V();
   inline FloatVector8& exp2V();
   // convert to 8 packed 8-bit integers
@@ -397,6 +399,21 @@ inline FloatVector8& FloatVector8::squareRootFast()
 inline FloatVector8& FloatVector8::rsqrtFast()
 {
   __asm__ ("vrsqrtps %t0, %t0" : "+x" (v));
+  return (*this);
+}
+
+inline FloatVector8& FloatVector8::rcpFast()
+{
+  __asm__ ("vrcpps %t0, %t0" : "+x" (v));
+  return (*this);
+}
+
+inline FloatVector8& FloatVector8::rcpSqr()
+{
+  YMM_Float tmp1(v * v);
+  YMM_Float tmp2;
+  __asm__ ("vrcpps %t1, %t0" : "=x" (tmp2) : "x" (tmp1));
+  v = (2.0f - tmp1 * tmp2) * tmp2;
   return (*this);
 }
 
@@ -915,6 +932,32 @@ inline FloatVector8& FloatVector8::rsqrtFast()
   v[5] = 1.0f / float(std::sqrt(v[5]));
   v[6] = 1.0f / float(std::sqrt(v[6]));
   v[7] = 1.0f / float(std::sqrt(v[7]));
+  return (*this);
+}
+
+inline FloatVector8& FloatVector8::rcpFast()
+{
+  v[0] = 1.0f / v[0];
+  v[1] = 1.0f / v[1];
+  v[2] = 1.0f / v[2];
+  v[3] = 1.0f / v[3];
+  v[4] = 1.0f / v[4];
+  v[5] = 1.0f / v[5];
+  v[6] = 1.0f / v[6];
+  v[7] = 1.0f / v[7];
+  return (*this);
+}
+
+inline FloatVector8& FloatVector8::rcpSqr()
+{
+  v[0] = 1.0f / (v[0] * v[0]);
+  v[1] = 1.0f / (v[1] * v[1]);
+  v[2] = 1.0f / (v[2] * v[2]);
+  v[3] = 1.0f / (v[3] * v[3]);
+  v[4] = 1.0f / (v[4] * v[4]);
+  v[5] = 1.0f / (v[5] * v[5]);
+  v[6] = 1.0f / (v[6] * v[6]);
+  v[7] = 1.0f / (v[7] * v[7]);
   return (*this);
 }
 

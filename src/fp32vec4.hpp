@@ -120,6 +120,8 @@ struct FloatVector4
   inline FloatVector4& squareRoot();
   inline FloatVector4& squareRootFast();
   inline FloatVector4& rsqrtFast();     // elements must be positive
+  inline FloatVector4& rcpFast();       // approximates 1.0 / v
+  inline FloatVector4& rcpSqr();        // 1.0 / v²
   static inline float squareRootFast(float x);
   static inline float log2Fast(float x);
   inline FloatVector4& log2V();
@@ -485,6 +487,21 @@ inline FloatVector4& FloatVector4::squareRootFast()
 inline FloatVector4& FloatVector4::rsqrtFast()
 {
   __asm__ ("vrsqrtps %0, %0" : "+x" (v));
+  return (*this);
+}
+
+inline FloatVector4& FloatVector4::rcpFast()
+{
+  __asm__ ("vrcpps %0, %0" : "+x" (v));
+  return (*this);
+}
+
+inline FloatVector4& FloatVector4::rcpSqr()
+{
+  XMM_Float tmp1(v * v);
+  XMM_Float tmp2;
+  __asm__ ("vrcpps %1, %0" : "=x" (tmp2) : "x" (tmp1));
+  v = (2.0f - tmp1 * tmp2) * tmp2;
   return (*this);
 }
 
@@ -1067,6 +1084,24 @@ inline FloatVector4& FloatVector4::rsqrtFast()
   v[1] = 1.0f / float(std::sqrt(v[1]));
   v[2] = 1.0f / float(std::sqrt(v[2]));
   v[3] = 1.0f / float(std::sqrt(v[3]));
+  return (*this);
+}
+
+inline FloatVector4& FloatVector4::rcpFast()
+{
+  v[0] = 1.0f / v[0];
+  v[1] = 1.0f / v[1];
+  v[2] = 1.0f / v[2];
+  v[3] = 1.0f / v[3];
+  return (*this);
+}
+
+inline FloatVector4& FloatVector4::rcpSqr()
+{
+  v[0] = 1.0f / (v[0] * v[0]);
+  v[1] = 1.0f / (v[1] * v[1]);
+  v[2] = 1.0f / (v[2] * v[2]);
+  v[3] = 1.0f / (v[3] * v[3]);
   return (*this);
 }
 
