@@ -120,11 +120,13 @@ void SFCubeMapFilter::processImage_Specular(
           // D denominator = (N·H * N·H * (a2 - 1.0) + 1.0)² * 4.0
           //               = ((R·L + 1.0) * (a2 - 1.0) + 2.0)²
           d = d * a2m1 + a2p1;
-          FloatVector8  weight = nDotL * v2w / (d * d);
+          FloatVector8  weight = nDotL * v2w * d.rcpSqr();
           c_r += (j[4] * weight);
           c_g += (j[5] * weight);
           c_b += (j[6] * weight);
           totalWeight += weight;
+          if (signMask == 0U) [[likely]]
+            continue;
         }
         if (signMask != 0U)
         {
@@ -132,7 +134,7 @@ void SFCubeMapFilter::processImage_Specular(
           d.minValues(FloatVector8(0.0f));
           FloatVector8  nDotL(d);
           d = a2p1 - (d * a2m1);
-          FloatVector8  weight = nDotL * v2w / (d * d);
+          FloatVector8  weight = nDotL * v2w * d.rcpSqr();
           c_r -= (j[7] * weight);
           c_g -= (j[8] * weight);
           c_b -= (j[9] * weight);
@@ -171,21 +173,25 @@ void SFCubeMapFilter::processImage_Copy(
     int     y0 = int(startPos >> (unsigned char) (mipLevel + mipLevel + l2w));
     int     y1 = int(endPos >> (unsigned char) (mipLevel + mipLevel + l2w));
     int     n = 1 << (mipLevel + mipLevel);
-    float   scale = 1.0f / float(n);
     for (int y = y0; y < y1; y++)
     {
       for (int x = 0; x < w; x++)
       {
         FloatVector4  c(0.0f);
+        float   totalWeight = 0.0f;
         for (int i = 0; i < n; i++)
         {
           int     xc = (x << mipLevel) + (i & ((1 << mipLevel) - 1));
           int     yc = (y << mipLevel) + (i >> mipLevel);
-          c += inBufP[size_t(yc) * minWidth + size_t(xc) - startPos];
+          float   weight =
+              cubeFilterTable[(yc * minWidth + (xc & ~7)) * 10 + (xc & 7) + 24];
+          c += (inBufP[size_t(yc * minWidth + xc) - startPos] * weight);
+          totalWeight += weight;
         }
+        c /= totalWeight;
         size_t  offs = size_t(y * w + x);
         unsigned char *p = outBufP + ((offs >> (l2w + l2w)) * f);
-        pixelStoreFunction(p + ((offs & m) * sizeof(std::uint32_t)), c * scale);
+        pixelStoreFunction(p + ((offs & m) * sizeof(std::uint32_t)), c);
       }
     }
   }
@@ -557,7 +563,7 @@ size_t SFCubeMapFilter::convertImage(
     if (m < roughnessTableSize)
       roughness = roughnessTable[m];
     int     filterMode = int(roughness >= 0.015625f);
-    if (filterMode)
+    if (filterMode || w < minWidth)
     {
       cubeFilterTableBuf.resize((size_t(w2) * size_t(w2) * 30) >> 3,
                                 FloatVector8(0.0f));
