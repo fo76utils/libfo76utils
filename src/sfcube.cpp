@@ -69,8 +69,8 @@ void SFCubeMapFilter::processImage_Specular(
     unsigned char *outBufP, int w, size_t startPos, size_t endPos,
     float roughness)
 {
-  int     w2 = std::max< int >(w, minWidth);
-  unsigned char l2w2 = (unsigned char) (std::bit_width((unsigned int) w2) - 1);
+  int     w2 = std::max< int >(w, filterMinWidth);
+  std::uint8_t  l2w = std::uint8_t(std::bit_width((unsigned int) w) - 1);
   size_t  cubeFilterTableSize = (size_t(w2) * size_t(w2) * 30) >> 3;
   std::vector< FloatVector4 > tmpBuf(endPos - startPos, FloatVector4(0.0f));
   float   a = roughness * roughness;
@@ -85,11 +85,11 @@ void SFCubeMapFilter::processImage_Specular(
     FloatVector4  *tmpBufPtr = tmpBuf.data();
     for (size_t i = startPos; i < endPos; i++, tmpBufPtr++)
     {
-      int     x = int(i & (size_t(w2) - 1));
-      int     y = int((i >> l2w2) & (size_t(w2) - 1));
-      int     n = int(i >> (l2w2 + l2w2));
+      int     x = int(i & (size_t(w) - 1));
+      int     y = int((i >> l2w) & (size_t(w) - 1));
+      int     n = int(i >> (l2w + l2w));
       // v1 = reflected view vector (R), assume V = N = R
-      FloatVector4  v1(convertCoord(x, y, w2, n));
+      FloatVector4  v1(convertCoord(x, y, w, n));
       FloatVector8  v1x(v1[0]);
       FloatVector8  v1y(v1[1]);
       FloatVector8  v1z(v1[2]);
@@ -157,41 +157,38 @@ void SFCubeMapFilter::processImage_Specular(
     c = c / FloatVector8(c[3], c[3], c[3], c[3], c[7], c[7], c[7], c[7]);
     c.convertToFloatVector4(tmpBufPtr);
   }
-  processImage_Copy(outBufP, w, startPos, endPos, tmpBuf.data());
+  processImage_Copy(outBufP, w, w, startPos, endPos, tmpBuf.data());
 }
 
 void SFCubeMapFilter::processImage_Copy(
-    unsigned char *outBufP, int w, size_t startPos, size_t endPos,
+    unsigned char *outBufP, int w, int w2, size_t startPos, size_t endPos,
     const FloatVector4 *inBufP)
 {
-  unsigned char l2w = (unsigned char) (std::bit_width((unsigned int) w) - 1);
+  std::uint8_t  l2w = std::uint8_t(std::bit_width((unsigned int) w) - 1);
   size_t  m = (size_t(1) << (l2w + l2w)) - 1;
   size_t  f = faceDataSize;
-  if (w < minWidth)
+  if (w < w2)
   {
-    int     mipLevel = (int(std::bit_width((unsigned int) minWidth)) - 1) - l2w;
-    int     y0 = int(startPos >> (unsigned char) (mipLevel + mipLevel + l2w));
-    int     y1 = int(endPos >> (unsigned char) (mipLevel + mipLevel + l2w));
+    std::uint8_t  l2w2 = std::uint8_t(std::bit_width((unsigned int) w2) - 1);
+    int     mipLevel = l2w2 - l2w;
+    int     y0 = int(startPos >> std::uint8_t(mipLevel + l2w2));
+    int     y1 = int(endPos >> std::uint8_t(mipLevel + l2w2));
     int     n = 1 << (mipLevel + mipLevel);
+    float   scale = 1.0f / float(n);
     for (int y = y0; y < y1; y++)
     {
       for (int x = 0; x < w; x++)
       {
         FloatVector4  c(0.0f);
-        float   totalWeight = 0.0f;
         for (int i = 0; i < n; i++)
         {
           int     xc = (x << mipLevel) + (i & ((1 << mipLevel) - 1));
           int     yc = (y << mipLevel) + (i >> mipLevel);
-          float   weight =
-              cubeFilterTable[(yc * minWidth + (xc & ~7)) * 10 + (xc & 7) + 24];
-          c += (inBufP[size_t(yc * minWidth + xc) - startPos] * weight);
-          totalWeight += weight;
+          c += inBufP[size_t((yc << l2w2) + xc) - startPos];
         }
-        c /= totalWeight;
         size_t  offs = size_t(y * w + x);
         unsigned char *p = outBufP + ((offs >> (l2w + l2w)) * f);
-        pixelStoreFunction(p + ((offs & m) * sizeof(std::uint32_t)), c);
+        pixelStoreFunction(p + ((offs & m) * sizeof(std::uint32_t)), c * scale);
       }
     }
   }
@@ -219,12 +216,20 @@ void SFCubeMapFilter::pixelStore_R9G9B9E5(unsigned char *p, FloatVector4 c)
 
 void SFCubeMapFilter::threadFunction(
     SFCubeMapFilter *p, unsigned char *outBufP,
-    int w, size_t startPos, size_t endPos, float roughness, int filterMode)
+    int w, size_t startPos, size_t endPos, float roughness, bool enableFilter)
 {
-  if (filterMode < 1)
-    p->processImage_Copy(outBufP, w, startPos, endPos, p->imageBuf + startPos);
+  if (!enableFilter)
+  {
+    int     w2 = std::max< int >(w, filterMinWidth);
+    std::uint8_t  mipLevel = std::uint8_t(std::bit_width((unsigned int) w2)
+                                          - std::bit_width((unsigned int) w));
+    p->processImage_Copy(outBufP, w, filterMinWidth, startPos, endPos,
+                         p->imageBuf + (startPos << (mipLevel + mipLevel)));
+  }
   else
+  {
     p->processImage_Specular(outBufP, w, startPos, endPos, roughness);
+  }
 }
 
 void SFCubeMapFilter::createFilterTable(int w)
@@ -309,7 +314,7 @@ int SFCubeMapFilter::readImageData(
     if (bufSize < sizeRequired || ((bufSize - 148) % 96) != 0)
       return 0;
     imageData.resize(w0 * h0 * 6, FloatVector4(0.0f));
-    std::uint8_t  tmpBuf[128];
+    std::uint64_t tmpBuf[16];
     for (size_t n = 0; n < 6; n++)
     {
       const unsigned char *p1 = buf + ((n * ((bufSize - 148) / 6)) + 148);
@@ -319,12 +324,13 @@ int SFCubeMapFilter::readImageData(
         FloatVector4  tmpScale(0.0f);
         for (size_t x = 0; x < w0; x = x + 4, p1 = p1 + 16, p2 = p2 + 4)
         {
-          (void) decompressFunc(reinterpret_cast< const std::uint8_t * >(p1),
-                                0xFFFFFFFFU, 0U, tmpBuf);
+          (void) decompressFunc(
+                     reinterpret_cast< const std::uint8_t * >(p1),
+                     0xFFFFFFFFU, 0U,
+                     reinterpret_cast< std::uint8_t * >(&(tmpBuf[0])));
           for (size_t i = 0; i < 16; i++)
           {
-            std::uint64_t tmp = FileBuffer::readUInt64Fast(&(tmpBuf[i << 3]));
-            FloatVector4  c(FloatVector4::convertFloat16(tmp));
+            FloatVector4  c(FloatVector4::convertFloat16(tmpBuf[i]));
             c.maxValues(FloatVector4(0.0f)).minValues(FloatVector4(65536.0f));
             p2[((i >> 2) * w0) + (i & 3)] = c;
             tmpScale += c;
@@ -507,6 +513,7 @@ size_t SFCubeMapFilter::convertImage(
   imageBuf = inBuf1.data();
   std::vector< FloatVector4 > inBuf2;
   std::vector< FloatVector8 > cubeFilterTableBuf;
+  cubeFilterTable = nullptr;
 
   if (!outFmtFloat)
   {
@@ -528,7 +535,7 @@ size_t SFCubeMapFilter::convertImage(
   int     w = int(width);
   for (int m = 0; w > 0; m++, w = w >> 1)
   {
-    int     w2 = std::max< int >(w, minWidth);
+    int     w2 = std::max< int >(w, filterMinWidth);
     if (int(w0) < w2)
     {
       upsampleImage(inBuf2, w2, inBuf1, int(w0));
@@ -562,8 +569,10 @@ size_t SFCubeMapFilter::convertImage(
     float   roughness = 1.0f;
     if (m < roughnessTableSize)
       roughness = roughnessTable[m];
-    int     filterMode = int(roughness >= 0.015625f);
-    if (filterMode || w < minWidth)
+    if (w >= filterMinWidth)
+      cubeFilterTable = nullptr;
+    bool    enableFilter = (roughness >= 0.015625f);
+    if (enableFilter && !cubeFilterTable)
     {
       cubeFilterTableBuf.resize((size_t(w2) * size_t(w2) * 30) >> 3,
                                 FloatVector8(0.0f));
@@ -572,18 +581,16 @@ size_t SFCubeMapFilter::convertImage(
     }
     try
     {
-      threadCnt = std::min< int >(threadCnt, (w2 << 1) / minWidth);
+      threadCnt = std::min< int >(threadCnt, std::max< int >(w >> 3, 1));
       int     y0 = 0;
       for (int i = 0; i < threadCnt; i++)
       {
-        int     y1 = (w2 * 6 * (i + 1)) / threadCnt;
-        int     tmp = minWidth - 1;
-        y1 = (y1 + tmp) & ~tmp;
-        size_t  startPos = size_t(y0) * size_t(w2);
-        size_t  endPos = size_t(y1) * size_t(w2);
+        int     y1 = (w * 6 * (i + 1)) / threadCnt;
+        size_t  startPos = size_t(y0) * size_t(w);
+        size_t  endPos = size_t(y1) * size_t(w);
         y0 = y1;
         threads[i] = new std::thread(threadFunction, this, outBufP, w,
-                                     startPos, endPos, roughness, filterMode);
+                                     startPos, endPos, roughness, enableFilter);
       }
       for (int i = 0; i < threadCnt; i++)
       {
