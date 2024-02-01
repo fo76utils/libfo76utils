@@ -128,7 +128,7 @@ inline std::int32_t uint32ToSigned(unsigned int x)
 
 inline float convertFloat16(unsigned short n)
 {
-#if ENABLE_X86_64_AVX2
+#if ENABLE_X86_64_AVX2 || (ENABLE_X86_64_AVX && defined(__F16C__))
   float   tmp __attribute__ ((__vector_size__ (16)));
   __asm__ ("vmovq %1, %0" : "=x" (tmp) : "r" (std::uint64_t(n)));
   __asm__ ("vcvtph2ps %0, %0" : "+x" (tmp));
@@ -160,7 +160,7 @@ inline float convertFloat16(unsigned short n)
 #endif
 }
 
-#if ENABLE_X86_64_AVX2
+#if ENABLE_X86_64_AVX2 || (ENABLE_X86_64_AVX && defined(__F16C__))
 inline std::uint16_t convertToFloat16(float x)
 {
   std::uint16_t tmp __attribute__ ((__vector_size__ (16)));

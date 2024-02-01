@@ -216,7 +216,7 @@ inline FloatVector4 FloatVector4::convertInt16(const std::uint64_t& n)
 inline FloatVector4 FloatVector4::convertFloat16(std::uint64_t n, bool noInfNaN)
 {
   XMM_Float v;
-#if ENABLE_X86_64_AVX2
+#if ENABLE_X86_64_AVX2 || defined(__F16C__)
   __asm__ ("vmovq %1, %0" : "=x" (v) : "rm" (n));
   if (noInfNaN)
   {
@@ -255,7 +255,7 @@ inline FloatVector4 FloatVector4::convertFloat16(std::uint64_t n, bool noInfNaN)
 
 inline std::uint64_t FloatVector4::convertToFloat16(unsigned int mask) const
 {
-#if ENABLE_X86_64_AVX2
+#if ENABLE_X86_64_AVX2 || defined(__F16C__)
   XMM_UInt64  tmp;
   if (mask < 15U)
   {
@@ -1356,7 +1356,7 @@ inline std::uint32_t FloatVector4::convertToRGBA32(
 
 inline std::uint32_t FloatVector4::normalToUInt32() const
 {
-#if ENABLE_X86_64_AVX2
+#if ENABLE_X86_64_AVX2 || (ENABLE_X86_64_AVX && defined(__F16C__))
   static const XMM_UInt32 signMask =
   {
     0x80000000U, 0x80000000U, 0x80000000U, 0x80000000U
@@ -1399,7 +1399,7 @@ inline std::uint32_t FloatVector4::normalToUInt32() const
 
 inline FloatVector4 FloatVector4::uint32ToNormal(const std::uint32_t& n)
 {
-#if ENABLE_X86_64_AVX2
+#if ENABLE_X86_64_AVX2 || (ENABLE_X86_64_AVX && defined(__F16C__))
   FloatVector4  tmp;
   __asm__ ("vmovd %1, %0" : "=x" (tmp.v) : "rm" (n));
   __asm__ ("vcvtph2ps %0, %0" : "+x" (tmp.v));

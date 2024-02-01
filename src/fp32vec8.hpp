@@ -162,7 +162,7 @@ inline FloatVector8::FloatVector8(const std::int32_t *p)
 
 inline FloatVector8::FloatVector8(const std::uint16_t *p, bool noInfNaN)
 {
-#if ENABLE_X86_64_AVX2
+#if ENABLE_X86_64_AVX2 || defined(__F16C__)
   if (!noInfNaN)
   {
     __asm__ ("vcvtph2ps %1, %t0" : "=x" (v) : "m" (*p));
@@ -225,7 +225,7 @@ inline void FloatVector8::convertToInt32(std::int32_t *p) const
 
 inline void FloatVector8::convertToFloat16(std::uint16_t *p) const
 {
-#if ENABLE_X86_64_AVX2
+#if ENABLE_X86_64_AVX2 || defined(__F16C__)
   __asm__ ("vcvtps2ph $0x00, %t1, %0" : "=m" (*p) : "x" (v));
 #else
   p[0] = ::convertToFloat16(v[0]);
