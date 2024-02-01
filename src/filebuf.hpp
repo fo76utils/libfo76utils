@@ -109,6 +109,11 @@ class FileBuffer
  public:
   static void printHexData(std::string& s, const unsigned char *p, size_t n,
                            size_t bytesPerLine = 16);
+  // 'p' must have enough space for 148 bytes
+  // returns false if dxgiFmt is invalid or unsupported
+  static bool writeDDSHeader(unsigned char *p, unsigned char dxgiFmt,
+                             int width, int height, int mipCnt = 0,
+                             bool isCubeMap = false, int arraySize = 0);
 };
 
 inline std::uint32_t FileBuffer::swapUInt32(unsigned int n)

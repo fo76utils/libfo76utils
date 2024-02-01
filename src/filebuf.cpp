@@ -447,11 +447,96 @@ void FileBuffer::printHexData(std::string& s, const unsigned char *p, size_t n,
   }
 }
 
+static const unsigned char dxgiFormatSizeTable[128] =
+{
+  // block size | (isCompressed << 7)
+  0x00, 0x10, 0x10, 0x10, 0x10, 0x0C, 0x0C, 0x0C,       // 0x00
+  0x0C, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08,
+  0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x04,       // 0x10
+  0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04,
+  0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04,       // 0x20
+  0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04,
+  0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,       // 0x30
+  0x02, 0x02, 0x02, 0x02, 0x01, 0x01, 0x01, 0x01,
+  0x01, 0x01, 0x00, 0x04, 0x00, 0x00, 0x88, 0x88,       // 0x40
+  0x88, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x88,
+  0x88, 0x88, 0x90, 0x90, 0x90, 0x02, 0x02, 0x04,       // 0x50
+  0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x90, 0x90,
+  0x90, 0x90, 0x90, 0x90, 0x00, 0x00, 0x00, 0x00,       // 0x60
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00,       // 0x70
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+
+bool FileBuffer::writeDDSHeader(unsigned char *p, unsigned char dxgiFmt,
+                                int width, int height, int mipCnt,
+                                bool isCubeMap, int arraySize)
+{
+  if (dxgiFmt >= 0x80 || !dxgiFormatSizeTable[dxgiFmt])
+    return false;
+  mipCnt = std::max< int >(mipCnt, 1);
+  arraySize = std::max< int >(arraySize, 1);
+  std::uint32_t pitch = dxgiFormatSizeTable[dxgiFmt];
+  bool    compressedTexture = bool(pitch & 0x80U);
+  pitch = pitch & 0x7FU;
+  if (!compressedTexture)
+    pitch *= std::uint32_t(width);
+  else
+    pitch *= std::uint32_t((width + 3) >> 2) * std::uint32_t((height + 3) >> 2);
+  writeUInt32Fast(p, 0x20534444);       // "DDS "
+  writeUInt32Fast(p + 4, 124);          // size of DDS_HEADER
+  // DDSD_CAPS, DDSD_HEIGHT, DDSD_WIDTH, DDSD_PIXELFORMAT, DDSD_MIPMAPCOUNT
+  if (!compressedTexture)
+    writeUInt32Fast(p + 8, 0x0002100F); // + DDSD_PITCH, or
+  else
+    writeUInt32Fast(p + 8, 0x000A1007); //   DDSD_LINEARSIZE
+  writeUInt32Fast(p + 12, height);      // height
+  writeUInt32Fast(p + 16, width);       // width
+  writeUInt32Fast(p + 20, pitch);
+  writeUInt32Fast(p + 24, 0);           // depth
+  writeUInt32Fast(p + 28, std::uint32_t(mipCnt));       // mipmap count
+  writeUInt64Fast(p + 32, 0);           // unused
+  writeUInt64Fast(p + 40, 0);
+  writeUInt64Fast(p + 48, 0);
+  writeUInt64Fast(p + 56, 0);
+  writeUInt64Fast(p + 64, 0);
+  writeUInt32Fast(p + 72, 0);
+  writeUInt32Fast(p + 76, 32);          // size of DDS_PIXELFORMAT
+  writeUInt32Fast(p + 80, 0x04);        // DDPF_FOURCC
+  writeUInt32Fast(p + 84, 0x30315844);  // "DX10"
+  writeUInt64Fast(p + 88, 0);
+  writeUInt64Fast(p + 96, 0);
+  writeUInt32Fast(p + 104, 0);
+  writeUInt32Fast(p + 108, 0x00401008); // DDSCAPS_COMPLEX, TEXTURE, MIPMAP
+  if (!isCubeMap)
+  {
+    writeUInt64Fast(p + 112, 0);
+    writeUInt32Fast(p + 136, 0);
+  }
+  else
+  {
+    writeUInt64Fast(p + 112, 0xFE00);   // DDSCAPS2_CUBEMAP*
+    writeUInt32Fast(p + 136, 0x04);     // DDS_RESOURCE_MISC_TEXTURECUBE
+  }
+  writeUInt64Fast(p + 120, 0);
+  writeUInt32Fast(p + 128, dxgiFmt);    // DXGI_FORMAT
+  writeUInt32Fast(p + 132, 3);          // D3D10_RESOURCE_DIMENSION_TEXTURE2D
+  writeUInt64Fast(p + 140, (unsigned int) arraySize);   // arraySize
+  return true;
+}
+
 void OutputFile::flushBuffer()
 {
-  unsigned int  n = bufWritePos;
+  size_t  n = bufWritePos;
   bufWritePos = 0;
-  writeData(buf, sizeof(unsigned char) * n);
+#if defined(_WIN32) || defined(_WIN64)
+  if (size_t(_write(fileDesc, buf, n)) != n)
+#else
+  if (size_t(write(fileDesc, buf, n)) != n)
+#endif
+  {
+    errorMessage("error writing output file");
+  }
 }
 
 OutputFile::OutputFile(const char *fileName, size_t bufSize)
@@ -498,6 +583,23 @@ OutputFile::~OutputFile()
 
 void OutputFile::writeData(const void *p, size_t n)
 {
+  if (n < bufferSize)
+  {
+    if (bufWritePos < bufferSize)
+    {
+      size_t  m = bufferSize - bufWritePos;
+      m = std::min(m, n);
+      if (m)
+      {
+        std::memcpy(buf + bufWritePos, p, m);
+        bufWritePos = bufWritePos + m;
+        p = reinterpret_cast< const unsigned char * >(p) + m;
+        n = n - m;
+      }
+    }
+    if (!n)
+      return;
+  }
   if (bufWritePos)
     flushBuffer();
   const unsigned char *bufp = reinterpret_cast< const unsigned char * >(p);
