@@ -11,8 +11,8 @@ class DDSTexture
  protected:
   struct DXGIFormatInfo
   {
-    size_t (*decodeFunction)(std::uint32_t *,
-                             const unsigned char *, unsigned int);
+    size_t  (*decodeFunction)(std::uint32_t *,
+                              const unsigned char *, unsigned int);
     const char  *name;
     bool    isCompressed;
     bool    isSRGB;

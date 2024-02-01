@@ -103,7 +103,7 @@ const DDSTexture::DXGIFormatInfo DDSTexture::dxgiFormatInfoTable[32] =
     &decodeLine_RGB, "R8G8B8_UNORM_SRGB", false, true, 3, 3
   },
   {                             // 31: DXGI_FORMAT_R9G9B9E5_SHAREDEXP = 0x43
-    &decodeLine_RGB9E5, "R9G9B9E5_SHAREDEXP", false, false, 3, 4
+    &decodeLine_RGB9E5, "R9G9B9E5_SHAREDEXP", false, true, 3, 4
   }
 };
 
@@ -129,8 +129,8 @@ static inline std::uint64_t decodeBC3Alpha(std::uint64_t& a,
   unsigned int  a0 = (unsigned int) (ba & 0xFFU);
   unsigned int  a1 = (unsigned int) ((ba >> 8) & 0xFFU);
   FloatVector4  tmp((std::uint32_t) ba);
-  FloatVector4  a0_f(tmp[0], tmp[0], tmp[0], tmp[0]);
-  FloatVector4  a1_f(tmp[1], tmp[1], tmp[1], tmp[1]);
+  FloatVector4  a0_f(tmp[0]);
+  FloatVector4  a1_f(tmp[1]);
   a1_f -= a0_f;
   if (a0 > a1)
   {
@@ -302,14 +302,13 @@ size_t DDSTexture::decodeBlock_BC5S(
 size_t DDSTexture::decodeBlock_BC6U(
     std::uint32_t *dst, const unsigned char *src, unsigned int w)
 {
-  std::uint8_t  tmp[128];
+  std::uint64_t tmp[16];
   (void) detexDecompressBlockBPTC_FLOAT(
-             reinterpret_cast< const std::uint8_t * >(src),
-             0xFFFFFFFFU, 0U, tmp);
+             reinterpret_cast< const std::uint8_t * >(src), 0xFFFFFFFFU, 0U,
+             reinterpret_cast< std::uint8_t * >(&(tmp[0])));
   for (unsigned int i = 0; i < 16; i++)
   {
-    std::uint64_t b = FileBuffer::readUInt64Fast(&(tmp[i << 3]));
-    FloatVector4  c(FloatVector4::convertFloat16(b));
+    FloatVector4  c(FloatVector4::convertFloat16(tmp[i]));
     c.maxValues(FloatVector4(0.0f));
     float   a = c[3] * 255.0f;
     c = c / (c + 4.0f);
@@ -323,14 +322,13 @@ size_t DDSTexture::decodeBlock_BC6U(
 size_t DDSTexture::decodeBlock_BC6S(
     std::uint32_t *dst, const unsigned char *src, unsigned int w)
 {
-  std::uint8_t  tmp[128];
+  std::uint64_t tmp[16];
   (void) detexDecompressBlockBPTC_SIGNED_FLOAT(
-             reinterpret_cast< const std::uint8_t * >(src),
-             0xFFFFFFFFU, 0U, tmp);
+             reinterpret_cast< const std::uint8_t * >(src), 0xFFFFFFFFU, 0U,
+             reinterpret_cast< std::uint8_t * >(&(tmp[0])));
   for (unsigned int i = 0; i < 16; i++)
   {
-    std::uint64_t b = FileBuffer::readUInt64Fast(&(tmp[i << 3]));
-    FloatVector4  c(FloatVector4::convertFloat16(b));
+    FloatVector4  c(FloatVector4::convertFloat16(tmp[i]));
     c.maxValues(FloatVector4(-1.0f));
     c.minValues(FloatVector4(1.0f));
     dst[(i >> 2) * w + (i & 3)] = std::uint32_t(c * 127.5f + 127.5f);
@@ -341,11 +339,12 @@ size_t DDSTexture::decodeBlock_BC6S(
 size_t DDSTexture::decodeBlock_BC7(
     std::uint32_t *dst, const unsigned char *src, unsigned int w)
 {
-  std::uint8_t  tmp[64];
-  (void) detexDecompressBlockBPTC(reinterpret_cast< const std::uint8_t * >(src),
-                                  0xFFFFFFFFU, 0U, tmp);
+  std::uint32_t tmp[16];
+  (void) detexDecompressBlockBPTC(
+             reinterpret_cast< const std::uint8_t * >(src), 0xFFFFFFFFU, 0U,
+             reinterpret_cast< std::uint8_t * >(&(tmp[0])));
   for (unsigned int i = 0; i < 16; i++)
-    dst[(i >> 2) * w + (i & 3)] = FileBuffer::readUInt32Fast(&(tmp[i << 2]));
+    dst[(i >> 2) * w + (i & 3)] = tmp[i];
   return 16;
 }
 
