@@ -10,6 +10,7 @@ Defining the macro BUILD\_CE2UTILS enables the use of default paths and environm
 * **bsmatcdb.cpp**, **bsmatcdb.hpp**: Starfield material database to JSON conversion (class BSMaterialsCDB).
 * **common.cpp**, **common.hpp**: Various common functions, common.hpp is included by all other source files.
 * **ddstxt.cpp**, **ddstxt.hpp**: class DDSTexture: DDS texture reader, supports decoding most common pixel formats to R8G8B8A8, bilinear and trilinear filtering, and cube maps.
+* **ddstxt16.cpp**, **ddstxt16.hpp**: class DDSTexture16: DDS texture reader using 16-bit floats as the internal pixel format.
 * **downsamp.cpp**, **downsamp.hpp**: Image downsampler for 4x and 16x SSAA implementation.
 * **esmfile.cpp**, **esmfile.hpp**: class ESMFile: ESM file reader.
 * **filebuf.cpp**, **filebuf.hpp**: class FileBuffer: general file input, can be used to memory map files, or to read memory buffers using the same interface. The same source files also include code for writing uncompressed DDS images.
