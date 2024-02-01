@@ -692,27 +692,6 @@ long BA2File::getFileSize(const std::string& fileName, bool packedSize) const
   return long(fd->unpackedSize);
 }
 
-static const unsigned char dxgiFormatSizeTable[128] =
-{
-  // block size | (isCompressed << 7)
-  0x00, 0x10, 0x10, 0x10, 0x10, 0x0C, 0x0C, 0x0C,       // 0x00
-  0x0C, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08,
-  0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x04,       // 0x10
-  0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04,
-  0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04,       // 0x20
-  0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04,
-  0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02,       // 0x30
-  0x02, 0x02, 0x02, 0x02, 0x01, 0x01, 0x01, 0x01,
-  0x01, 0x01, 0x00, 0x04, 0x00, 0x00, 0x88, 0x88,       // 0x40
-  0x88, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x88,
-  0x88, 0x88, 0x90, 0x90, 0x90, 0x02, 0x02, 0x04,       // 0x50
-  0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x90, 0x90,
-  0x90, 0x90, 0x90, 0x90, 0x00, 0x00, 0x00, 0x00,       // 0x60
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-  0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00,       // 0x70
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-};
-
 int BA2File::extractBA2Texture(std::vector< unsigned char >& buf,
                                const FileDeclaration& fileDecl,
                                int mipOffset) const
@@ -721,8 +700,8 @@ int BA2File::extractBA2Texture(std::vector< unsigned char >& buf,
                       archiveFiles[fileDecl.archiveFile]->size());
   const unsigned char *p = fileDecl.fileData;
   size_t  chunkCnt = p[0];
-  unsigned int  width = ((unsigned int) p[6] << 8) | p[5];
-  unsigned int  height = ((unsigned int) p[4] << 8) | p[3];
+  unsigned int  height = FileBuffer::readUInt16Fast(p + 3);
+  unsigned int  width = FileBuffer::readUInt16Fast(p + 5);
   int     mipCnt = p[7];
   unsigned char dxgiFormat = p[8];
   bool    isCubeMap = bool(p[9] & 1);
@@ -755,52 +734,11 @@ int BA2File::extractBA2Texture(std::vector< unsigned char >& buf,
     }
   }
   // write DDS header
-  if (dxgiFormat >= 0x80 || !dxgiFormatSizeTable[dxgiFormat])
+  if (!FileBuffer::writeDDSHeader(buf.data(), dxgiFormat,
+                                  int(width), int(height), mipCnt, isCubeMap))
   {
     throw FO76UtilsError("unsupported DXGI_FORMAT 0x%02X",
                          (unsigned int) dxgiFormat);
-  }
-  unsigned int  pitch = dxgiFormatSizeTable[dxgiFormat];
-  bool    compressedTexture = bool(pitch & 0x80U);
-  if (!compressedTexture)
-    pitch = (pitch & 0x7FU) * width;
-  else
-    pitch = (pitch & 0x7FU) * ((width + 3) >> 2) * ((height + 3) >> 2);
-  unsigned char *hdr = buf.data();
-  hdr[0] = 0x44;                // 'D'
-  hdr[1] = 0x44;                // 'D'
-  hdr[2] = 0x53;                // 'S'
-  hdr[3] = 0x20;                // ' '
-  hdr[4] = 124;                 // size of DDS_HEADER
-  if (!compressedTexture)
-    hdr[8] = 0x0F;              // DDSD_PITCH + same flags as below
-  else
-    hdr[8] = 0x07;              // DDSD_CAPS, DDSD_HEIGHT, DDSD_WIDTH
-  hdr[9] = 0x10;                // DDSD_PIXELFORMAT
-  if (!compressedTexture)
-    hdr[10] = 0x02;             // DDSD_MIPMAPCOUNT
-  else
-    hdr[10] = 0x0A;             // DDSD_MIPMAPCOUNT, DDSD_LINEARSIZE
-  FileBuffer::writeUInt32Fast(hdr + 12, height);        // height
-  FileBuffer::writeUInt32Fast(hdr + 16, width);         // width
-  FileBuffer::writeUInt32Fast(hdr + 20, pitch);
-  hdr[28] = (unsigned char) mipCnt;     // mipmap count
-  hdr[76] = 32;                 // size of DDS_PIXELFORMAT
-  hdr[80] = 0x04;               // DDPF_FOURCC
-  hdr[84] = 0x44;               // 'D'
-  hdr[85] = 0x58;               // 'X'
-  hdr[86] = 0x31;               // '1'
-  hdr[87] = 0x30;               // '0'
-  hdr[108] = 0x08;              // DDSCAPS_COMPLEX
-  hdr[109] = 0x10;              // DDSCAPS_TEXTURE
-  hdr[110] = 0x40;              // DDSCAPS_MIPMAP
-  hdr[128] = dxgiFormat;        // DXGI_FORMAT
-  hdr[132] = 3;                 // D3D10_RESOURCE_DIMENSION_TEXTURE2D
-  hdr[140] = 1;                 // arraySize
-  if (isCubeMap) [[unlikely]]
-  {
-    hdr[113] = 0xFE;            // DDSCAPS2_CUBEMAP*
-    hdr[136] = 0x04;            // DDS_RESOURCE_MISC_TEXTURECUBE
   }
   // return the remaining number of mip levels to be skipped
   return mipOffset;
