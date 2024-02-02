@@ -1,7 +1,6 @@
 
 #include "common.hpp"
 #include "ddstxt16.hpp"
-#include "fp32vec8.hpp"
 
 #include <new>
 
@@ -506,17 +505,30 @@ size_t DDSTexture16::decodeLine_RGB9E5(
   return (size_t(w) << 2);
 }
 
-static void srgbExpandBlock(std::uint64_t *buf, int w, int h, int pitch)
+static void srgbExpandBlock(void *buf, int w, int h, int pitch)
 {
-  for ( ; h > 0; h--, buf = buf + pitch)
+#if ENABLE_X86_64_AVX2 || (ENABLE_X86_64_AVX && defined(__F16C__))
+  if (!(w & 1)) [[likely]]
+  {
+    std::uint16_t *p = reinterpret_cast< std::uint16_t * >(buf);
+    for ( ; h > 0; h--, p = p + (pitch << 2))
+    {
+      for (int x = 0; (x + 2) <= w; x = x + 2)
+      {
+        FloatVector8  c(p + (x << 2), false);
+        DDSTexture16::srgbExpand(c).convertToFloat16(p + (x << 2));
+      }
+    }
+    return;
+  }
+#endif
+  std::uint64_t *p = reinterpret_cast< std::uint64_t * >(buf);
+  for ( ; h > 0; h--, p = p + pitch)
   {
     for (int x = 0; x < w; x++)
     {
-      FloatVector4  c(FloatVector4::convertFloat16(buf[x]));
-      FloatVector4  tmp(c);
-      c *= (c * 0.13945550f + 0.86054450f);
-      c *= c;
-      buf[x] = FloatVector4(c[0], c[1], c[2], tmp[3]).convertToFloat16();
+      FloatVector4  c(FloatVector4::convertFloat16(p[x]));
+      p[x] = DDSTexture16::srgbExpand(c).convertToFloat16();
     }
   }
 }

@@ -5,6 +5,7 @@
 #include "common.hpp"
 #include "filebuf.hpp"
 #include "fp32vec4.hpp"
+#include "fp32vec8.hpp"
 
 class DDSTexture16
 {
@@ -221,6 +222,11 @@ class DDSTexture16
   inline FloatVector4 getPixelT_Inline(float x, float y, float mipLevel) const;
   inline FloatVector4 getPixelBM_Inline(float x, float y, int mipLevel) const;
   inline FloatVector4 getPixelBC_Inline(float x, float y, int mipLevel) const;
+  // sRGB / linear color space conversion with normalized colors, better
+  // accuracy than FloatVector4 functions, and correct handling of alpha
+  static inline FloatVector4 srgbExpand(FloatVector4 c);
+  static inline FloatVector8 srgbExpand(FloatVector8 c);
+  static inline FloatVector4 srgbCompress(FloatVector4 c);
 };
 
 inline bool DDSTexture16::convertTexCoord(
@@ -373,6 +379,42 @@ inline bool DDSTexture16::wrapCubeMapCoord(int& x, int& y, int& n, int xMask)
     std::swap(x, y);
   n = tmp & 7;
   return true;
+}
+
+inline FloatVector4 DDSTexture16::srgbExpand(FloatVector4 c)
+{
+  const FloatVector4  a4(-0.13984761f, -0.13984761f, -0.13984761f, 0.0f);
+  const FloatVector4  a3(0.58740202f, 0.58740202f, 0.58740202f, 0.0f);
+  const FloatVector4  a2(0.50849240f, 0.50849240f, 0.50849240f, 0.0f);
+  const FloatVector4  a1(0.04395319f, 0.04395319f, 0.04395319f, 1.0f);
+  FloatVector4  c2(c * c);
+  return (c2 * a4 + (c * a3 + a2)) * c2 + (c * a1);
+}
+
+inline FloatVector8 DDSTexture16::srgbExpand(FloatVector8 c)
+{
+  const FloatVector8  a4(-0.13984761f, -0.13984761f, -0.13984761f, 0.0f,
+                         -0.13984761f, -0.13984761f, -0.13984761f, 0.0f);
+  const FloatVector8  a3(0.58740202f, 0.58740202f, 0.58740202f, 0.0f,
+                         0.58740202f, 0.58740202f, 0.58740202f, 0.0f);
+  const FloatVector8  a2(0.50849240f, 0.50849240f, 0.50849240f, 0.0f,
+                         0.50849240f, 0.50849240f, 0.50849240f, 0.0f);
+  const FloatVector8  a1(0.04395319f, 0.04395319f, 0.04395319f, 1.0f,
+                         0.04395319f, 0.04395319f, 0.04395319f, 1.0f);
+  FloatVector8  c2(c * c);
+  return (c2 * a4 + (c * a3 + a2)) * c2 + (c * a1);
+}
+
+inline FloatVector4 DDSTexture16::srgbCompress(FloatVector4 c)
+{
+  FloatVector4  tmp(c.maxValues(FloatVector4(0.0f)) + 0.000858025f);
+  FloatVector4  tmp1(tmp);
+  FloatVector4  tmp2(tmp * tmp);
+  tmp = tmp.rsqrtFast() * tmp1;
+  tmp1 = tmp1 * 0.59302883f + 1.42598062f;
+  tmp2 = tmp2 * -0.18732371f - 0.04110602f;
+  tmp = (tmp * -0.79095451f + tmp1) * tmp + tmp2;
+  return tmp.blendValues(c, 0x08);
 }
 
 extern "C" bool detexDecompressBlockBPTC_FLOAT(
