@@ -154,7 +154,8 @@ void SFCubeMapFilter::processImage_Specular(
   for ( ; (tmpBufPtr + 2) <= endPtr; tmpBufPtr = tmpBufPtr + 2)
   {
     FloatVector8  c(tmpBufPtr);
-    c = c / FloatVector8(c[3], c[3], c[3], c[3], c[7], c[7], c[7], c[7]);
+    FloatVector8  d(c);
+    c = c / d.shuffleValues(0xFF);
     c.convertToFloatVector4(tmpBufPtr);
   }
   processImage_Copy(outBufP, w, w, startPos, endPos, tmpBuf.data());
