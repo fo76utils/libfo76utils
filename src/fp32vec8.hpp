@@ -70,6 +70,10 @@ struct FloatVector8
   inline FloatVector8 operator-(const float& r) const;
   inline FloatVector8 operator*(const float& r) const;
   inline FloatVector8 operator/(const float& r) const;
+  // v[n] = v[((mask >> ((n & 3) * 2)) & 3) | (n & 4)]
+  inline FloatVector8& shuffleValues(unsigned char mask);
+  // v[n] = mask & (1 << n) ? r.v[n] : v[n]
+  inline FloatVector8& blendValues(const FloatVector8& r, unsigned char mask);
   inline FloatVector8& minValues(const FloatVector8& r);
   inline FloatVector8& maxValues(const FloatVector8& r);
   inline FloatVector8& floorValues();
@@ -333,6 +337,19 @@ inline FloatVector8 FloatVector8::operator/(const float& r) const
 {
   FloatVector8  tmp(*this);
   return (tmp /= r);
+}
+
+inline FloatVector8& FloatVector8::shuffleValues(unsigned char mask)
+{
+  v = __builtin_ia32_shufps256(v, v, mask);
+  return (*this);
+}
+
+inline FloatVector8& FloatVector8::blendValues(
+    const FloatVector8& r, unsigned char mask)
+{
+  v = __builtin_ia32_blendps256(v, r.v, mask);
+  return (*this);
 }
 
 inline FloatVector8& FloatVector8::minValues(const FloatVector8& r)
@@ -819,6 +836,34 @@ inline FloatVector8 FloatVector8::operator/(const float& r) const
 {
   return FloatVector8(v[0] / r, v[1] / r, v[2] / r, v[3] / r,
                       v[4] / r, v[5] / r, v[6] / r, v[7] / r);
+}
+
+inline FloatVector8& FloatVector8::shuffleValues(unsigned char mask)
+{
+  FloatVector8  tmp(*this);
+  v[0] = tmp.v[mask & 3];
+  v[1] = tmp.v[(mask >> 2) & 3];
+  v[2] = tmp.v[(mask >> 4) & 3];
+  v[3] = tmp.v[(mask >> 6) & 3];
+  v[4] = tmp.v[(mask & 3) | 4];
+  v[5] = tmp.v[((mask >> 2) & 3) | 4];
+  v[6] = tmp.v[((mask >> 4) & 3) | 4];
+  v[7] = tmp.v[((mask >> 6) & 3) | 4];
+  return (*this);
+}
+
+inline FloatVector8& FloatVector8::blendValues(
+    const FloatVector8& r, unsigned char mask)
+{
+  v[0] = (!(mask & 0x01) ? v[0] : r.v[0]);
+  v[1] = (!(mask & 0x02) ? v[1] : r.v[1]);
+  v[2] = (!(mask & 0x04) ? v[2] : r.v[2]);
+  v[3] = (!(mask & 0x08) ? v[3] : r.v[3]);
+  v[4] = (!(mask & 0x10) ? v[4] : r.v[4]);
+  v[5] = (!(mask & 0x20) ? v[5] : r.v[5]);
+  v[6] = (!(mask & 0x40) ? v[6] : r.v[6]);
+  v[7] = (!(mask & 0x80) ? v[7] : r.v[7]);
+  return (*this);
 }
 
 inline FloatVector8& FloatVector8::minValues(const FloatVector8& r)

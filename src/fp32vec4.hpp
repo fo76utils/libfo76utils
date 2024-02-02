@@ -106,6 +106,10 @@ struct FloatVector4
   inline FloatVector4 operator*(const float& r) const;
   inline FloatVector4 operator/(const float& r) const;
   inline FloatVector4& clearV3();
+  // v[n] = v[(mask >> (n * 2)) & 3]
+  inline FloatVector4& shuffleValues(unsigned char mask);
+  // v[n] = mask & (1 << n) ? r.v[n] : v[n]
+  inline FloatVector4& blendValues(const FloatVector4& r, unsigned char mask);
   inline FloatVector4& minValues(const FloatVector4& r);
   inline FloatVector4& maxValues(const FloatVector4& r);
   inline FloatVector4& floorValues();
@@ -387,6 +391,19 @@ inline FloatVector4& FloatVector4::clearV3()
   return (*this);
 }
 
+inline FloatVector4& FloatVector4::shuffleValues(unsigned char mask)
+{
+  v = __builtin_ia32_shufps(v, v, mask);
+  return (*this);
+}
+
+inline FloatVector4& FloatVector4::blendValues(
+    const FloatVector4& r, unsigned char mask)
+{
+  v = __builtin_ia32_blendps(v, r.v, mask);
+  return (*this);
+}
+
 inline FloatVector4& FloatVector4::minValues(const FloatVector4& r)
 {
   __asm__ ("vminps %1, %0, %0" : "+x" (v) : "xm" (r.v));
@@ -644,16 +661,9 @@ inline FloatVector4& FloatVector4::srgbCompress()
   minValues(FloatVector4(1.0f));
   maxValues(FloatVector4(1.0f / float(0x40000000)));
   XMM_Float tmp;
-#if USE_PIXELFMT_RGB10A2
-  // more accurate inverse function of srgbExpand() in 10 bits per channel mode
   XMM_Float tmp2 = v * float(0.03876962 * 255.0) + float(1.15864660 * 255.0);
-#endif
   __asm__ ("vrsqrtps %1, %0" : "=x" (tmp) : "x" (v));
-#if USE_PIXELFMT_RGB10A2
   v *= (tmp * tmp2 - float(0.19741622 * 255.0));
-#else
-  v *= (float(-0.13942692 * 255.0) + (tmp * float(1.13942692 * 255.0)));
-#endif
   return (*this);
 }
 
@@ -984,6 +994,26 @@ inline FloatVector4 FloatVector4::operator/(const float& r) const
 inline FloatVector4& FloatVector4::clearV3()
 {
   v[3] = 0.0f;
+  return (*this);
+}
+
+inline FloatVector4& FloatVector4::shuffleValues(unsigned char mask)
+{
+  FloatVector4  tmp(*this);
+  v[0] = tmp.v[mask & 3];
+  v[1] = tmp.v[(mask >> 2) & 3];
+  v[2] = tmp.v[(mask >> 4) & 3];
+  v[3] = tmp.v[(mask >> 6) & 3];
+  return (*this);
+}
+
+inline FloatVector4& FloatVector4::blendValues(
+    const FloatVector4& r, unsigned char mask)
+{
+  v[0] = (!(mask & 0x01) ? v[0] : r.v[0]);
+  v[1] = (!(mask & 0x02) ? v[1] : r.v[1]);
+  v[2] = (!(mask & 0x04) ? v[2] : r.v[2]);
+  v[3] = (!(mask & 0x08) ? v[3] : r.v[3]);
   return (*this);
 }
 
