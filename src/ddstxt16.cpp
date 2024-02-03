@@ -588,7 +588,7 @@ void DDSTexture16::loadTextureData(
           {
             srcPtr = srcPtr + decodeFunction(p + (y * w + x), srcPtr, w);
             if (isSRGB)
-              srgbExpandBlock(p + (y * w + x), 4, 4, 4);
+              srgbExpandBlock(p + (y * w + x), 4, 4, int(w));
           }
         }
       }
