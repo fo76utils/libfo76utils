@@ -212,7 +212,7 @@ inline FloatVector4::FloatVector4(const float *p)
 inline FloatVector4 FloatVector4::convertInt16(const std::uint64_t& n)
 {
   XMM_Float v;
-  __asm__ ("vpmovsxwd %1, %0" : "=x" (v) : "m" (n));
+  __asm__ ("vpmovsxwd %1, %0" : "=x" (v) : "xm" (n));
   __asm__ ("vcvtdq2ps %0, %0" : "+x" (v));
   return FloatVector4(v);
 }
@@ -1214,18 +1214,11 @@ inline FloatVector4& FloatVector4::srgbCompress()
 {
   minValues(FloatVector4(1.0f));
   FloatVector4  tmp(*this);
-#if USE_PIXELFMT_RGB10A2
   // more accurate inverse function of srgbExpand() in 10 bits per channel mode
   FloatVector4  tmp2 =
       *this * float(0.03876962 * 255.0) + float(1.15864660 * 255.0);
-#endif
   tmp.squareRootFast();
-#if USE_PIXELFMT_RGB10A2
   *this = (*this * float(-0.19741622 * 255.0)) + (tmp * tmp2);
-#else
-  *this = (*this * float(-0.13942692 * 255.0))
-          + (tmp * float(1.13942692 * 255.0));
-#endif
   return (*this);
 }
 

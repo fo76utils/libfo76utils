@@ -3,6 +3,7 @@
 #include "filebuf.hpp"
 #include "fp32vec8.hpp"
 #include "ddstxt.hpp"
+#include "ddstxt16.hpp"
 
 #include <thread>
 
@@ -21,41 +22,34 @@ const float SFCubeMapFilter::defaultRoughnessTable[7] =
 
 FloatVector4 SFCubeMapFilter::convertCoord(int x, int y, int w, int n)
 {
-  FloatVector4  v((float) w);
+  std::uint64_t tmp = std::uint64_t(std::uint16_t(x))
+                      | (std::uint64_t(std::uint16_t(y)) << 16)
+                      | (std::uint64_t(std::uint32_t(w)) << 32);
+  FloatVector4  v(FloatVector4::convertInt16(tmp));
+  v = FloatVector4(v[2]) - (v + v);
+  // w - (x * 2 + 1), w - (y * 2 + 1), -w, w
+  v += FloatVector4(-1.0f, -1.0f, 0.0f, 0.0f);
   switch (n)
   {
     case 0:
-      v[1] = float(w - (y << 1));
-      v[2] = float(w - (x << 1));
-      v += FloatVector4(0.0f, -1.0f, -1.0f, 0.0f);
+      v.shuffleValues(0xC7);    // w, -y, -x, w
       break;
     case 1:
-      v[0] = float(-w);
-      v[1] = float(w - (y << 1));
-      v[2] = float((x << 1) - w);
-      v += FloatVector4(0.0f, -1.0f, 1.0f, 0.0f);
+      v.shuffleValues(0xC6);    // -w, -y, -x, w
+      v *= FloatVector4(1.0f, 1.0f, -1.0f, 1.0f);
       break;
     case 2:
-      v[0] = float((x << 1) - w);
-      v[2] = float((y << 1) - w);
-      v += FloatVector4(1.0f, 0.0f, 1.0f, 0.0f);
+      v.shuffleValues(0xDC);    // -x, w, -y, w
+      v *= FloatVector4(-1.0f, 1.0f, -1.0f, 1.0f);
       break;
     case 3:
-      v[0] = float((x << 1) - w);
-      v[1] = float(-w);
-      v[2] = float(w - (y << 1));
-      v += FloatVector4(1.0f, 0.0f, -1.0f, 0.0f);
+      v.shuffleValues(0xD8);    // -x, -w, -y, w
+      v *= FloatVector4(-1.0f, 1.0f, 1.0f, 1.0f);
       break;
-    case 4:
-      v[0] = float((x << 1) - w);
-      v[1] = float(w - (y << 1));
-      v += FloatVector4(1.0f, -1.0f, 0.0f, 0.0f);
+    case 4:                     // -x, -y, -w, w
+      v *= FloatVector4(-1.0f, 1.0f, -1.0f, 1.0f);
       break;
-    case 5:
-      v[0] = float(w - (x << 1));
-      v[1] = float(w - (y << 1));
-      v[2] = float(-w);
-      v += FloatVector4(-1.0f, -1.0f, 0.0f, 0.0f);
+    default:
       break;
   }
   // normalize vector
@@ -116,11 +110,10 @@ void SFCubeMapFilter::processImage_Specular(
         {
           FloatVector8  d(lDotR);       // face +X, +Y or +Z
           d.maxValues(FloatVector8(0.0f));
-          FloatVector8  nDotL(d);
+          FloatVector8  weight(d * v2w);
           // D denominator = (N·H * N·H * (a2 - 1.0) + 1.0)² * 4.0
           //               = ((R·L + 1.0) * (a2 - 1.0) + 2.0)²
-          d = d * a2m1 + a2p1;
-          FloatVector8  weight = nDotL * v2w * d.rcpSqr();
+          weight *= (d * a2m1 + a2p1).rcpSqr();
           c_r += (j[4] * weight);
           c_g += (j[5] * weight);
           c_b += (j[6] * weight);
@@ -132,9 +125,8 @@ void SFCubeMapFilter::processImage_Specular(
         {
           FloatVector8  d(lDotR);       // face -X, -Y or -Z: invert dot product
           d.minValues(FloatVector8(0.0f));
-          FloatVector8  nDotL(d);
-          d = a2p1 - (d * a2m1);
-          FloatVector8  weight = nDotL * v2w * d.rcpSqr();
+          FloatVector8  weight(d * v2w);
+          weight *= (a2p1 - (d * a2m1)).rcpSqr();
           c_r -= (j[7] * weight);
           c_g -= (j[8] * weight);
           c_b -= (j[9] * weight);
@@ -270,51 +262,54 @@ int SFCubeMapFilter::readImageData(
 {
   size_t  w0 = FileBuffer::readUInt32Fast(buf + 16);
   size_t  h0 = FileBuffer::readUInt32Fast(buf + 12);
-  size_t  sizeRequired = w0 * h0 * 6;
+  unsigned char dxgiFmt = buf[128];
+  if (dxgiFmt >= sizeof(FileBuffer::dxgiFormatSizeTable))
+    return 0;
+  unsigned char blkSize = FileBuffer::dxgiFormatSizeTable[dxgiFmt];
+  if (!blkSize)
+    return 0;
+  size_t  sizeRequired = (w0 * h0 * 6) >> (!(blkSize & 0x80) ? 0 : 4);
+  blkSize = blkSize & 0x7F;
+  sizeRequired = sizeRequired * size_t(blkSize) + 148;
+  if (bufSize < sizeRequired || ((bufSize - 148) % (size_t(blkSize) * 6)) != 0)
+    return 0;
+  imageData.resize(w0 * h0 * 6, FloatVector4(0.0f));
   faceDataSize = 0;
   for (std::uint32_t w2 = width * width; w2; w2 = w2 >> 2)
     faceDataSize += w2;
   faceDataSize = faceDataSize * sizeof(std::uint32_t);
-  FloatVector4  scale(0.0f);
-  if (buf[128] == 0x0A)
+  FloatVector4  txSum(0.0f);
+  if (dxgiFmt == 0x0A)
   {
     // DXGI_FORMAT_R16G16B16A16_FLOAT
-    sizeRequired = sizeRequired * sizeof(std::uint64_t) + 148;
-    if (bufSize < sizeRequired || ((bufSize - 148) % 48) != 0)
-      return 0;
-    imageData.resize(w0 * h0 * 6, FloatVector4(0.0f));
     for (size_t n = 0; n < 6; n++)
     {
       const unsigned char *p1 = buf + ((n * ((bufSize - 148) / 6)) + 148);
       FloatVector4  *p2 = imageData.data() + (n * w0 * h0);
       for (size_t y = 0; y < h0; y++)
       {
-        FloatVector4  tmpScale(0.0f);
+        FloatVector4  tmpSum(0.0f);
         for (size_t x = 0; x < w0; x++, p1 = p1 + sizeof(std::uint64_t), p2++)
         {
           std::uint64_t tmp = FileBuffer::readUInt64Fast(p1);
           FloatVector4  c(FloatVector4::convertFloat16(tmp));
           c.maxValues(FloatVector4(0.0f)).minValues(FloatVector4(65536.0f));
           *p2 = c;
-          tmpScale += c;
+          tmpSum += c;
         }
-        scale += tmpScale;
+        txSum += tmpSum;
       }
     }
   }
-  else if (buf[128] == 0x5F || buf[128] == 0x60)
+  else if (dxgiFmt == 0x5F || dxgiFmt == 0x60)
   {
     // DXGI_FORMAT_BC6H_UF16 or DXGI_FORMAT_BC6H_SF16
     bool    (*decompressFunc)(const std::uint8_t *,
                               std::uint32_t, std::uint32_t, std::uint8_t *);
-    if (buf[128] != 0x60)
+    if (dxgiFmt != 0x60)
       decompressFunc = &detexDecompressBlockBPTC_FLOAT;
     else
       decompressFunc = &detexDecompressBlockBPTC_SIGNED_FLOAT;
-    sizeRequired = sizeRequired + 148;
-    if (bufSize < sizeRequired || ((bufSize - 148) % 96) != 0)
-      return 0;
-    imageData.resize(w0 * h0 * 6, FloatVector4(0.0f));
     std::uint64_t tmpBuf[16];
     for (size_t n = 0; n < 6; n++)
     {
@@ -322,7 +317,7 @@ int SFCubeMapFilter::readImageData(
       FloatVector4  *p2 = imageData.data() + (n * w0 * h0);
       for (size_t y = 0; y < h0; y = y + 4, p2 = p2 + (w0 * 3))
       {
-        FloatVector4  tmpScale(0.0f);
+        FloatVector4  tmpSum(0.0f);
         for (size_t x = 0; x < w0; x = x + 4, p1 = p1 + 16, p2 = p2 + 4)
         {
           (void) decompressFunc(
@@ -334,21 +329,17 @@ int SFCubeMapFilter::readImageData(
             FloatVector4  c(FloatVector4::convertFloat16(tmpBuf[i]));
             c.maxValues(FloatVector4(0.0f)).minValues(FloatVector4(65536.0f));
             p2[((i >> 2) * w0) + (i & 3)] = c;
-            tmpScale += c;
+            tmpSum += c;
           }
         }
-        scale += tmpScale;
+        txSum += tmpSum;
       }
     }
   }
-  else if (buf[128] == 0x43)
+  else if (dxgiFmt == 0x43)
   {
     // DXGI_FORMAT_R9G9B9E5_SHAREDEXP: assume the texture is already filtered,
     // no normalization
-    sizeRequired = sizeRequired * sizeof(std::uint32_t) + 148;
-    if (bufSize < sizeRequired || ((bufSize - 148) % 24) != 0)
-      return 0;
-    imageData.resize(w0 * h0 * 6, FloatVector4(0.0f));
     for (size_t n = 0; n < 6; n++)
     {
       const unsigned char *p1 = buf + ((n * ((bufSize - 148) / 6)) + 148);
@@ -370,21 +361,17 @@ int SFCubeMapFilter::readImageData(
       {
         return 0;
       }
-      imageData.resize(w0 * h0 * 6, FloatVector4(0.0f));
-      size_t  j = 0;
-      for (int n = 0; n < 6; n++)
+      const std::uint32_t *p1 = t.data();
+      FloatVector4  *p2 = imageData.data();
+      size_t  n = imageData.size();
+      bool    isSRGB = t.isSRGBTexture();
+      for (size_t i = 0; (i + 2) <= n; i = i + 2)
       {
-        for (int y = 0; y < int(h0); y++)
-        {
-          for (int x = 0; x < int(w0); x++, j++)
-          {
-            FloatVector4  c(t.getPixelN(x, y, 0, n));
-            if (t.isSRGBTexture())
-              imageData[j] = c.srgbExpand();
-            else
-              imageData[j] = c * (1.0f / 255.0f);
-          }
-        }
+        FloatVector8  c(FloatVector4(p1 + i), FloatVector4(p1 + (i + 1)));
+        c *= (1.0f / 255.0f);
+        if (isSRGB)
+          c = DDSTexture16::srgbExpand(c);
+        c.convertToFloatVector4(p2 + i);
       }
     }
     catch (FO76UtilsError&)
@@ -392,16 +379,18 @@ int SFCubeMapFilter::readImageData(
       return 0;
     }
   }
-  if (buf[128] == 0x0A || buf[128] == 0x5F || buf[128] == 0x60)
+  if (dxgiFmt == 0x0A || dxgiFmt == 0x5F || dxgiFmt == 0x60)
   {
     // normalize float formats
-    scale[0] = scale[0] + scale[1] + scale[2];
-    scale[0] = normalizeLevel * scale[0] / float(int(imageData.size()));
-    if (scale[0] > 1.0f)
+    float   tmp = txSum[0] + txSum[1] + txSum[2];
+    tmp = normalizeLevel * tmp / float(int(imageData.size()));
+    if (tmp > 1.0f)
     {
-      scale = FloatVector4(1.0f / std::min(scale[0], 65536.0f));
-      for (size_t i = 0; i < imageData.size(); i++)
-        imageData[i] = imageData[i] * scale;
+      FloatVector8  scale(1.0f / std::min(tmp, 65536.0f));
+      FloatVector4  *p1 = imageData.data();
+      FloatVector4  *p2 = p1 + imageData.size();
+      for ( ; (p1 + 2) <= p2; p1 = p1 + 2)
+        (FloatVector8(p1) * scale).convertToFloatVector4(p1);
     }
   }
   return int(std::bit_width((unsigned long) w0));
@@ -572,7 +561,7 @@ size_t SFCubeMapFilter::convertImage(
       roughness = roughnessTable[m];
     if (w >= filterMinWidth)
       cubeFilterTable = nullptr;
-    bool    enableFilter = (roughness >= 0.015625f);
+    bool    enableFilter = (roughness >= (3.0f / 128.0f));
     if (enableFilter && !cubeFilterTable)
     {
       cubeFilterTableBuf.resize((size_t(w2) * size_t(w2) * 30) >> 3,
