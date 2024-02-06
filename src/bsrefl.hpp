@@ -153,7 +153,7 @@ class BSReflStream : public FileBuffer
     // t = sequence of strings with length prefix (e.g. "\005False\004True")
     bool readEnum(unsigned char& n, const char *t);
   };
-  static const char *stringTable[1143];
+  static const char *stringTable[1149];
   static int findString(const char *s);
   unsigned int  chunksRemaining;
  protected:
