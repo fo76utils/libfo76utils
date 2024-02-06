@@ -363,15 +363,19 @@ int SFCubeMapFilter::readImageData(
       }
       const std::uint32_t *p1 = t.data();
       FloatVector4  *p2 = imageData.data();
-      size_t  n = imageData.size();
+      size_t  n = w0 * h0;
+      size_t  m = faceDataSize / sizeof(std::uint32_t);
       bool    isSRGB = t.isSRGBTexture();
-      for (size_t i = 0; (i + 2) <= n; i = i + 2)
+      for (int i = 0; i < 6; i++, p1 = p1 + m, p2 = p2 + n)
       {
-        FloatVector8  c(FloatVector4(p1 + i), FloatVector4(p1 + (i + 1)));
-        c *= (1.0f / 255.0f);
-        if (isSRGB)
-          c = DDSTexture16::srgbExpand(c);
-        c.convertToFloatVector4(p2 + i);
+        for (size_t j = 0; (j + 2) <= n; j = j + 2)
+        {
+          FloatVector8  c(FloatVector4(p1 + j), FloatVector4(p1 + (j + 1)));
+          c *= (1.0f / 255.0f);
+          if (isSRGB)
+            c = DDSTexture16::srgbExpand(c);
+          c.convertToFloatVector4(p2 + j);
+        }
       }
     }
     catch (FO76UtilsError&)
