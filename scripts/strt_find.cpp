@@ -3,7 +3,7 @@
 #include "filebuf.hpp"
 #include "ba2file.hpp"
 #include "esmfile.hpp"
-#include "cdb_file.hpp"
+#include "bsrefl.hpp"
 
 static void loadStrings(std::set< std::string >& cdbStrings, FileBuffer& buf)
 {
@@ -37,20 +37,20 @@ static void loadStrings(std::set< std::string >& cdbStrings, FileBuffer& buf)
 
 static const char *predefinedCDBStrings[19] =
 {
-  "None",         "String",       "List",         "Map",        // -255 to -252
-  "Ref",          "Unknown_-250", "Unknown_-249", "Int8",       // -251 to -248
-  "UInt8",        "Int16",        "UInt16",       "Int32",      // -247 to -244
-  "UInt32",       "Int64",        "UInt64",       "Bool",       // -243 to -240
-  "Float",        "Double",       "Unknown"                     // -239 to -237
+  "null",         "String",       "List",         "Map",        // -255 to -252
+  "<ref>",        "Unknown_-250", "Unknown_-249", "int8_t",     // -251 to -248
+  "uint8_t",      "int16_t",      "uint16_t",     "int32_t",    // -247 to -244
+  "uint32_t",     "int64_t",      "uint64_t",     "bool",       // -243 to -240
+  "float",        "double",       "<unknown>"                   // -239 to -237
 };
 
 int main()
 {
   std::set< std::string > cdbStrings;
   for (size_t i = sizeof(predefinedCDBStrings) / sizeof(char *);
-       i < (sizeof(CDBFile::stringTable) / sizeof(char *)); i++)
+       i < (sizeof(BSReflStream::stringTable) / sizeof(char *)); i++)
   {
-    cdbStrings.insert(std::string(CDBFile::stringTable[i]));
+    cdbStrings.insert(std::string(BSReflStream::stringTable[i]));
   }
   BA2File ba2File("");
   {
