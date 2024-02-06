@@ -7,6 +7,9 @@
 
 class FileBuffer
 {
+ public:
+  // blockSize | (isCompressed << 7), or 0 if the format is invalid/unsupported
+  static const unsigned char  dxgiFormatSizeTable[128];
  protected:
   const unsigned char *fileBuf;
   size_t  fileBufSize;

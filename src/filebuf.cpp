@@ -447,7 +447,7 @@ void FileBuffer::printHexData(std::string& s, const unsigned char *p, size_t n,
   }
 }
 
-static const unsigned char dxgiFormatSizeTable[128] =
+const unsigned char FileBuffer::dxgiFormatSizeTable[128] =
 {
   // block size | (isCompressed << 7)
   0x00, 0x10, 0x10, 0x10, 0x10, 0x0C, 0x0C, 0x0C,       // 0x00
