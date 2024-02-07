@@ -294,6 +294,46 @@ void BA2File::loadBSAFile(FileBuffer& buf, size_t archiveFile, int archiveType)
   }
 }
 
+void BA2File::loadTES3Archive(FileBuffer& buf, size_t archiveFile)
+{
+  buf.setPosition(4);
+  std::uint64_t fileDataOffs = buf.readUInt32();        // hash table offset
+  size_t  fileCnt = buf.readUInt32();   // total number of files
+  fileDataOffs = fileDataOffs + (std::uint64_t(fileCnt) << 3) + 12UL;
+  // dataSize + (dataOffset << 32), name offset
+  std::vector< std::pair< std::uint64_t, std::uint32_t > >  fileDecls;
+  for (size_t i = 0; i < fileCnt; i++)
+    fileDecls.emplace_back(buf.readUInt64(), 0U);
+  for (size_t i = 0; i < fileCnt; i++)
+    fileDecls[i].second = buf.readUInt32();
+  size_t  nameTableOffs = buf.getPosition();
+  std::string fileName;
+  for (size_t i = 0; i < fileCnt; i++)
+  {
+    fileName.clear();
+    size_t  nameOffs = fileDecls[i].second;
+    if ((nameTableOffs + std::uint64_t(nameOffs)) >= buf.size())
+      errorMessage("invalid file name offset in Morrowind BSA file");
+    buf.setPosition(nameTableOffs + nameOffs);
+    unsigned char c;
+    while ((c = buf.readUInt8()) != '\0')
+      fileName += fixNameCharacter(c);
+    FileDeclaration *fileDecl = addPackedFile(fileName);
+    if (fileDecl)
+    {
+      std::uint64_t dataOffs = fileDataOffs + (fileDecls[i].first >> 32);
+      std::uint32_t dataSize = std::uint32_t(fileDecls[i].first & 0xFFFFFFFFU);
+      if ((dataOffs + dataSize) > buf.size())
+        errorMessage("invalid file data offset in Morrowind BSA file");
+      fileDecl->fileData = buf.data() + dataOffs;
+      fileDecl->packedSize = 0;
+      fileDecl->unpackedSize = dataSize;
+      fileDecl->archiveType = 64;
+      fileDecl->archiveFile = archiveFile;
+    }
+  }
+}
+
 void BA2File::loadFile(FileBuffer& buf, size_t archiveFile,
                        const char *fileName)
 {
@@ -404,6 +444,10 @@ void BA2File::loadArchivesFromDir(const char *pathName)
         case 0x6D736762U:               // "bgsm"
         case 0x6873656DU:               // "mesh"
         case 0x73676E69U:               // "ings"
+#ifdef NIFSKOPE_VERSION
+        case 0x706D622EU:               // ".bmp"
+        case 0x6167742EU:               // ".tga"
+#endif
           break;
         default:
           continue;
@@ -485,7 +529,9 @@ void BA2File::loadArchiveFile(const char *fileName)
   try
   {
     FileBuffer&   buf = *bufp;
-    // loose file: -1, BSA: 103 to 105, BA2: header size (+ 1 if DX10)
+    size_t  archiveFile = archiveFiles.size();
+    // loose file: -1, Morrowind BSA: 128, Oblivion+ BSA: 103 to 105,
+    // BA2: header size (+ 1 if DX10)
     int           archiveType = -1;
     if (buf.size() >= 12)
     {
@@ -504,21 +550,34 @@ void BA2File::loadArchiveFile(const char *fileName)
         if (hdr2 >= 103 && hdr2 <= 105)
           archiveType = int(hdr2);
       }
+      else if (hdr1 == 0x00000100)
+      {
+        size_t  nameLen = std::strlen(fileName);
+        if (nameLen >= 4 &&
+            (FileBuffer::readUInt32Fast(fileName + (nameLen - 4)) | 0x20202000U)
+            == 0x6173622EU)             // ".bsa"
+        {
+          archiveType = 128;
+        }
+      }
     }
     switch (archiveType & 0xC1)
     {
       case 0:
-        loadBA2General(buf, archiveFiles.size(), size_t(archiveType));
+        loadBA2General(buf, archiveFile, size_t(archiveType));
         break;
       case 1:
-        loadBA2Textures(buf, archiveFiles.size(), size_t(archiveType & 0x3E));
+        loadBA2Textures(buf, archiveFile, size_t(archiveType & 0x3E));
         break;
       case 0x40:
       case 0x41:
-        loadBSAFile(buf, archiveFiles.size(), archiveType);
+        loadBSAFile(buf, archiveFile, archiveType);
+        break;
+      case 0x80:
+        loadTES3Archive(buf, archiveFile);
         break;
       default:
-        loadFile(buf, archiveFiles.size(), fileName);
+        loadFile(buf, archiveFile, fileName);
         break;
     }
     archiveFiles.push_back(bufp);

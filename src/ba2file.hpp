@@ -14,7 +14,8 @@ class BA2File
     unsigned int  packedSize;           // 0 if the file is uncompressed
     unsigned int  unpackedSize;         // not valid for compressed BSA files
     // 0: BA2 general, 1: BA2 textures, 2: BA2 textures in raw LZ4 format,
-    // >= 103: BSA (version + flags, 0x40000000: compressed, 0x0100: full name)
+    // 64: Morrowind BSA, >= 103: Oblivion+ BSA (version + flags,
+    // 0x40000000: compressed, 0x0100: full name)
     int           archiveType;
     unsigned int  archiveFile;
     std::uint32_t hashValue;            // 32-bit hash value
@@ -60,6 +61,7 @@ class BA2File
   void loadBA2General(FileBuffer& buf, size_t archiveFile, size_t hdrSize);
   void loadBA2Textures(FileBuffer& buf, size_t archiveFile, size_t hdrSize);
   void loadBSAFile(FileBuffer& buf, size_t archiveFile, int archiveType);
+  void loadTES3Archive(FileBuffer& buf, size_t archiveFile);
   void loadFile(FileBuffer& buf, size_t archiveFile, const char *fileName);
   void loadArchivesFromDir(const char *pathName);
   void loadArchiveFile(const char *fileName);

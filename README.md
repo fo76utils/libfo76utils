@@ -4,7 +4,7 @@ Library of common source code used by [fo76utils](https://github.com/fo76utils/f
 
 Defining the macro BUILD\_CE2UTILS enables the use of default paths and environment variable names specific to Starfield.
 
-* **ba2file.cpp**, **ba2file.hpp**: class BA2File: reads archive formats used by Oblivion, Fallout 3/New Vegas, Skyrim, Fallout 4, Fallout 76 and Starfield. Supports reading multiple archives and loose files.
+* **ba2file.cpp**, **ba2file.hpp**: class BA2File: reads archive formats used by Morrowind, Oblivion, Fallout 3/New Vegas, Skyrim, Fallout 4, Fallout 76 and Starfield. Supports reading multiple archives and loose files.
 * **bits.c**, **bits.h**, **bptc-tables.c**, **bptc-tables.h**, **decompress-bptc.c**, **decompress-bptc-float.c**, **detex.h**: [detex](https://github.com/hglm/detex) source code used for decoding textures in BC6 and BC7 formats.
 * **bsrefl.cpp**, **bsrefl.hpp**: Starfield reflection data support (class BSReflStream).
 * **bsmatcdb.cpp**, **bsmatcdb.hpp**: Starfield material database to JSON conversion (class BSMaterialsCDB).
