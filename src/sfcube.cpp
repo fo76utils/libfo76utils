@@ -364,7 +364,7 @@ int SFCubeMapFilter::readImageData(
       const std::uint32_t *p1 = t.data();
       FloatVector4  *p2 = imageData.data();
       size_t  n = w0 * h0;
-      size_t  m = faceDataSize / sizeof(std::uint32_t);
+      size_t  m = size_t(&(t.getPixelN(0, 0, 0, 1)) - p1);
       bool    isSRGB = t.isSRGBTexture();
       for (int i = 0; i < 6; i++, p1 = p1 + m, p2 = p2 + n)
       {
