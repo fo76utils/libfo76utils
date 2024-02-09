@@ -62,7 +62,7 @@ class BA2File
   void loadBA2Textures(FileBuffer& buf, size_t archiveFile, size_t hdrSize);
   void loadBSAFile(FileBuffer& buf, size_t archiveFile, int archiveType);
   void loadTES3Archive(FileBuffer& buf, size_t archiveFile);
-  void loadFile(FileBuffer& buf, size_t archiveFile, const char *fileName);
+  bool loadFile(FileBuffer& buf, size_t archiveFile, const char *fileName);
   void loadArchivesFromDir(const char *pathName);
   void loadArchiveFile(const char *fileName);
   unsigned int getBSAUnpackedSize(const unsigned char*& dataPtr,

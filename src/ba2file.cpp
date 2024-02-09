@@ -334,7 +334,7 @@ void BA2File::loadTES3Archive(FileBuffer& buf, size_t archiveFile)
   }
 }
 
-void BA2File::loadFile(FileBuffer& buf, size_t archiveFile,
+bool BA2File::loadFile(FileBuffer& buf, size_t archiveFile,
                        const char *fileName)
 {
   std::string fileName2;
@@ -367,15 +367,16 @@ void BA2File::loadFile(FileBuffer& buf, size_t archiveFile,
   while (fileName2.starts_with("../"))
     fileName2.erase(0, 3);
   if (fileName2.empty())
-    return;
+    return false;
   FileDeclaration *fileDecl = addPackedFile(fileName2);
   if (!fileDecl)
-    return;
+    return false;
   fileDecl->fileData = buf.data();
   fileDecl->packedSize = 0;
   fileDecl->unpackedSize = (unsigned int) buf.size();
   fileDecl->archiveType = 0;
   fileDecl->archiveFile = (unsigned int) archiveFile;
+  return true;
 }
 
 void BA2File::loadArchivesFromDir(const char *pathName)
@@ -577,7 +578,11 @@ void BA2File::loadArchiveFile(const char *fileName)
         loadTES3Archive(buf, archiveFile);
         break;
       default:
-        loadFile(buf, archiveFile, fileName);
+        if (!loadFile(buf, archiveFile, fileName)) [[unlikely]]
+        {
+          delete bufp;
+          return;
+        }
         break;
     }
     archiveFiles.push_back(bufp);
