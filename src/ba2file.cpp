@@ -440,7 +440,9 @@ void BA2File::loadArchivesFromDir(const char *pathName)
         case 0x6264632EU:               // ".cdb"
         case 0x7364642EU:               // ".dds"
         case 0x74616D2EU:               // ".mat"
+#ifndef NIFSKOPE_VERSION
         case 0x66696E2EU:               // ".nif"
+#endif
         case 0x6D656762U:               // "bgem"
         case 0x6D736762U:               // "bgsm"
         case 0x6873656DU:               // "mesh"
