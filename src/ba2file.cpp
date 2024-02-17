@@ -335,7 +335,7 @@ void BA2File::loadTES3Archive(FileBuffer& buf, size_t archiveFile)
 }
 
 bool BA2File::loadFile(FileBuffer& buf, size_t archiveFile,
-                       const char *fileName)
+                       const char *fileName, size_t prefixLen)
 {
   std::string fileName2;
   size_t  n = std::strlen(fileName);
@@ -351,17 +351,8 @@ bool BA2File::loadFile(FileBuffer& buf, size_t archiveFile,
       continue;
     fileName2 += c;
   }
-  if ((n = fileName2.rfind("/geometries/")) != std::string::npos ||
-      (n = fileName2.rfind("/interface/")) != std::string::npos ||
-      (n = fileName2.rfind("/materials/")) != std::string::npos ||
-      (n = fileName2.rfind("/meshes/")) != std::string::npos ||
-      (n = fileName2.rfind("/sound/")) != std::string::npos ||
-      (n = fileName2.rfind("/strings/")) != std::string::npos ||
-      (n = fileName2.rfind("/terrain/")) != std::string::npos ||
-      (n = fileName2.rfind("/textures/")) != std::string::npos)
-  {
-    fileName2.erase(0, n + 1);
-  }
+  if (prefixLen > 0)
+    fileName2.erase(0, prefixLen);
   while (fileName2.starts_with("./"))
     fileName2.erase(0, 2);
   while (fileName2.starts_with("../"))
@@ -379,47 +370,112 @@ bool BA2File::loadFile(FileBuffer& buf, size_t archiveFile,
   return true;
 }
 
-void BA2File::loadArchivesFromDir(const char *pathName)
+bool BA2File::checkDataDirName(const char *s, size_t len)
+{
+  static const char *dataDirNames[14] =
+  {
+    "geometries", "icons", "interface", "materials", "meshes",
+    "particles", "planetdata", "scripts", "shadersfx", "sound",
+    "strings", "terrain", "textures", "vis"
+  };
+  size_t  n0 = 0;
+  size_t  n2 = sizeof(dataDirNames) / sizeof(char *);
+  while (n2 > n0)
+  {
+    size_t  n1 = n0 + ((n2 - n0) >> 1);
+    const char  *t = dataDirNames[n1];
+    int     d = 0;
+    for (size_t i = 0; i < len && !d; i++)
+      d = int((unsigned char) s[i]) - int((unsigned char) t[i]);
+    if (!d || n1 == n0)
+      return !d;
+    if (d < 0)
+      n2 = n1;
+    else
+      n0 = n1;
+  }
+  return false;
+}
+
+size_t BA2File::findPrefixLen(const char *pathName)
+{
+  if (!pathName) [[unlikely]]
+    return 0;
+  size_t  n = 0;
+  while (pathName[n])
+    n++;
+  while (n > 0)
+  {
+    size_t  n2 = n;
+#if defined(_WIN32) || defined(_WIN64)
+    while (n2 > 0 && pathName[n2 - 1] != '/' && pathName[n2 - 1] != '\\' &&
+           !(n2 == 2 && pathName[n2 - 1] == ':'))
+#else
+    while (n2 > 0 && pathName[n2 - 1] != '/')
+#endif
+    {
+      n2--;
+    }
+    if (n > n2 && checkDataDirName(pathName + n2, n - n2))
+      return n2;
+    n = n2 - size_t(n2 > 0);
+  }
+  return 0;
+}
+
+void BA2File::loadArchivesFromDir(const char *pathName, size_t prefixLen)
 {
   DIR     *d = opendir(pathName);
   if (!d)
     errorMessage("error opening archive directory");
   try
   {
-    std::set< std::string > archiveNames1;
-    std::set< std::string > archiveNames2;
+    std::set< std::string > archiveNames;
     std::string dirName(pathName);
-    if (dirName.back() != '/' && dirName.back() != '\\')
+#if defined(_WIN32) || defined(_WIN64)
+    if (dirName.back() != '/' && dirName.back() != '\\' &&
+        !(dirName.length() == 2 && dirName[1] == ':'))
+#else
+    if (dirName.back() != '/')
+#endif
+    {
       dirName += '/';
+    }
     std::string baseName;
-    std::string fullName;
+    std::string fullName("0");  // 0: archive, 1: update .ba2, 2: sub-directory
+    fullName += dirName;
     struct dirent *e;
     while (bool(e = readdir(d)))
     {
       baseName = e->d_name;
       if (baseName.length() < 1 || baseName == "." || baseName == "..")
         continue;
-      fullName = dirName;
+      fullName.resize(dirName.length() + 1);
       fullName += baseName;
-      {
-#if defined(_WIN32) || defined(_WIN64)
-        struct __stat64 st;
-        if (_stat64(fullName.c_str(), &st) == 0 &&
-            (st.st_mode & _S_IFMT) == _S_IFDIR)
-#else
-        struct stat st;
-        if (stat(fullName.c_str(), &st) == 0 &&
-            (st.st_mode & S_IFMT) == S_IFDIR)
-#endif
-        {
-          archiveNames2.insert(fullName);
-          continue;
-        }
-      }
       for (size_t i = 0; i < baseName.length(); i++)
       {
         if (baseName[i] >= 'A' && baseName[i] <= 'Z')
           baseName[i] = baseName[i] + ('a' - 'A');
+      }
+      {
+#if defined(_WIN32) || defined(_WIN64)
+        struct __stat64 st;
+        if (_stat64(fullName.c_str() + 1, &st) == 0 &&
+            (st.st_mode & _S_IFMT) == _S_IFDIR)
+#else
+        struct stat st;
+        if (stat(fullName.c_str() + 1, &st) == 0 &&
+            (st.st_mode & S_IFMT) == S_IFDIR)
+#endif
+        {
+          if ((prefixLen && prefixLen < dirName.length()) ||
+              checkDataDirName(baseName.c_str(), baseName.length()))
+          {
+            fullName[0] = '2';
+            archiveNames.insert(fullName);
+          }
+          continue;
+        }
       }
       size_t  n = baseName.rfind('.');
       if (n == std::string::npos ||
@@ -455,30 +511,24 @@ void BA2File::loadArchivesFromDir(const char *pathName)
         default:
           continue;
       }
-      if ((baseName.starts_with("oblivion") ||
-           baseName.starts_with("fallout") || baseName.starts_with("skyrim") ||
-           baseName.starts_with("seventysix") ||
-           baseName.starts_with("starfield")) &&
-          baseName.find("update") == std::string::npos)
-      {
-        archiveNames1.insert(fullName);
-      }
-      else
-      {
-        archiveNames2.insert(fullName);
-      }
+      fullName[0] =
+          ((baseName == "morrowind.bsa" ||
+            baseName.starts_with("oblivion") ||
+            baseName.starts_with("fallout") || baseName.starts_with("skyrim") ||
+            baseName.starts_with("seventysix") ||
+            baseName.starts_with("starfield")) &&
+           baseName.find("update") == std::string::npos &&
+           !baseName.ends_with("patch.ba2") ? '0' : '1');
+      archiveNames.insert(fullName);
     }
     closedir(d);
     d = nullptr;
-    for (std::set< std::string >::iterator i = archiveNames1.begin();
-         i != archiveNames1.end(); i++)
+    if (!prefixLen)
+      prefixLen = dirName.length();
+    for (std::set< std::string >::iterator i = archiveNames.begin();
+         i != archiveNames.end(); i++)
     {
-      loadArchiveFile(i->c_str());
-    }
-    for (std::set< std::string >::iterator i = archiveNames2.begin();
-         i != archiveNames2.end(); i++)
-    {
-      loadArchiveFile(i->c_str());
+      loadArchiveFile(i->c_str() + 1, prefixLen);
     }
   }
   catch (...)
@@ -489,7 +539,7 @@ void BA2File::loadArchivesFromDir(const char *pathName)
   }
 }
 
-void BA2File::loadArchiveFile(const char *fileName)
+void BA2File::loadArchiveFile(const char *fileName, size_t prefixLen)
 {
   {
     if (!fileName || *fileName == '\0') [[unlikely]]
@@ -497,14 +547,16 @@ void BA2File::loadArchiveFile(const char *fileName)
       std::string dataPath;
       if (!FileBuffer::getDefaultDataPath(dataPath))
         errorMessage("empty input file name");
-      loadArchivesFromDir(dataPath.c_str());
+      loadArchivesFromDir(dataPath.c_str(), findPrefixLen(dataPath.c_str()));
       return;
     }
+    if (!prefixLen) [[unlikely]]
+      prefixLen = findPrefixLen(fileName);
 #if defined(_WIN32) || defined(_WIN64)
     char    c = fileName[std::strlen(fileName) - 1];
     if (c == '/' || c == '\\')
     {
-      loadArchivesFromDir(fileName);
+      loadArchivesFromDir(fileName, prefixLen);
       return;
     }
     struct __stat64 st;
@@ -523,7 +575,7 @@ void BA2File::loadArchiveFile(const char *fileName)
     if ((st.st_mode & S_IFMT) == S_IFDIR)
 #endif
     {
-      loadArchivesFromDir(fileName);
+      loadArchivesFromDir(fileName, prefixLen);
       return;
     }
   }
@@ -580,7 +632,7 @@ void BA2File::loadArchiveFile(const char *fileName)
         loadTES3Archive(buf, archiveFile);
         break;
       default:
-        if (!loadFile(buf, archiveFile, fileName)) [[unlikely]]
+        if (!loadFile(buf, archiveFile, fileName, prefixLen)) [[unlikely]]
         {
           delete bufp;
           return;
@@ -630,7 +682,7 @@ BA2File::BA2File(const char *pathName,
     excludePatternsPtr(excludePatterns),
     fileNamesPtr(fileNames)
 {
-  loadArchiveFile(pathName);
+  loadArchiveFile(pathName, 0);
 }
 
 BA2File::BA2File(const std::vector< std::string >& pathNames,
@@ -643,7 +695,7 @@ BA2File::BA2File(const std::vector< std::string >& pathNames,
     fileNamesPtr(fileNames)
 {
   for (size_t i = 0; i < pathNames.size(); i++)
-    loadArchiveFile(pathNames[i].c_str());
+    loadArchiveFile(pathNames[i].c_str(), 0);
 }
 
 BA2File::BA2File(const char *pathName, const char *includePatterns,
@@ -696,7 +748,7 @@ BA2File::BA2File(const char *pathName, const char *includePatterns,
     excludePatternsPtr = &tmpExcludePatterns;
   if (tmpFileNames.begin() != tmpFileNames.end())
     fileNamesPtr = &tmpFileNames;
-  loadArchiveFile(pathName);
+  loadArchiveFile(pathName, 0);
 }
 
 void BA2File::loadArchivePath(
@@ -707,7 +759,7 @@ void BA2File::loadArchivePath(
   includePatternsPtr = includePatterns;
   excludePatternsPtr = excludePatterns;
   fileNamesPtr = fileNames;
-  loadArchiveFile(pathName);
+  loadArchiveFile(pathName, 0);
 }
 
 BA2File::~BA2File()
