@@ -13,52 +13,6 @@ const float SFCubeMapFilter::defaultRoughnessTable[7] =
   1.00000000f
 };
 
-// face 0: E,      -X = up,   +X = down, -Y = N,    +Y = S
-// face 1: W,      -X = down, +X = up,   -Y = N,    +Y = S
-// face 2: N,      -X = W,    +X = E,    -Y = down, +Y = up
-// face 3: S,      -X = W,    +X = E,    -Y = up,   +Y = down
-// face 4: top,    -X = W,    +X = E,    -Y = N,    +Y = S
-// face 5: bottom, -X = E,    +X = W,    -Y = N,    +Y = S
-
-FloatVector4 SFCubeMapFilter::convertCoord(int x, int y, int w, int n)
-{
-  std::uint64_t tmp = std::uint64_t(std::uint16_t(x))
-                      | (std::uint64_t(std::uint16_t(y)) << 16)
-                      | (std::uint64_t(std::uint32_t(w)) << 32);
-  FloatVector4  v(FloatVector4::convertInt16(tmp));
-  v = FloatVector4(v[2]) - (v + v);
-  // w - (x * 2 + 1), w - (y * 2 + 1), -w, w
-  v += FloatVector4(-1.0f, -1.0f, 0.0f, 0.0f);
-  switch (n)
-  {
-    case 0:
-      v.shuffleValues(0xC7);    // w, -y, -x, w
-      break;
-    case 1:
-      v.shuffleValues(0xC6);    // -w, -y, -x, w
-      v *= FloatVector4(1.0f, 1.0f, -1.0f, 1.0f);
-      break;
-    case 2:
-      v.shuffleValues(0xDC);    // -x, w, -y, w
-      v *= FloatVector4(-1.0f, 1.0f, -1.0f, 1.0f);
-      break;
-    case 3:
-      v.shuffleValues(0xD8);    // -x, -w, -y, w
-      v *= FloatVector4(-1.0f, 1.0f, 1.0f, 1.0f);
-      break;
-    case 4:                     // -x, -y, -w, w
-      v *= FloatVector4(-1.0f, 1.0f, -1.0f, 1.0f);
-      break;
-    default:
-      break;
-  }
-  // normalize vector
-  v *= (1.0f / float(std::sqrt(v.dotProduct3(v))));
-  // v[3] = scale factor to account for variable angular resolution
-  v[3] = v[3] * v[3] * v[3];
-  return v;
-}
-
 void SFCubeMapFilter::processImage_Specular(
     unsigned char *outBufP, int w, size_t startPos, size_t endPos,
     float roughness)
@@ -669,6 +623,21 @@ size_t SFCubeMapCache::convertImage(
   SFCubeMapFilter cubeMapFilter(outputWidth);
   size_t  newSize =
       cubeMapFilter.convertImage(buf, bufSize, outFmtFloat, bufCapacity);
+  if (!newSize && bufSize >= 11 &&
+      FileBuffer::readUInt64Fast(buf) == 0x4E41494441523F23ULL) // "#?RADIAN"
+  {
+    std::vector< unsigned char >  tmpBuf;
+    if (convertHDRToDDS(tmpBuf, buf, bufSize, 2048, false, 65504.0f, 0x0A))
+    {
+      cubeMapFilter.setNormalizeLevel(0.25f);
+      newSize = cubeMapFilter.convertImage(tmpBuf.data(), tmpBuf.size(),
+                                           outFmtFloat, tmpBuf.size());
+      if (newSize && newSize <= std::max(bufSize, bufCapacity))
+        std::memcpy(buf, tmpBuf.data(), newSize);
+      else
+        newSize = 0;
+    }
+  }
   if (newSize)
   {
     v.resize(newSize);
@@ -676,5 +645,270 @@ size_t SFCubeMapCache::convertImage(
     return newSize;
   }
   return bufSize;
+}
+
+static inline float atan2NormFast(float y, float x, bool xNonNegative = false)
+{
+  // assumes x² + y² = 1.0, returns atan2(y, x) / π
+  float   xAbs = (xNonNegative ? x : float(std::fabs(x)));
+  float   yAbs = float(std::fabs(y));
+  float   tmp = std::min(xAbs, yAbs);
+  float   tmp2 = tmp * tmp;
+  float   tmp3 = tmp2 * tmp;
+  tmp = (((0.39603792f * tmp3) + (-0.98507216f * tmp2) + (1.09851059f * tmp)
+          - 0.65754361f) * tmp3
+         + (0.26000725f * tmp2) + (-0.05051132f * tmp) + 0.05919720f) * tmp3
+        + (-0.00037558f * tmp2) + (0.31831810f * tmp);
+  if (xAbs < yAbs)
+    tmp = 0.5f - tmp;
+  if (!xNonNegative && x < 0.0f)
+    tmp = 1.0f - tmp;
+  return (y < 0.0f ? -tmp : tmp);
+}
+
+void SFCubeMapCache::convertHDRToDDSThread(
+    unsigned char *outBuf, size_t outPixelSize, int cubeWidth,
+    int yStart, int yEnd,
+    const FloatVector4 *hdrTexture, int w, int h, float maxLevel)
+{
+  unsigned char *p =
+      outBuf + (size_t(yStart) * size_t(cubeWidth) * outPixelSize);
+  for ( ; yStart < yEnd; yStart++)
+  {
+    int     n = yStart / cubeWidth;
+    int     y = yStart % cubeWidth;
+    for (int x = 0; x < cubeWidth; x++, p = p + outPixelSize)
+    {
+      FloatVector4  v(SFCubeMapFilter::convertCoord(x, y, cubeWidth, n));
+      // convert to spherical coordinates
+      float   xy = float(std::sqrt(v.dotProduct2(v)));
+      float   z = v[2];
+      v /= xy;
+      float   xf = atan2NormFast(v[0], v[1]) * 0.5f + 0.5f;
+      float   yf = atan2NormFast(z, xy, true) + 0.5f;
+      xf = xf * float(w) - 0.5f;
+      yf = yf * float(h) - 0.5f;
+      float   xi = float(std::floor(xf));
+      float   yi = float(std::floor(yf));
+      xf -= xi;
+      yf -= yi;
+      int     x0 = int(xi);
+      int     y0 = int(yi);
+      x0 = (x0 <= (w - 1) ? (x0 >= 0 ? x0 : (w - 1)) : 0);
+      int     x1 = (x0 < (w - 1) ? (x0 + 1) : 0);
+      int     y1 = std::min< int >(std::max< int >(y0 + 1, 0), h - 1);
+      y0 = std::min< int >(std::max< int >(y0, 0), h - 1);
+      // bilinear interpolation
+      const FloatVector4  *inPtr = hdrTexture + (y0 * w);
+      FloatVector4  c(inPtr[x0] * (1.0f - xf) + (inPtr[x1] * xf));
+      inPtr = inPtr + (y1 > y0 ? w : 0);
+      c = c + (((inPtr[x0] * (1.0f - xf) + (inPtr[x1] * xf)) - c) * yf);
+      c.maxValues(FloatVector4(0.0f));
+      if (maxLevel < 0.0f)
+        c = c * FloatVector4(maxLevel) / (FloatVector4(maxLevel) - c);
+      else
+        c.minValues(FloatVector4(maxLevel));
+      c[3] = 1.0f;
+      if (outPixelSize == sizeof(std::uint64_t))
+        FileBuffer::writeUInt64Fast(p, c.convertToFloat16());
+      else
+        FileBuffer::writeUInt32Fast(p, c.convertToR9G9B9E5());
+    }
+  }
+}
+
+bool SFCubeMapCache::convertHDRToDDS(
+    std::vector< unsigned char >& outBuf,
+    const unsigned char *inBufData, size_t inBufSize,
+    int cubeWidth, bool invertCoord, float maxLevel, unsigned char outFmt)
+{
+  // file should begin with "#?RADIANCE\n"
+  if (inBufSize < 11 ||
+      FileBuffer::readUInt64Fast(inBufData) != 0x4E41494441523F23ULL ||
+      FileBuffer::readUInt32Fast(inBufData + 7) != 0x0A45434EU)
+  {
+    return false;
+  }
+  FileBuffer  inBuf(inBufData, inBufSize, 11);
+  const char  *lineBuf = reinterpret_cast< const char * >(inBuf.getReadPtr());
+  int     w = 0;
+  int     h = 0;
+  while (inBuf.getPosition() < inBuf.size())
+  {
+    unsigned char c = inBuf.readUInt8Fast();
+    if (c < 0x08)
+      break;
+    if (c != 0x0A)
+      continue;
+    if ((lineBuf[0] == '-' || lineBuf[0] == '+') && lineBuf[1] == 'Y')
+    {
+      if (lineBuf[0] == '+')
+        invertCoord = !invertCoord;
+      const char  *s = lineBuf + 2;
+      while (*s == '\t' || *s == ' ')
+        s++;
+      long    n = 0;
+      for ( ; *s >= '0' && *s <= '9'; s++)
+        n = n * 10L + long(*s - '0');
+      if (n < 8 || n > 32768)
+        break;
+      h = int(n);
+      while (*s == '\t' || *s == ' ')
+        s++;
+      if (!(s[0] == '+' && s[1] == 'X'))
+        break;
+      s = s + 2;
+      while (*s == '\t' || *s == ' ')
+        s++;
+      n = 0;
+      for ( ; *s >= '0' && *s <= '9'; s++)
+        n = n * 10L + long(*s - '0');
+      if ((*s == '\t' || *s == '\n' || *s == '\r' || *s == ' ') &&
+          n >= 8 && n <= 32768)
+      {
+        w = int(n);
+      }
+      break;
+    }
+    lineBuf = reinterpret_cast< const char * >(inBuf.getReadPtr());
+  }
+  if (!w || !h)
+    return false;
+  std::vector< std::uint32_t >  tmpBuf(size_t(w * h), 0U);
+  for (int y = 0; y < h; y++)
+  {
+    if ((inBuf.getPosition() + 4ULL) > inBuf.size())
+      return false;
+    std::uint32_t *p =
+        tmpBuf.data() + size_t((invertCoord ? y : ((h - 1) - y)) * w);
+    std::uint32_t tmp =
+        FileBuffer::readUInt32Fast(inBuf.data() + inBuf.getPosition());
+    if (tmp != ((std::uint32_t(w & 0xFF) << 24) | (std::uint32_t(w >> 8) << 16)
+                | 0x0202U))
+    {
+      // old RLE format
+      unsigned char lenShift = 0;
+      for (int x = 0; x < w; )
+      {
+        if ((inBuf.getPosition() + 4ULL) > inBuf.size())
+          return false;
+        std::uint32_t c = inBuf.readUInt32Fast();
+        if ((c & 0x00FFFFFFU) != 0x00010101U || x < 1)
+        {
+          lenShift = 0;
+          p[x] = c;
+          x++;
+        }
+        else
+        {
+          size_t  l = (c >> 24) << lenShift;
+          lenShift = 8;
+          for ( ; l; l--, x++)
+          {
+            if (x >= w)
+              return false;
+            p[x] = p[x - 1];
+          }
+        }
+      }
+    }
+    else
+    {
+      // new RLE format
+      inBuf.setPosition(inBuf.getPosition() + 4);
+      for (unsigned char c = 0; c < 32; c = c + 8)
+      {
+        for (int x = 0; x < w; )
+        {
+          if (inBuf.getPosition() >= inBuf.size())
+            return false;
+          unsigned char l = inBuf.readUInt8Fast();
+          if (l <= 0x80)
+          {
+            // copy literals
+            for ( ; l; l--, x++)
+            {
+              if (x >= w || inBuf.getPosition() >= inBuf.size())
+                return false;
+              p[x] |= (std::uint32_t(inBuf.readUInt8Fast()) << c);
+            }
+          }
+          else
+          {
+            // RLE
+            if (inBuf.getPosition() >= inBuf.size())
+              return false;
+            std::uint32_t b = std::uint32_t(inBuf.readUInt8Fast()) << c;
+            for ( ; l > 0x80; l--, x++)
+            {
+              if (x >= w)
+                return false;
+              p[x] |= b;
+            }
+          }
+        }
+      }
+    }
+  }
+  std::vector< FloatVector4 > tmpBuf2(tmpBuf.size(), FloatVector4(0.0f));
+  for (size_t i = 0; i < tmpBuf.size(); i++)
+  {
+    std::uint32_t b = tmpBuf[i];
+    FloatVector4  c(b);
+    int     e = int(b >> 24);
+#if defined(__i386__) || defined(__x86_64__) || defined(__x86_64)
+    e = std::min< int >(std::max< int >(e, 16), 240) - 9;
+    c *= std::bit_cast< float >(std::uint32_t(e << 23));
+#else
+    e = std::min< int >(std::max< int >(e, 103), 165) - 103;
+    c *= float(std::int64_t(1) << e) * float(0.5 / (65536.0 * 65536.0));
+#endif
+    c[3] = 1.0f;
+    tmpBuf2[i] = c;
+  }
+  size_t  outPixelSize =        // 8 bytes for DXGI_FORMAT_R16G16B16A16_FLOAT
+      (outFmt == 0x0A ? sizeof(std::uint64_t) : sizeof(std::uint32_t));
+  outBuf.resize(size_t(cubeWidth * cubeWidth) * 6 * outPixelSize + 148, 0);
+  unsigned char *p = outBuf.data();
+  (void) FileBuffer::writeDDSHeader(p, outFmt, cubeWidth, cubeWidth, 1, true);
+  p = p + 148;
+
+  int     threadCnt = int(std::thread::hardware_concurrency());
+  threadCnt = std::min< int >(threadCnt, std::min< int >(cubeWidth >> 3, 16));
+  threadCnt = std::max< int >(threadCnt, 1);
+  std::thread *threads[16];
+  for (int i = 0; i < 16; i++)
+    threads[i] = nullptr;
+  try
+  {
+    int     y0 = 0;
+    for (int i = 0; i < threadCnt; i++)
+    {
+      int     y1 = (cubeWidth * 6 * (i + 1)) / threadCnt;
+      threads[i] = new std::thread(convertHDRToDDSThread, p, outPixelSize,
+                                   cubeWidth, y0, y1, tmpBuf2.data(), w, h,
+                                   maxLevel);
+      y0 = y1;
+    }
+    for (int i = 0; i < threadCnt; i++)
+    {
+      threads[i]->join();
+      delete threads[i];
+      threads[i] = nullptr;
+    }
+  }
+  catch (...)
+  {
+    for (int i = 0; i < 16; i++)
+    {
+      if (threads[i])
+      {
+        threads[i]->join();
+        delete threads[i];
+      }
+    }
+    throw;
+  }
+  return true;
 }
 
