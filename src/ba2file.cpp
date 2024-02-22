@@ -47,52 +47,12 @@ inline std::uint32_t BA2File::hashFunction(const std::string& s)
   return std::uint32_t(h & 0xFFFFFFFFU);
 }
 
-static inline bool checkNamePattern(
-    const std::string& fileName, const std::string& pattern)
-{
-  size_t  n = pattern.length() - 4;
-  if (!(n & ~(size_t(1))) && pattern[0] == '.')
-  {
-    if (fileName.length() < pattern.length()) [[unlikely]]
-      return false;
-    const char  *s1 = fileName.c_str() + (fileName.length() - 4);
-    const char  *s2 = pattern.c_str() + n;
-    if (FileBuffer::readUInt32Fast(s1) != FileBuffer::readUInt32Fast(s2))
-      return false;
-    if (!n)
-      return true;
-    return (*(s1 - 1) == '.');
-  }
-  return (fileName.find(pattern) != std::string::npos);
-}
-
 BA2File::FileDeclaration * BA2File::addPackedFile(const std::string& fileName)
 {
-  bool    nameMatches = false;
-  if (fileNamesPtr && fileNamesPtr->begin() != fileNamesPtr->end())
-    nameMatches = (fileNamesPtr->find(fileName) != fileNamesPtr->end());
-  if (includePatternsPtr &&
-      includePatternsPtr->begin() != includePatternsPtr->end())
+  if (fileFilterFunction)
   {
-    std::vector< std::string >::const_iterator  i =
-        includePatternsPtr->begin();
-    for ( ; !nameMatches && i != includePatternsPtr->end(); i++)
-      nameMatches = checkNamePattern(fileName, *i);
-  }
-  else if (!(fileNamesPtr && fileNamesPtr->begin() != fileNamesPtr->end()))
-  {
-    nameMatches = true;
-  }
-  if (!nameMatches)
-    return nullptr;
-  if (excludePatternsPtr)
-  {
-    std::vector< std::string >::const_iterator  i;
-    for (i = excludePatternsPtr->begin(); i != excludePatternsPtr->end(); i++)
-    {
-      if (checkNamePattern(fileName, *i))
-        return nullptr;
-    }
+    if (!fileFilterFunction(fileFilterFunctionData, fileName))
+      return nullptr;
   }
   std::uint32_t h = hashFunction(fileName);
   for (std::int32_t n = fileMap[h & nameHashMask]; n >= 0; )
@@ -442,7 +402,8 @@ void BA2File::loadArchivesFromDir(const char *pathName, size_t prefixLen)
       dirName += '/';
     }
     std::string baseName;
-    std::string fullName("0");  // 0: archive, 1: update .ba2, 2: sub-directory
+    // 0: game archive, 1: DLC or update archive, 2: mod archive, 3: loose file
+    std::string fullName("0");
     fullName += dirName;
     struct dirent *e;
     while (bool(e = readdir(d)))
@@ -471,7 +432,7 @@ void BA2File::loadArchivesFromDir(const char *pathName, size_t prefixLen)
           if ((prefixLen && prefixLen < dirName.length()) ||
               checkDataDirName(baseName.c_str(), baseName.length()))
           {
-            fullName[0] = '2';
+            fullName[0] = '3';
             archiveNames.insert(fullName);
           }
           continue;
@@ -505,20 +466,32 @@ void BA2File::loadArchivesFromDir(const char *pathName, size_t prefixLen)
         case 0x73676E69U:               // "ings"
 #ifdef NIFSKOPE_VERSION
         case 0x706D622EU:               // ".bmp"
+        case 0x7264682EU:               // ".hdr"
         case 0x6167742EU:               // ".tga"
 #endif
           break;
         default:
           continue;
       }
-      fullName[0] =
-          ((baseName == "morrowind.bsa" ||
+      char    c = '3';
+      if (fileType == 0x3261622EU || fileType == 0x6173622EU)   // .ba2 or .bsa
+      {
+        c = '2';
+        if (baseName == "morrowind.bsa" ||
             baseName.starts_with("oblivion") ||
             baseName.starts_with("fallout") || baseName.starts_with("skyrim") ||
             baseName.starts_with("seventysix") ||
-            baseName.starts_with("starfield")) &&
-           baseName.find("update") == std::string::npos &&
-           !baseName.ends_with("patch.ba2") ? '0' : '1');
+            baseName.starts_with("starfield"))
+        {
+          c = (baseName.find("update") == std::string::npos &&
+               !baseName.ends_with("patch.ba2") ? '0' : '1');
+        }
+        else if (baseName.starts_with("dlc"))
+        {
+          c = '1';
+        }
+      }
+      fullName[0] = c;
       archiveNames.insert(fullName);
     }
     closedir(d);
@@ -667,98 +640,39 @@ unsigned int BA2File::getBSAUnpackedSize(const unsigned char*& dataPtr,
 
 BA2File::BA2File()
   : fileMap(size_t(nameHashMask + 1), std::int32_t(-1)),
-    includePatternsPtr(nullptr),
-    excludePatternsPtr(nullptr),
-    fileNamesPtr(nullptr)
+    fileFilterFunction(nullptr),
+    fileFilterFunctionData(nullptr)
 {
 }
 
 BA2File::BA2File(const char *pathName,
-                 const std::vector< std::string > *includePatterns,
-                 const std::vector< std::string > *excludePatterns,
-                 const std::set< std::string > *fileNames)
+                 bool (*fileFilterFunc)(void *p, const std::string& s),
+                 void *fileFilterFuncData)
   : fileMap(size_t(nameHashMask + 1), std::int32_t(-1)),
-    includePatternsPtr(includePatterns),
-    excludePatternsPtr(excludePatterns),
-    fileNamesPtr(fileNames)
+    fileFilterFunction(fileFilterFunc),
+    fileFilterFunctionData(fileFilterFuncData)
 {
   loadArchiveFile(pathName, 0);
 }
 
 BA2File::BA2File(const std::vector< std::string >& pathNames,
-                 const std::vector< std::string > *includePatterns,
-                 const std::vector< std::string > *excludePatterns,
-                 const std::set< std::string > *fileNames)
+                 bool (*fileFilterFunc)(void *p, const std::string& s),
+                 void *fileFilterFuncData)
   : fileMap(size_t(nameHashMask + 1), std::int32_t(-1)),
-    includePatternsPtr(includePatterns),
-    excludePatternsPtr(excludePatterns),
-    fileNamesPtr(fileNames)
+    fileFilterFunction(fileFilterFunc),
+    fileFilterFunctionData(fileFilterFuncData)
 {
   for (size_t i = 0; i < pathNames.size(); i++)
     loadArchiveFile(pathNames[i].c_str(), 0);
 }
 
-BA2File::BA2File(const char *pathName, const char *includePatterns,
-                 const char *excludePatterns, const char *fileNames)
-  : fileMap(size_t(nameHashMask + 1), std::int32_t(-1)),
-    includePatternsPtr(nullptr),
-    excludePatternsPtr(nullptr),
-    fileNamesPtr(nullptr)
-{
-  std::vector< std::string >  tmpIncludePatterns;
-  std::vector< std::string >  tmpExcludePatterns;
-  std::set< std::string > tmpFileNames;
-  std::string tmp;
-  for (int i = 0; i < 3; i++)
-  {
-    const char  *s = includePatterns;
-    if (i == 1)
-      s = excludePatterns;
-    else if (i == 2)
-      s = fileNames;
-    if (!(s && *s))
-      continue;
-    for ( ; true; s++)
-    {
-      char    c = *s;
-      if (c == '\t' || c == '\0')
-      {
-        if (!tmp.empty())
-        {
-          if (i == 0)
-            tmpIncludePatterns.push_back(tmp);
-          else if (i == 1)
-            tmpExcludePatterns.push_back(tmp);
-          else
-            tmpFileNames.insert(tmp);
-          tmp.clear();
-        }
-        if (!c)
-          break;
-      }
-      else
-      {
-        tmp += fixNameCharacter((unsigned char) c);
-      }
-    }
-  }
-  if (tmpIncludePatterns.size() > 0)
-    includePatternsPtr = &tmpIncludePatterns;
-  if (tmpExcludePatterns.size() > 0)
-    excludePatternsPtr = &tmpExcludePatterns;
-  if (tmpFileNames.begin() != tmpFileNames.end())
-    fileNamesPtr = &tmpFileNames;
-  loadArchiveFile(pathName, 0);
-}
-
 void BA2File::loadArchivePath(
-    const char *pathName, const std::vector< std::string > *includePatterns,
-    const std::vector< std::string > *excludePatterns,
-    const std::set< std::string > *fileNames)
+    const char *pathName,
+    bool (*fileFilterFunc)(void *p, const std::string& s),
+    void *fileFilterFuncData)
 {
-  includePatternsPtr = includePatterns;
-  excludePatternsPtr = excludePatterns;
-  fileNamesPtr = fileNames;
+  fileFilterFunction = fileFilterFunc;
+  fileFilterFunctionData = fileFilterFuncData;
   loadArchiveFile(pathName, 0);
 }
 
@@ -769,13 +683,27 @@ BA2File::~BA2File()
 }
 
 void BA2File::getFileList(
-    std::vector< std::string >& fileList, bool disableSorting) const
+    std::vector< std::string >& fileList, bool disableSorting,
+    bool (*fileFilterFunc)(void *p, const std::string& s),
+    void *fileFilterFuncData) const
 {
   fileList.clear();
   for (size_t i = 0; i < fileDeclBufs.size(); i++)
   {
-    for (size_t j = 0; j < fileDeclBufs[i].size(); j++)
-      fileList.emplace_back(fileDeclBufs[i][j].fileName);
+    if (!fileFilterFunc)
+    {
+      for (size_t j = 0; j < fileDeclBufs[i].size(); j++)
+        fileList.emplace_back(fileDeclBufs[i][j].fileName);
+    }
+    else
+    {
+      for (size_t j = 0; j < fileDeclBufs[i].size(); j++)
+      {
+        const std::string&  s = fileDeclBufs[i][j].fileName;
+        if (fileFilterFunc(fileFilterFuncData, s))
+          fileList.emplace_back(s);
+      }
+    }
   }
   if (fileList.size() > 1 && !disableSorting)
     std::sort(fileList.begin(), fileList.end());

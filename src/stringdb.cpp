@@ -3,6 +3,19 @@
 #include "ba2file.hpp"
 #include "stringdb.hpp"
 
+bool StringDB::archiveFilterFunction(void *p, const std::string& s)
+{
+  std::vector< std::string >& fileNames =
+      *(reinterpret_cast< std::vector< std::string > * >(p));
+  for (std::vector< std::string >::const_iterator
+           i = fileNames.begin(); i != fileNames.end(); i++)
+  {
+    if (s.find(*i) != std::string::npos)
+      return true;
+  }
+  return false;
+}
+
 StringDB::StringDB()
   : FileBuffer((unsigned char *) 0, 0)
 {
@@ -127,7 +140,7 @@ bool StringDB::loadFile(const char *archivePath, const char *stringsPrefix)
     tmpName += stringsSuffixTable[k];
     fileNames.push_back(tmpName);
   }
-  BA2File ba2File(archivePath, &fileNames);
+  BA2File ba2File(archivePath, &archiveFilterFunction, &fileNames);
   return loadFile(ba2File, stringsPrefix);
 }
 

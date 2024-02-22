@@ -35,9 +35,10 @@ class BA2File
   std::vector< std::int32_t >   fileMap;        // nameHashMask + 1 elements
   std::vector< std::vector< FileDeclaration > > fileDeclBufs;
   std::vector< FileBuffer * >   archiveFiles;
-  const std::vector< std::string >  *includePatternsPtr;
-  const std::vector< std::string >  *excludePatternsPtr;
-  const std::set< std::string > *fileNamesPtr;
+  // User defined function that returns true if the path in 's'
+  // should be included.
+  bool    (*fileFilterFunction)(void *p, const std::string& s);
+  void    *fileFilterFunctionData;
   static inline char fixNameCharacter(unsigned char c)
   {
     if (c >= 'A' && c <= 'Z')
@@ -73,24 +74,22 @@ class BA2File
  public:
   BA2File();
   BA2File(const char *pathName,
-          const std::vector< std::string > *includePatterns = 0,
-          const std::vector< std::string > *excludePatterns = 0,
-          const std::set< std::string > *fileNames = 0);
+          bool (*fileFilterFunc)(void *p, const std::string& s) = nullptr,
+          void *fileFilterFuncData = nullptr);
   BA2File(const std::vector< std::string >& pathNames,
-          const std::vector< std::string > *includePatterns = 0,
-          const std::vector< std::string > *excludePatterns = 0,
-          const std::set< std::string > *fileNames = 0);
-  // includePatterns, excludePatterns, and fileNames are tab separated lists
-  BA2File(const char *pathName, const char *includePatterns,
-          const char *excludePatterns = 0, const char *fileNames = 0);
+          bool (*fileFilterFunc)(void *p, const std::string& s) = nullptr,
+          void *fileFilterFuncData = nullptr);
   // load a single archive file or directory
   void loadArchivePath(const char *pathName,
-                       const std::vector< std::string > *includePatterns = 0,
-                       const std::vector< std::string > *excludePatterns = 0,
-                       const std::set< std::string > *fileNames = 0);
+                       bool (*fileFilterFunc)(void *p,
+                                              const std::string& s) = nullptr,
+                       void *fileFilterFuncData = nullptr);
   virtual ~BA2File();
   void getFileList(std::vector< std::string >& fileList,
-                   bool disableSorting = false) const;
+                   bool disableSorting = false,
+                   bool (*fileFilterFunc)(void *p,
+                                          const std::string& s) = nullptr,
+                   void *fileFilterFuncData = nullptr) const;
   // returns pointer to file information, or NULL if the file is not found
   const FileDeclaration *findFile(const std::string& fileName) const;
   // returns -1 if the file is not found

@@ -10,6 +10,7 @@ class StringDB : public FileBuffer
 {
  protected:
   std::map< unsigned int, std::string > strings;
+  static bool archiveFilterFunction(void *p, const std::string& s);
  public:
   StringDB();
   virtual ~StringDB();
