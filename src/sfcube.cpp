@@ -598,8 +598,8 @@ size_t SFCubeMapCache::convertImage(
     unsigned char *buf, size_t bufSize, bool outFmtFloat, size_t bufCapacity,
     size_t outputWidth)
 {
-  std::uint32_t h1 = 0xFFFFFFFFU;
-  std::uint32_t h2 = 0xFFFFFFFFU;
+  std::uint32_t h1 = std::uint32_t(outputWidth);
+  std::uint32_t h2 = ~h1;
   size_t  i = 0;
   for ( ; (i + 16) <= bufSize; i = i + 16)
   {
