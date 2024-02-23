@@ -171,20 +171,20 @@ inline std::uint16_t convertToFloat16(float x)
 std::uint16_t convertToFloat16(float x);
 #endif
 
-inline void hashFunctionUInt32(std::uint32_t& h, std::uint32_t m)
+inline void hashFunctionUInt32(std::uint32_t& h, const std::uint32_t& m)
 {
 #if ENABLE_X86_64_AVX
-  __asm__ ("crc32 %1, %0" : "+r" (h) : "r" (m));
+  h = __builtin_ia32_crc32si(h, m);
 #else
   std::uint64_t tmp = (h ^ m) * std::uint64_t(0xEE088D97U);
   h = std::uint32_t((tmp + (tmp >> 32)) & 0xFFFFFFFFU);
 #endif
 }
 
-inline void hashFunctionUInt64(std::uint64_t& h, std::uint64_t m)
+inline void hashFunctionUInt64(std::uint64_t& h, const std::uint64_t& m)
 {
 #if ENABLE_X86_64_AVX
-  __asm__ ("crc32 %1, %0" : "+r" (h) : "r" (m));
+  h = __builtin_ia32_crc32di(h, m);
 #else
   const std::uint64_t multValue = 0xEE088D97U;
   h = std::uint32_t((h ^ m) & 0xFFFFFFFFU) * multValue;
@@ -204,22 +204,18 @@ inline void hashFunctionCRC32(std::uint32_t& h, unsigned char c)
   h = (h >> 8) ^ crc32Table_EDB88320[(h ^ c) & 0xFFU];
 }
 
-template< typename T > inline void hashFunctionCRC32C(std::uint32_t& h, T c)
+template< typename T > inline void hashFunctionCRC32C(
+    std::uint32_t& h, const T& c)
 {
 #if ENABLE_X86_64_AVX
   if (sizeof(T) == 8)
-  {
-    std::uint64_t v = h;
-    __asm__ ("crc32 %1, %0" : "+r" (v) : "r" (std::uint64_t(c)));
-    h = std::uint32_t(v);
-    return;
-  }
-  if (sizeof(T) == 4)
-    __asm__ ("crc32 %1, %0" : "+r" (h) : "r" (std::uint32_t(c)));
+    h = std::uint32_t(__builtin_ia32_crc32di(h, c));
+  else if (sizeof(T) == 4)
+    h = std::uint32_t(__builtin_ia32_crc32si(h, c));
   else if (sizeof(T) == 2)
-    __asm__ ("crc32 %1, %0" : "+r" (h) : "r" (std::uint16_t(c)));
+    h = std::uint32_t(__builtin_ia32_crc32hi(h, c));
   else if (sizeof(T) == 1)
-    __asm__ ("crc32 %1, %0" : "+r" (h) : "r" (std::uint8_t(c)));
+    h = std::uint32_t(__builtin_ia32_crc32qi(h, c));
 #else
   for (size_t i = 0; i < sizeof(T); i++, c = c >> 8)
     h = (h >> 8) ^ crc32Table_82F63B78[(h ^ c) & 0xFFU];

@@ -387,7 +387,7 @@ inline FloatVector4 FloatVector4::operator/(const float& r) const
 inline FloatVector4& FloatVector4::clearV3()
 {
   const XMM_Float tmp = { 0.0f, 0.0f, 0.0f, 0.0f };
-  __asm__ ("vblendps $0x08, %1, %0, %0" : "+x" (v) : "xm" (tmp));
+  v = __builtin_ia32_blendps(v, tmp, 0x08);
   return (*this);
 }
 
@@ -406,118 +406,96 @@ inline FloatVector4& FloatVector4::blendValues(
 
 inline FloatVector4& FloatVector4::minValues(const FloatVector4& r)
 {
-  __asm__ ("vminps %1, %0, %0" : "+x" (v) : "xm" (r.v));
+  v = __builtin_ia32_minps(v, r.v);
   return (*this);
 }
 
 inline FloatVector4& FloatVector4::maxValues(const FloatVector4& r)
 {
-  __asm__ ("vmaxps %1, %0, %0" : "+x" (v) : "xm" (r.v));
+  v = __builtin_ia32_maxps(v, r.v);
   return (*this);
 }
 
 inline FloatVector4& FloatVector4::floorValues()
 {
-  __asm__ ("vroundps $0x09, %0, %0" : "+x" (v));
+  v = __builtin_ia32_roundps(v, 0x09);
   return (*this);
 }
 
 inline FloatVector4& FloatVector4::ceilValues()
 {
-  __asm__ ("vroundps $0x0a, %0, %0" : "+x" (v));
+  v = __builtin_ia32_roundps(v, 0x0A);
   return (*this);
 }
 
 inline FloatVector4& FloatVector4::roundValues()
 {
-  __asm__ ("vroundps $0x08, %0, %0" : "+x" (v));
+  v = __builtin_ia32_roundps(v, 0x08);
   return (*this);
 }
 
 inline float FloatVector4::dotProduct(const FloatVector4& r) const
 {
-  XMM_Float tmp1;
-  __asm__ ("vmulps %2, %1, %0" : "=x" (tmp1) : "x" (v), "xm" (r.v));
-  XMM_Float tmp2;
-  __asm__ ("vmovshdup %1, %0" : "=x" (tmp2) : "x" (tmp1));
-  __asm__ ("vaddps %1, %0, %0" : "+x" (tmp1) : "x" (tmp2));
-  __asm__ ("vshufps $0x4e, %1, %1, %0" : "=x" (tmp2) : "x" (tmp1));
-  __asm__ ("vaddps %1, %0, %0" : "+x" (tmp1) : "x" (tmp2));
+  XMM_Float tmp1 = v * r.v;
+  tmp1 = tmp1 + __builtin_ia32_movshdup(tmp1);
+  tmp1 = tmp1 + __builtin_ia32_shufps(tmp1, tmp1, 0x4E);
   return tmp1[0];
 }
 
 inline float FloatVector4::dotProduct3(const FloatVector4& r) const
 {
-  XMM_Float tmp1;
-  __asm__ ("vmulps %2, %1, %0" : "=x" (tmp1) : "x" (v), "xm" (r.v));
-  XMM_Float tmp2;
-  __asm__ ("vmovshdup %1, %0" : "=x" (tmp2) : "x" (tmp1));
-  __asm__ ("vaddps %1, %0, %0" : "+x" (tmp2) : "x" (tmp1));
-  __asm__ ("vshufps $0x4e, %0, %0, %0" : "+x" (tmp1));
-  __asm__ ("vaddps %1, %0, %0" : "+x" (tmp1) : "x" (tmp2));
+  XMM_Float tmp1 = v * r.v;
+  XMM_Float tmp2 = __builtin_ia32_movshdup(tmp1);
+  tmp1 = tmp1 + tmp2 + __builtin_ia32_shufps(tmp1, tmp1, 0x4E);
   return tmp1[0];
 }
 
 inline float FloatVector4::dotProduct2(const FloatVector4& r) const
 {
-  XMM_Float tmp1;
-  __asm__ ("vmulps %2, %1, %0" : "=x" (tmp1) : "x" (v), "xm" (r.v));
-  XMM_Float tmp2;
-  __asm__ ("vmovshdup %1, %0" : "=x" (tmp2) : "x" (tmp1));
-  __asm__ ("vaddps %1, %0, %0" : "+x" (tmp1) : "x" (tmp2));
+  XMM_Float tmp1 = v * r.v;
+  tmp1 = tmp1 + __builtin_ia32_movshdup(tmp1);
   return tmp1[0];
 }
 
 inline FloatVector4 FloatVector4::crossProduct3(const FloatVector4& r) const
 {
-  XMM_Float tmp1, tmp2;
-  __asm__ ("vshufps $0xc9, %1, %1, %0" : "=x" (tmp1) : "x" (v));
-  __asm__ ("vshufps $0xc9, %1, %1, %0" : "=x" (tmp2) : "x" (r.v));
-  __asm__ ("vmulps %1, %0, %0" : "+x" (tmp1) : "x" (r.v));
-#if ENABLE_X86_64_AVX2
-  __asm__ ("vfmsub231ps %2, %1, %0" : "+x" (tmp1) : "x" (tmp2), "x" (v));
-#else
-  __asm__ ("vmulps %1, %0, %0" : "+x" (tmp2) : "x" (v));
-  __asm__ ("vsubps %0, %1, %0" : "+x" (tmp1) : "x" (tmp2));
-#endif
-  __asm__ ("vshufps $0xc9, %0, %0, %0" : "+x" (tmp1));
+  XMM_Float tmp1 = __builtin_ia32_shufps(v, v, 0xC9);
+  XMM_Float tmp2 = __builtin_ia32_shufps(r.v, r.v, 0xC9);
+  tmp1 = (tmp2 * v) - (tmp1 * r.v);
+  tmp1 = __builtin_ia32_shufps(tmp1, tmp1, 0xC9);
   return FloatVector4(tmp1);
 }
 
 inline FloatVector4& FloatVector4::squareRoot()
 {
   XMM_Float tmp = { 0.0f, 0.0f, 0.0f, 0.0f };
-  __asm__ ("vmaxps %1, %0, %0" : "+x" (tmp) : "x" (v));
-  __asm__ ("vsqrtps %1, %0" : "=x" (v) : "x" (tmp));
+  v = __builtin_ia32_sqrtps(__builtin_ia32_maxps(v, tmp));
   return (*this);
 }
 
 inline FloatVector4& FloatVector4::squareRootFast()
 {
-  XMM_Float tmp1 = v;
-  __asm__ ("vmaxps %1, %0, %0" : "+x" (tmp1) : "xm" (floatMinValV));
-  __asm__ ("vrsqrtps %1, %0" : "=x" (v) : "x" (tmp1));
-  v *= tmp1;
+  XMM_Float tmp1 = __builtin_ia32_maxps(v, floatMinValV);
+  v = __builtin_ia32_rsqrtps(tmp1) * tmp1;
   return (*this);
 }
 
 inline FloatVector4& FloatVector4::rsqrtFast()
 {
-  __asm__ ("vrsqrtps %0, %0" : "+x" (v));
+  v = __builtin_ia32_rsqrtps(v);
   return (*this);
 }
 
 inline FloatVector4& FloatVector4::rcpFast()
 {
-  __asm__ ("vrcpps %0, %0" : "+x" (v));
+  v = __builtin_ia32_rcpps(v);
   return (*this);
 }
 
 inline FloatVector4& FloatVector4::rcpSqr()
 {
   XMM_Float tmp1(v * v);
-  XMM_Float tmp2;
-  __asm__ ("vrcpps %1, %0" : "=x" (tmp2) : "x" (tmp1));
+  XMM_Float tmp2 = __builtin_ia32_rcpps(tmp1);
   v = (2.0f - tmp1 * tmp2) * tmp2;
   return (*this);
 }
@@ -617,15 +595,10 @@ inline FloatVector4& FloatVector4::normalize(bool invFlag)
 inline FloatVector4& FloatVector4::normalize3Fast()
 {
   const FloatVector4  minVal(1.0f / float(0x0000040000000000LL));
-  XMM_Float tmp = v;
-  __asm__ ("vblendps $0x08, %1, %0, %0" : "+x" (tmp) : "xm" (minVal.v));
+  XMM_Float tmp = __builtin_ia32_blendps(v, minVal.v, 0x08);
   XMM_Float tmp2 = tmp * tmp;
-  XMM_Float tmp3;
-  __asm__ ("vshufps $0xb1, %1, %1, %0" : "=x" (tmp3) : "x" (tmp2));
-  __asm__ ("vaddps %1, %0, %0" : "+x" (tmp2) : "x" (tmp3));
-  __asm__ ("vshufps $0x4e, %1, %1, %0" : "=x" (tmp3) : "x" (tmp2));
-  __asm__ ("vaddps %1, %0, %0" : "+x" (tmp2) : "x" (tmp3));
-  __asm__ ("vrsqrtps %0, %0" : "+x" (tmp2));
+  tmp2 = tmp2 + __builtin_ia32_shufps(tmp2, tmp2, 0xB1);
+  tmp2 = __builtin_ia32_rsqrtps(tmp2 + __builtin_ia32_shufps(tmp2, tmp2, 0x4E));
   v = tmp * tmp2;
   return (*this);
 }
@@ -1525,7 +1498,7 @@ inline std::uint32_t FloatVector4::getSignMask() const
 {
   std::uint32_t tmp;
 #if ENABLE_X86_64_AVX
-  __asm__ ("vmovmskps %1, %0" : "=r" (tmp) : "x" (v));
+  tmp = std::uint32_t(__builtin_ia32_movmskps(v));
 #else
   tmp = std::uint32_t(v[0] < 0.0f) | (std::uint32_t(v[1] < 0.0f) << 1)
         | (std::uint32_t(v[2] < 0.0f) << 2) | (std::uint32_t(v[3] < 0.0f) << 3);

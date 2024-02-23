@@ -354,82 +354,74 @@ inline FloatVector8& FloatVector8::blendValues(
 
 inline FloatVector8& FloatVector8::minValues(const FloatVector8& r)
 {
-  __asm__ ("vminps %t1, %t0, %t0" : "+x" (v) : "xm" (r.v));
+  v = __builtin_ia32_minps256(v, r.v);
   return (*this);
 }
 
 inline FloatVector8& FloatVector8::maxValues(const FloatVector8& r)
 {
-  __asm__ ("vmaxps %t1, %t0, %t0" : "+x" (v) : "xm" (r.v));
+  v = __builtin_ia32_maxps256(v, r.v);
   return (*this);
 }
 
 inline FloatVector8& FloatVector8::floorValues()
 {
-  __asm__ ("vroundps $0x09, %t0, %t0" : "+x" (v));
+  v = __builtin_ia32_roundps256(v, 0x09);
   return (*this);
 }
 
 inline FloatVector8& FloatVector8::ceilValues()
 {
-  __asm__ ("vroundps $0x0a, %t0, %t0" : "+x" (v));
+  v = __builtin_ia32_roundps256(v, 0x0A);
   return (*this);
 }
 
 inline FloatVector8& FloatVector8::roundValues()
 {
-  __asm__ ("vroundps $0x08, %t0, %t0" : "+x" (v));
+  v = __builtin_ia32_roundps256(v, 0x08);
   return (*this);
 }
 
 inline float FloatVector8::dotProduct(const FloatVector8& r) const
 {
-  YMM_Float tmp1;
-  __asm__ ("vmulps %t2, %t1, %t0" : "=x" (tmp1) : "x" (v), "xm" (r.v));
-  XMM_Float tmp2;
-  __asm__ ("vextractf128 $0x01, %t1, %0" : "=x" (tmp2) : "x" (tmp1));
-  __asm__ ("vaddps %1, %x0, %x0" : "+x" (tmp1) : "x" (tmp2));
-  __asm__ ("vmovshdup %x1, %0" : "=x" (tmp2) : "x" (tmp1));
-  __asm__ ("vaddps %1, %x0, %x0" : "+x" (tmp1) : "x" (tmp2));
-  __asm__ ("vshufps $0x4e, %x1, %x1, %0" : "=x" (tmp2) : "x" (tmp1));
-  __asm__ ("vaddps %1, %x0, %x0" : "+x" (tmp1) : "x" (tmp2));
-  return tmp1[0];
+  YMM_Float tmp1 = v * r.v;
+  XMM_Float tmp2 = __builtin_ia32_vextractf128_ps256(tmp1, 0x01);
+  __asm__ ("vaddps %0, %x1, %0" : "+x" (tmp2) : "x" (tmp1));
+  tmp2 = tmp2 + __builtin_ia32_movshdup(tmp2);
+  tmp2 = tmp2 + __builtin_ia32_shufps(tmp2, tmp2, 0x4E);
+  return tmp2[0];
 }
 
 inline FloatVector8& FloatVector8::squareRoot()
 {
   YMM_Float tmp = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
-  __asm__ ("vmaxps %t1, %t0, %t0" : "+x" (tmp) : "x" (v));
-  __asm__ ("vsqrtps %t1, %t0" : "=x" (v) : "x" (tmp));
+  v = __builtin_ia32_sqrtps256(__builtin_ia32_maxps256(v, tmp));
   return (*this);
 }
 
 inline FloatVector8& FloatVector8::squareRootFast()
 {
-  YMM_Float tmp1 = v;
-  __asm__ ("vmaxps %t1, %t0, %t0" : "+x" (tmp1) : "xm" (floatMinValV));
-  __asm__ ("vrsqrtps %t1, %t0" : "=x" (v) : "x" (tmp1));
-  v *= tmp1;
+  YMM_Float tmp1 = __builtin_ia32_maxps256(v, floatMinValV);
+  v = __builtin_ia32_rsqrtps256(tmp1) * tmp1;
   return (*this);
 }
 
 inline FloatVector8& FloatVector8::rsqrtFast()
 {
-  __asm__ ("vrsqrtps %t0, %t0" : "+x" (v));
+  v = __builtin_ia32_rsqrtps256(v);
   return (*this);
 }
 
 inline FloatVector8& FloatVector8::rcpFast()
 {
-  __asm__ ("vrcpps %t0, %t0" : "+x" (v));
+  v = __builtin_ia32_rcpps256(v);
   return (*this);
 }
 
 inline FloatVector8& FloatVector8::rcpSqr()
 {
   YMM_Float tmp1(v * v);
-  YMM_Float tmp2;
-  __asm__ ("vrcpps %t1, %t0" : "=x" (tmp2) : "x" (tmp1));
+  YMM_Float tmp2 = __builtin_ia32_rcpps256(tmp1);
   v = (2.0f - tmp1 * tmp2) * tmp2;
   return (*this);
 }
@@ -1052,7 +1044,7 @@ inline std::uint32_t FloatVector8::getSignMask() const
 {
   std::uint32_t tmp;
 #if ENABLE_X86_64_AVX
-  __asm__ ("vmovmskps %t1, %0" : "=r" (tmp) : "x" (v));
+  tmp = std::uint32_t(__builtin_ia32_movmskps256(v));
 #else
   tmp = std::uint32_t(v[0] < 0.0f) | (std::uint32_t(v[1] < 0.0f) << 1)
         | (std::uint32_t(v[2] < 0.0f) << 2) | (std::uint32_t(v[3] < 0.0f) << 3)
