@@ -719,3 +719,15 @@ const CE2Material * CE2MaterialDB::findMaterial(
   return nullptr;
 }
 
+void CE2MaterialDB::listMaterials(
+    std::vector< const CE2Material * >& materials) const
+{
+  materials.clear();
+  for (std::vector< CE2MaterialObject * >::const_iterator
+           i = objectNameMap.begin(); i != objectNameMap.end(); i++)
+  {
+    if (*i && (*i)->type == 1)
+      materials.push_back(static_cast< const CE2Material * >(*i));
+  }
+}
+

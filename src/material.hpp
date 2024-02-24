@@ -587,6 +587,7 @@ class CE2MaterialDB
   void loadCDBFile(const unsigned char *buf, size_t bufSize);
   void loadCDBFile(const BA2File& ba2File, const char *fileName = nullptr);
   const CE2Material *findMaterial(const std::string& fileName) const;
+  void listMaterials(std::vector< const CE2Material * >& materials) const;
 };
 
 #endif
