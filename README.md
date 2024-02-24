@@ -17,6 +17,7 @@ Defining the macro BUILD\_CE2UTILS enables the use of default paths and environm
 * **fp32vec4.hpp**, **fp32vec8.hpp**: class FloatVector4, FloatVector8: fast vector math using AVX instructions if available.
 * **frtable.cpp**: Tables for Fresnel approximation using polynomials.
 * **markers.cpp**, **markers.hpp**: class MapImage: finds references to a set of form IDs defined in a text file, and marks their locations on an RGBA format image.
+* **mat_dirs.cpp**: Table of Starfield material directory names.
 * **matcomps.cpp**, **material.cpp**, **material.hpp**, **mat_dump.cpp**: Starfield material database support (class CE2MaterialDB).
 * **mman.c**, **mman.h**: [mman-win32](https://github.com/alitrack/mman-win32) for memory mapping on Windows.
 * **pbr_lut.cpp**, **pbr_lut.hpp**: class SF\_PBR\_Tables: generates LUT texture for image based lighting.
