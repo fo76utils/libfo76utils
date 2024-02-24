@@ -6,7 +6,7 @@
 
 struct FloatVector8
 {
-#if ENABLE_X86_64_AVX
+#if ENABLE_X86_64_SIMD >= 2
  private:
   static constexpr float      floatMinVal = 5.16987883e-26f;
   static constexpr YMM_Float  floatMinValV =
@@ -92,10 +92,10 @@ struct FloatVector8
   inline std::uint32_t getSignMask() const;
 };
 
-#if ENABLE_X86_64_AVX
+#if ENABLE_X86_64_SIMD >= 2
 
 inline FloatVector8::FloatVector8(const float& x)
-#if ENABLE_X86_64_AVX2
+#if ENABLE_X86_64_SIMD >= 4
 {
   __asm__ ("vbroadcastss %1, %t0" : "=x" (v) : "xm" (x));
 }
@@ -107,7 +107,7 @@ inline FloatVector8::FloatVector8(const float& x)
 
 inline FloatVector8::FloatVector8(const std::uint64_t *p)
 {
-#if ENABLE_X86_64_AVX2
+#if ENABLE_X86_64_SIMD >= 4
   __asm__ ("vpmovzxbd %1, %t0" : "=x" (v) : "m" (*p));
   __asm__ ("vcvtdq2ps %t0, %t0" : "+x" (v));
 #else
@@ -145,7 +145,7 @@ inline FloatVector8::FloatVector8(const float *p)
 
 inline FloatVector8::FloatVector8(const std::int16_t *p)
 {
-#if ENABLE_X86_64_AVX2
+#if ENABLE_X86_64_SIMD >= 4
   __asm__ ("vpmovsxwd %1, %t0" : "=x" (v) : "m" (*p));
   __asm__ ("vcvtdq2ps %t0, %t0" : "+x" (v));
 #else
@@ -166,7 +166,7 @@ inline FloatVector8::FloatVector8(const std::int32_t *p)
 
 inline FloatVector8::FloatVector8(const std::uint16_t *p, bool noInfNaN)
 {
-#if ENABLE_X86_64_AVX2 || defined(__F16C__)
+#if ENABLE_X86_64_SIMD >= 3
   if (!noInfNaN)
   {
     __asm__ ("vcvtph2ps %1, %t0" : "=x" (v) : "m" (*p));
@@ -205,7 +205,7 @@ inline void FloatVector8::convertToFloatVector4(FloatVector4 *p) const
 
 inline void FloatVector8::convertToInt16(std::int16_t *p) const
 {
-#if ENABLE_X86_64_AVX2
+#if ENABLE_X86_64_SIMD >= 4
   YMM_UInt32  tmp;
   __asm__ ("vcvtps2dq %t1, %t0" : "=x" (tmp) : "xm" (v));
   __asm__ ("vpackssdw %t0, %t0, %t0" : "+x" (tmp));
@@ -229,7 +229,7 @@ inline void FloatVector8::convertToInt32(std::int32_t *p) const
 
 inline void FloatVector8::convertToFloat16(std::uint16_t *p) const
 {
-#if ENABLE_X86_64_AVX2 || defined(__F16C__)
+#if ENABLE_X86_64_SIMD >= 3
   __asm__ ("vcvtps2ph $0x00, %t1, %0" : "=m" (*p) : "x" (v));
 #else
   p[0] = ::convertToFloat16(v[0]);
@@ -428,7 +428,7 @@ inline FloatVector8& FloatVector8::rcpSqr()
 
 inline FloatVector8& FloatVector8::log2V()
 {
-#if ENABLE_X86_64_AVX2
+#if ENABLE_X86_64_SIMD >= 4
   YMM_Float e, m, tmp;
   __asm__ ("vpsrld $0x17, %t1, %t0" : "=x" (e) : "x" (v));
   __asm__ ("vmovd %1, %x0" : "=x" (tmp) : "r" (0x3F800000U));
@@ -451,7 +451,7 @@ inline FloatVector8& FloatVector8::log2V()
 
 inline FloatVector8& FloatVector8::exp2V()
 {
-#if ENABLE_X86_64_AVX2
+#if ENABLE_X86_64_SIMD >= 4
   YMM_Float e;
   __asm__ ("vroundps $0x09, %t1, %t0" : "=x" (e) : "x" (v));
   YMM_Float m = v - e;          // e = floor(v)
@@ -471,7 +471,7 @@ inline FloatVector8& FloatVector8::exp2V()
 inline FloatVector8::operator std::uint64_t() const
 {
   std::uint64_t c;
-#if ENABLE_X86_64_AVX2
+#if ENABLE_X86_64_SIMD >= 4
   YMM_UInt32  tmp;
   __asm__ ("vcvtps2dq %t1, %t0" : "=x" (tmp) : "xm" (v));
   __asm__ ("vpackssdw %t0, %t0, %t0" : "+x" (tmp));
@@ -489,7 +489,7 @@ inline FloatVector8::operator std::uint64_t() const
   return c;
 }
 
-#else                                   // !ENABLE_X86_64_AVX
+#else                                   // ENABLE_X86_64_SIMD < 2
 
 inline FloatVector8::FloatVector8(const float& x)
 {
@@ -1038,12 +1038,12 @@ inline FloatVector8::operator std::uint64_t() const
           | (c4 << 32) | (c5 << 40) | (c6 << 48) | (c7 << 56));
 }
 
-#endif                                  // ENABLE_X86_64_AVX
+#endif                                  // ENABLE_X86_64_SIMD
 
 inline std::uint32_t FloatVector8::getSignMask() const
 {
   std::uint32_t tmp;
-#if ENABLE_X86_64_AVX
+#if ENABLE_X86_64_SIMD >= 2
   tmp = std::uint32_t(__builtin_ia32_movmskps256(v));
 #else
   tmp = std::uint32_t(v[0] < 0.0f) | (std::uint32_t(v[1] < 0.0f) << 1)

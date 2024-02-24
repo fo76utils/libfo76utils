@@ -4,7 +4,7 @@
 
 #include "common.hpp"
 
-#if defined(__GNUC__) && (defined(__x86_64__) || defined(__x86_64))
+#if ENABLE_X86_64_SIMD
 typedef float   XMM_Float __attribute__ ((__vector_size__ (16)));
 typedef double  XMM_Double __attribute__ ((__vector_size__ (16)));
 typedef std::uint8_t  XMM_UInt8 __attribute__ ((__vector_size__ (16)));
@@ -15,7 +15,7 @@ typedef std::uint32_t XMM_UInt32 __attribute__ ((__vector_size__ (16)));
 typedef std::int32_t  XMM_Int32 __attribute__ ((__vector_size__ (16)));
 typedef std::uint64_t XMM_UInt64 __attribute__ ((__vector_size__ (16)));
 typedef std::int64_t  XMM_Int64 __attribute__ ((__vector_size__ (16)));
-#  if ENABLE_X86_64_AVX
+#  if ENABLE_X86_64_SIMD >= 2
 typedef float   YMM_Float __attribute__ ((__vector_size__ (32)));
 typedef double  YMM_Double __attribute__ ((__vector_size__ (32)));
 typedef std::uint8_t  YMM_UInt8 __attribute__ ((__vector_size__ (32)));
@@ -35,7 +35,7 @@ typedef std::int64_t  YMM_Int64 __attribute__ ((__vector_size__ (32)));
 
 struct FloatVector4
 {
-#if ENABLE_X86_64_AVX
+#if ENABLE_X86_64_SIMD >= 2
  private:
   static constexpr float      floatMinVal = 5.16987883e-26f;
   static constexpr XMM_Float  floatMinValV =
@@ -167,7 +167,7 @@ struct FloatVector4
   inline std::uint32_t convertToR9G9B9E5() const;
 };
 
-#if ENABLE_X86_64_AVX
+#if ENABLE_X86_64_SIMD >= 2
 
 inline FloatVector4::FloatVector4(unsigned int c)
 {
@@ -220,7 +220,7 @@ inline FloatVector4 FloatVector4::convertInt16(const std::uint64_t& n)
 inline FloatVector4 FloatVector4::convertFloat16(std::uint64_t n, bool noInfNaN)
 {
   XMM_Float v;
-#if ENABLE_X86_64_AVX2 || defined(__F16C__)
+#if ENABLE_X86_64_SIMD >= 3
   __asm__ ("vmovq %1, %0" : "=x" (v) : "rm" (n));
   if (noInfNaN)
   {
@@ -259,7 +259,7 @@ inline FloatVector4 FloatVector4::convertFloat16(std::uint64_t n, bool noInfNaN)
 
 inline std::uint64_t FloatVector4::convertToFloat16(unsigned int mask) const
 {
-#if ENABLE_X86_64_AVX2 || defined(__F16C__)
+#if ENABLE_X86_64_SIMD >= 3
   XMM_UInt64  tmp;
   if (mask < 15U)
   {
@@ -655,7 +655,7 @@ inline FloatVector4 FloatVector4::convertA2R10G10B10(
     const std::uint32_t& c, bool expandSRGB)
 {
   XMM_Float v;
-#if ENABLE_X86_64_AVX2
+#if ENABLE_X86_64_SIMD >= 4
   static const XMM_UInt32 maskTbl =
   {
     0x3FF00000U, 0x000FFC00U, 0x000003FFU, 0x0000C000U
@@ -728,7 +728,7 @@ inline std::uint32_t FloatVector4::convertToA2R10G10B10(bool noClamp) const
   {
     1023.0f / 255.0f, 1023.0f / 255.0f, 1023.0f / 255.0f, 3.0f / 255.0f
   };
-#if ENABLE_X86_64_AVX2
+#if ENABLE_X86_64_SIMD >= 4
   static const XMM_UInt32 sllTbl = { 20U, 10U, 0U, 30U };
 #else
   static const XMM_UInt8  shufTbl =
@@ -748,7 +748,7 @@ inline std::uint32_t FloatVector4::convertToA2R10G10B10(bool noClamp) const
     __asm__ ("vpmaxsd %1, %0, %0" : "+x" (tmp1) : "xm" (minTbl));
     __asm__ ("vpminsd %1, %0, %0" : "+x" (tmp1) : "xm" (maxTbl));
   }
-#if ENABLE_X86_64_AVX2
+#if ENABLE_X86_64_SIMD >= 4
   __asm__ ("vpsllvd %1, %0, %0" : "+x" (tmp1) : "xm" (sllTbl));
   __asm__ ("vpshufd $0x4e, %1, %0" : "=x" (tmp2) : "x" (tmp1));
   __asm__ ("vpor %1, %0, %0" : "+x" (tmp2) : "x" (tmp1));
@@ -763,7 +763,7 @@ inline std::uint32_t FloatVector4::convertToA2R10G10B10(bool noClamp) const
   return tmp2[0];
 }
 
-#else                                   // !ENABLE_X86_64_AVX
+#else                                   // ENABLE_X86_64_SIMD < 2
 
 inline FloatVector4::FloatVector4(unsigned int c)
 {
@@ -1234,7 +1234,7 @@ inline std::uint32_t FloatVector4::convertToA2R10G10B10(bool noClamp) const
   return ((r << 20) | (g << 10) | b | (a << 30));
 }
 
-#endif                                  // ENABLE_X86_64_AVX
+#endif                                  // ENABLE_X86_64_SIMD
 
 inline FloatVector4::FloatVector4(unsigned int c0, unsigned int c1,
                                   unsigned int c2, unsigned int c3,
@@ -1352,7 +1352,7 @@ inline std::uint32_t FloatVector4::convertToRGBA32(
 
 inline std::uint32_t FloatVector4::normalToUInt32() const
 {
-#if ENABLE_X86_64_AVX2 || (ENABLE_X86_64_AVX && defined(__F16C__))
+#if ENABLE_X86_64_SIMD >= 3
   static const XMM_UInt32 signMask =
   {
     0x80000000U, 0x80000000U, 0x80000000U, 0x80000000U
@@ -1365,7 +1365,7 @@ inline std::uint32_t FloatVector4::normalToUInt32() const
   // use FP16 format if F16C instructions are available
   __asm__ ("vcvtps2ph $0x00, %0, %0" : "+x" (tmp));
   return tmp[0];
-#elif ENABLE_X86_64_AVX
+#elif ENABLE_X86_64_SIMD >= 2
   // use 16-bit signed integers otherwise
   static const float  int16MultTable[2] = { -32767.0f, 32767.0f };
   size_t  n;
@@ -1384,7 +1384,7 @@ inline std::uint32_t FloatVector4::normalToUInt32() const
   int     x, y;
   x = roundFloat(std::min(std::max(v[0], -1.0f), 1.0f) * 32767.0f);
   y = roundFloat(std::min(std::max(v[1], -1.0f), 1.0f) * 32767.0f);
-  if (BRANCH_UNLIKELY(v[2] > 0.0f))
+  if (v[2] > 0.0f) [[unlikely]]
   {
     x = -x;
     y = -y;
@@ -1395,14 +1395,14 @@ inline std::uint32_t FloatVector4::normalToUInt32() const
 
 inline FloatVector4 FloatVector4::uint32ToNormal(const std::uint32_t& n)
 {
-#if ENABLE_X86_64_AVX2 || (ENABLE_X86_64_AVX && defined(__F16C__))
+#if ENABLE_X86_64_SIMD >= 3
   FloatVector4  tmp;
   __asm__ ("vmovd %1, %0" : "=x" (tmp.v) : "rm" (n));
   __asm__ ("vcvtph2ps %0, %0" : "+x" (tmp.v));
   tmp[2] = float(std::sqrt(std::max(1.0f - tmp.dotProduct2(tmp), 0.0f)));
   tmp *= -1.0f;
   return tmp.normalize3Fast();
-#elif ENABLE_X86_64_AVX
+#elif ENABLE_X86_64_SIMD >= 2
   FloatVector4  tmp;
   __asm__ ("vmovd %1, %0" : "=x" (tmp.v) : "rm" (n));
   __asm__ ("vpmovsxwd %0, %0" : "+x" (tmp.v));
@@ -1421,24 +1421,24 @@ inline FloatVector4 FloatVector4::uint32ToNormal(const std::uint32_t& n)
 
 inline std::uint32_t FloatVector4::convertToX10Y10Z10() const
 {
-#if ENABLE_X86_64_AVX
+#if ENABLE_X86_64_SIMD >= 2
   static const XMM_Float  multTbl = { 511.5f, 511.5f, 511.5f, 0.0f };
   static const XMM_UInt32 maxTbl = { 1023U, 1023U, 1023U, 0U };
   XMM_Float   tmp1 = v;
   XMM_UInt32  tmp2;
-#  if ENABLE_X86_64_AVX2
+#  if ENABLE_X86_64_SIMD >= 4
   __asm__ ("vfmadd132ps %1, %1, %0" : "+x" (tmp1) : "x" (multTbl));
 #  else
   tmp1 = tmp1 * multTbl + multTbl;
 #  endif
   __asm__ ("vcvtps2dq %1, %0" : "=x" (tmp2) : "x" (tmp1));
   __asm__ ("vpminsd %1, %0, %0" : "+x" (tmp2) : "xm" (maxTbl));
-#  if ENABLE_X86_64_AVX2
+#  if ENABLE_X86_64_SIMD >= 4
   static const XMM_UInt32 sllTbl = { 0U, 2U, 4U, 0U };
   __asm__ ("vpsllvd %1, %0, %0" : "+x" (tmp2) : "xm" (sllTbl));
 #  endif
   __asm__ ("vpackusdw %0, %0, %0" : "+x" (tmp2));
-#  if !ENABLE_X86_64_AVX2
+#  if ENABLE_X86_64_SIMD < 4
   static const XMM_UInt16 mulTbl2 = { 1, 4, 16, 0 };
   __asm__ ("vpmullw %1, %0, %0" : "+x" (tmp2) : "xm" (mulTbl2));
 #  endif
@@ -1461,7 +1461,7 @@ inline std::uint32_t FloatVector4::convertToX10Y10Z10() const
 inline FloatVector4 FloatVector4::convertX10Y10Z10(const std::uint32_t& n)
 {
   FloatVector4  tmp;
-#if ENABLE_X86_64_AVX
+#if ENABLE_X86_64_SIMD >= 2
   static const XMM_UInt32 maskTbl =
   {
     0x000003FFU, 0x000FFC00U, 0x3FF00000U, 0U
@@ -1471,7 +1471,7 @@ inline FloatVector4 FloatVector4::convertX10Y10Z10(const std::uint32_t& n)
     float(2.0 / 1023.0), float(2.0 / 1047552.0), float(2.0 / 1072693248.0), 0.0f
   };
   static const XMM_Float  offsTbl = { -1.0f, -1.0f, -1.0f, 0.0f };
-#  if ENABLE_X86_64_AVX2
+#  if ENABLE_X86_64_SIMD >= 4
   __asm__ ("vpbroadcastd %1, %0" : "=x" (tmp.v) : "m" (n));
 #  else
   __asm__ ("vmovd %1, %0" : "=x" (tmp.v) : "m" (n));
@@ -1479,7 +1479,7 @@ inline FloatVector4 FloatVector4::convertX10Y10Z10(const std::uint32_t& n)
 #  endif
   __asm__ ("vpand %1, %0, %0" : "+x" (tmp.v) : "xm" (maskTbl));
   __asm__ ("vcvtdq2ps %0, %0" : "+x" (tmp.v));
-#  if ENABLE_X86_64_AVX2
+#  if ENABLE_X86_64_SIMD >= 4
   __asm__ ("vfmadd132ps %2, %1, %0"
            : "+x" (tmp.v) : "x" (offsTbl), "xm" (multTbl));
 #  else
@@ -1497,7 +1497,7 @@ inline FloatVector4 FloatVector4::convertX10Y10Z10(const std::uint32_t& n)
 inline std::uint32_t FloatVector4::getSignMask() const
 {
   std::uint32_t tmp;
-#if ENABLE_X86_64_AVX
+#if ENABLE_X86_64_SIMD >= 2
   tmp = std::uint32_t(__builtin_ia32_movmskps(v));
 #else
   tmp = std::uint32_t(v[0] < 0.0f) | (std::uint32_t(v[1] < 0.0f) << 1)
@@ -1509,7 +1509,7 @@ inline std::uint32_t FloatVector4::getSignMask() const
 inline FloatVector4 FloatVector4::convertR9G9B9E5(const std::uint32_t& n)
 {
   FloatVector4  tmp;
-#if ENABLE_X86_64_AVX
+#if ENABLE_X86_64_SIMD >= 2
   static const XMM_UInt32 maskTbl =
   {
     0x000001FFU, 0x0003FE00U, 0x07FC0000U, 0xF8000000U
@@ -1544,7 +1544,7 @@ inline std::uint32_t FloatVector4::convertToR9G9B9E5() const
 {
   FloatVector4  c(*this);
   c.maxValues(FloatVector4(0.0f));
-#if ENABLE_X86_64_AVX
+#if ENABLE_X86_64_SIMD >= 2
   const XMM_UInt32  maskMultSubMaxTbl =
   {
     0x7F800000U, 0x4B800000U, 0x37800000U, 0x0F800000U

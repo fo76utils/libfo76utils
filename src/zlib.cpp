@@ -33,11 +33,11 @@ std::uint32_t ZLibDecompressor::readU32BE()
 
 inline void ZLibDecompressor::srLoad(unsigned long long& sr)
 {
-  if (BRANCH_UNLIKELY(sr < 0x00010000ULL))
+  if (sr < 0x00010000ULL) [[unlikely]]
   {
     unsigned int  bitCnt = (unsigned int) std::bit_width(sr) - 1U;
 #if defined(__i386__) || defined(__x86_64__) || defined(__x86_64)
-    if (BRANCH_LIKELY((inPtr + 6) <= inBufEnd))
+    if ((inPtr + 6) <= inBufEnd) [[likely]]
     {
       // inPtr - 2 is always valid because of the 2 bytes long zlib header
       const std::uint64_t *p =
@@ -45,7 +45,7 @@ inline void ZLibDecompressor::srLoad(unsigned long long& sr)
       sr = (*p >> (16U - bitCnt)) | (1ULL << (bitCnt + 48U));
       inPtr = inPtr + 6;
     }
-    else if (BRANCH_LIKELY((inPtr + 2) <= inBufEnd))
+    else if ((inPtr + 2) <= inBufEnd) [[likely]]
     {
       const std::uint32_t *p =
           reinterpret_cast< const std::uint32_t * >(inPtr - 2);
@@ -58,7 +58,7 @@ inline void ZLibDecompressor::srLoad(unsigned long long& sr)
       errorMessage("end of ZLib compressed data");
     }
 #else
-    if (BRANCH_UNLIKELY((inPtr + 2) > inBufEnd))
+    if ((inPtr + 2) > inBufEnd) [[unlikely]]
       errorMessage("end of ZLib compressed data");
     sr &= ~(1ULL << bitCnt);
     do
@@ -357,7 +357,7 @@ inline unsigned int ZLibDecompressor::huffmanDecode(
   unsigned int  b = huffTable[sr & 0xFF];
   unsigned char nBits = (unsigned char) (b & 0xFF);
   b = b >> 8;
-  if (BRANCH_LIKELY(nBits < 9))
+  if (nBits < 9) [[likely]]
   {
     sr = sr >> nBits;
     return b;
@@ -401,9 +401,9 @@ unsigned char * ZLibDecompressor::decompressZLibBlock(
       continue;
     }
     size_t  lzLen = c - 254;
-    if (BRANCH_UNLIKELY(!(lzLen >= 3 && lzLen <= 10)))
+    if (!(lzLen >= 3 && lzLen <= 10)) [[unlikely]]
     {
-      if (BRANCH_UNLIKELY(!(lzLen >= 11 && lzLen <= 30)))
+      if (!(lzLen >= 11 && lzLen <= 30)) [[unlikely]]
       {
         if (lzLen == 31)
           lzLen = 258;
@@ -441,18 +441,32 @@ unsigned char * ZLibDecompressor::decompressZLibBlock(
       errorMessage("uncompressed ZLib data larger than output buffer");
     }
     // copy LZ77 sequence
-    do
+    *(wp++) = *(rp++);
+    *(wp++) = *(rp++);
+    *(wp++) = *(rp++);
+    if (lzLen == 3) [[likely]]
+      continue;
+    *(wp++) = *(rp++);
+    if (lzLen == 4) [[likely]]
+      continue;
+    switch (lzLen & 3)
+    {
+      case 3:
+        *(wp++) = *(rp++);
+        [[fallthrough]];
+      case 2:
+        *(wp++) = *(rp++);
+        [[fallthrough]];
+      case 1:
+        *(wp++) = *(rp++);
+    }
+    for ( ; lzLen >= 8; lzLen = lzLen - 4)
     {
       *(wp++) = *(rp++);
       *(wp++) = *(rp++);
       *(wp++) = *(rp++);
-      lzLen = lzLen - 3;
+      *(wp++) = *(rp++);
     }
-    while (BRANCH_UNLIKELY(lzLen >= 3));
-    if (BRANCH_UNLIKELY(lzLen == 2))
-      *(wp++) = *(rp++);
-    if (BRANCH_UNLIKELY(lzLen >= 1))
-      *(wp++) = *(rp++);
   }
   srRef = sr;
   return wp;
@@ -520,7 +534,7 @@ unsigned int ZLibDecompressor::calculateAdler32(
   unsigned int  s1 = a & 0xFFFFU;
   unsigned int  s2 = a >> 16;
   size_t  i = 0;
-#if ENABLE_X86_64_AVX
+#if ENABLE_X86_64_SIMD >= 2
   while ((i + 16) <= bufSize)
   {
     static const XMM_UInt16 mulTbl1 = { 16, 15, 14, 13, 12, 11, 10, 9 };

@@ -122,7 +122,7 @@ class FileBuffer
 inline std::uint32_t FileBuffer::swapUInt32(unsigned int n)
 {
   std::uint32_t tmp = std::uint32_t(n);
-#if ENABLE_X86_64_AVX
+#if ENABLE_X86_64_SIMD
   __asm__ ("bswap %0" : "+r" (tmp));
 #else
   tmp = ((tmp & 0x000000FFU) << 24) | ((tmp & 0x0000FF00U) << 8)

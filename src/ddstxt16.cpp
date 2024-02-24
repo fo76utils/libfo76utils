@@ -507,7 +507,7 @@ size_t DDSTexture16::decodeLine_RGB9E5(
 
 static void srgbExpandBlock(void *buf, int w, int h, int pitch)
 {
-#if ENABLE_X86_64_AVX2 || (ENABLE_X86_64_AVX && defined(__F16C__))
+#if ENABLE_X86_64_SIMD >= 3
   if (!(w & 1)) [[likely]]
   {
     std::uint16_t *p = reinterpret_cast< std::uint16_t * >(buf);
@@ -861,7 +861,7 @@ DDSTexture16::DDSTexture16(FloatVector4 c, bool srgbColor)
     c[3] = a;
   }
   textureColor = c.convertToFloat16();
-#if ENABLE_X86_64_AVX
+#if ENABLE_X86_64_SIMD >= 2
   std::uintptr_t  tmp1 =
       std::uintptr_t(reinterpret_cast< unsigned char * >(&textureColor));
   const YMM_UInt64  tmp2 = { tmp1, tmp1, tmp1, tmp1 };

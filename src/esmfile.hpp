@@ -19,7 +19,7 @@ class ESMFile
     const unsigned char *fileData;      // pointer to record in file buffer
     ESMRecord()
       : type(0xFFFFFFFFU), flags(0), formID(0U), parent(0),
-        children(0), next(0), fileData((unsigned char *) 0)
+        children(0), next(0), fileData(nullptr)
     {
     }
     inline bool operator==(const char *s) const
@@ -59,7 +59,7 @@ class ESMFile
     }
     inline const char *getStringFromTable(unsigned int offs) const
     {
-      if (BRANCH_UNLIKELY(offs >= stringTableSize))
+      if (offs >= stringTableSize) [[unlikely]]
         return "";
       return (stringTable + offs);
     }
@@ -112,20 +112,20 @@ class ESMFile
   // returns NULL if the record does not exist
   inline const ESMRecord *findRecord(unsigned int n) const
   {
-    if (BRANCH_UNLIKELY(n >= 0x80000000U))
+    if (n >= 0x80000000U) [[unlikely]]
     {
       n = (n & 0x7FFFFFFFU) + recordCnt;
     }
     else
     {
       std::vector< unsigned int >::const_iterator i = formIDMap.begin() + n;
-      if (BRANCH_UNLIKELY(i >= formIDMap.end()))
-        return (ESMRecord *) 0;
+      if (i >= formIDMap.end()) [[unlikely]]
+        return nullptr;
       n = *i;
     }
     std::vector< ESMRecord >::const_iterator  i = recordBuf.begin() + n;
-    if (BRANCH_UNLIKELY(i >= recordBuf.end()))
-      return (ESMRecord *) 0;
+    if (i >= recordBuf.end()) [[unlikely]]
+      return nullptr;
     return &(*i);
   }
   inline ESMRecord *findRecord(unsigned int n)

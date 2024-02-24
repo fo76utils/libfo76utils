@@ -24,7 +24,7 @@ class SDLDisplay
   unsigned char downsampleLevel;        // 0 = disabled, 1 = 2x, 2 = 4x
   bool    usingImageBuf;
   bool    textInputEnabled;
-#if ENABLE_X86_64_AVX
+#if ENABLE_X86_64_SIMD >= 2
   std::vector< YMM_UInt32 >     imageBuf;
 #else
   std::vector< std::uint32_t >  imageBuf;

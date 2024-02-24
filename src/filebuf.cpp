@@ -96,7 +96,7 @@ float FileBuffer::readFloat()
 
 FloatVector4 FileBuffer::readFloatVector4()
 {
-#if ENABLE_X86_64_AVX
+#if ENABLE_X86_64_SIMD >= 2
   if ((filePos + 16) > fileBufSize)
     errorMessage("end of input file");
   union

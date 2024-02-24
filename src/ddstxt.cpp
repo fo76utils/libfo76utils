@@ -816,7 +816,7 @@ DDSTexture::DDSTexture(std::uint32_t c, bool srgbColor)
     maxTextureNum(0),
     dxgiFormat(0)
 {
-#if ENABLE_X86_64_AVX
+#if ENABLE_X86_64_SIMD >= 2
   std::uintptr_t  tmp1 =
       std::uintptr_t(reinterpret_cast< unsigned char * >(&textureColor));
   const YMM_UInt64  tmp2 = { tmp1, tmp1, tmp1, tmp1 };
@@ -1147,7 +1147,7 @@ FloatVector4 DDSTexture::calculateAvgLevelFP16(
   {
     size_t  j = std::min< size_t >(n - i, 8192);
     i = i + j;
-#if ENABLE_X86_64_AVX
+#if ENABLE_X86_64_SIMD >= 2
     FloatVector8  tmp(0.0f);
     for ( ; j > 1; j = j - 2, p = p + 16)
     {

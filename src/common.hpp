@@ -17,19 +17,28 @@
 #include <stdexcept>
 #include <bit>
 
-#if defined(__GNUC__) && (defined(__x86_64__) || defined(__x86_64))
-#  if defined(__AVX__) && !defined(ENABLE_X86_64_AVX)
-#    define ENABLE_X86_64_AVX   1
-#    if defined(__AVX2__) && !defined(ENABLE_X86_64_AVX2)
-#      define ENABLE_X86_64_AVX2  1
+// ENABLE_X86_64_SIMD = 0: do not use GCC x86_64 SIMD extensions
+// ENABLE_X86_64_SIMD = 1: use SSE 4.2
+// ENABLE_X86_64_SIMD = 2: use AVX
+// ENABLE_X86_64_SIMD = 3: use AVX + F16C
+// ENABLE_X86_64_SIMD = 4: use Haswell instructions (AVX, F16C, AVX2, FMA, BMI)
+
+#ifndef ENABLE_X86_64_SIMD
+#  if defined(__GNUC__) && (defined(__x86_64__) || defined(__x86_64))
+#    if defined(__AVX__) && defined(__AVX2__)
+#      define ENABLE_X86_64_SIMD    4
+#    elif defined(__AVX__) && defined(__F16C__)
+#      define ENABLE_X86_64_SIMD    3
+#    elif defined(__AVX__)
+#      define ENABLE_X86_64_SIMD    2
+#    elif defined(__SSE4_2__)
+#      define ENABLE_X86_64_SIMD    1
+#    else
+#      define ENABLE_X86_64_SIMD    0
 #    endif
+#  else
+#    define ENABLE_X86_64_SIMD  0
 #  endif
-#endif
-#ifndef ENABLE_X86_64_AVX
-#  define ENABLE_X86_64_AVX     0
-#endif
-#ifndef ENABLE_X86_64_AVX2
-#  define ENABLE_X86_64_AVX2    0
 #endif
 
 class FO76UtilsError : public std::exception
@@ -43,7 +52,7 @@ class FO76UtilsError : public std::exception
   FO76UtilsError() noexcept
   {
     s = defaultErrorMessage;
-    buf = (char *) 0;
+    buf = nullptr;
   }
   FO76UtilsError(const FO76UtilsError& r) noexcept
   {
@@ -77,19 +86,9 @@ inline void errorMessage(const char *msg)
   throw FO76UtilsError(0, msg);
 }
 
-#if defined(__GNUC__)
-#  define BRANCH_EXPECT(x, y)   (__builtin_expect(long(bool(x)), long(y)))
-#  define BRANCH_LIKELY(x)      (__builtin_expect(long(bool(x)), 1L))
-#  define BRANCH_UNLIKELY(x)    (__builtin_expect(long(bool(x)), 0L))
-#else
-#  define BRANCH_EXPECT(x, y)   (x)
-#  define BRANCH_LIKELY(x)      (x)
-#  define BRANCH_UNLIKELY(x)    (x)
-#endif
-
 inline int roundFloat(float x)
 {
-#if ENABLE_X86_64_AVX
+#if ENABLE_X86_64_SIMD >= 2
   int     tmp;
   __asm__ ("vcvtss2si %1, %0" : "=r" (tmp) : "x" (x));
   return tmp;
@@ -100,7 +99,7 @@ inline int roundFloat(float x)
 
 inline int roundDouble(double x)
 {
-#if ENABLE_X86_64_AVX
+#if ENABLE_X86_64_SIMD >= 2
   int     tmp;
   __asm__ ("vcvtsd2si %1, %0" : "=r" (tmp) : "x" (x));
   return tmp;
@@ -128,7 +127,7 @@ inline std::int32_t uint32ToSigned(unsigned int x)
 
 inline float convertFloat16(unsigned short n)
 {
-#if ENABLE_X86_64_AVX2 || (ENABLE_X86_64_AVX && defined(__F16C__))
+#if ENABLE_X86_64_SIMD >= 3
   float   tmp __attribute__ ((__vector_size__ (16)));
   __asm__ ("vmovq %1, %0" : "=x" (tmp) : "r" (std::uint64_t(n)));
   __asm__ ("vcvtph2ps %0, %0" : "+x" (tmp));
@@ -143,7 +142,7 @@ inline float convertFloat16(unsigned short n)
   tmp;
   tmp.i = ((m << 13) & 0x8FFFE000U) + 0x38000000U;
   float   r = tmp.f;
-  if (BRANCH_UNLIKELY(!(m & 0x7C00U)))
+  if (!(m & 0x7C00U)) [[unlikely]]
   {
     // zero or denormal
     tmp.i = tmp.i & 0xFF800000U;
@@ -160,7 +159,7 @@ inline float convertFloat16(unsigned short n)
 #endif
 }
 
-#if ENABLE_X86_64_AVX2 || (ENABLE_X86_64_AVX && defined(__F16C__))
+#if ENABLE_X86_64_SIMD >= 3
 inline std::uint16_t convertToFloat16(float x)
 {
   std::uint16_t tmp __attribute__ ((__vector_size__ (16)));
@@ -173,7 +172,7 @@ std::uint16_t convertToFloat16(float x);
 
 inline void hashFunctionUInt32(std::uint32_t& h, const std::uint32_t& m)
 {
-#if ENABLE_X86_64_AVX
+#if ENABLE_X86_64_SIMD
   h = __builtin_ia32_crc32si(h, m);
 #else
   std::uint64_t tmp = (h ^ m) * std::uint64_t(0xEE088D97U);
@@ -183,7 +182,7 @@ inline void hashFunctionUInt32(std::uint32_t& h, const std::uint32_t& m)
 
 inline void hashFunctionUInt64(std::uint64_t& h, const std::uint64_t& m)
 {
-#if ENABLE_X86_64_AVX
+#if ENABLE_X86_64_SIMD
   h = __builtin_ia32_crc32di(h, m);
 #else
   const std::uint64_t multValue = 0xEE088D97U;
@@ -195,7 +194,7 @@ inline void hashFunctionUInt64(std::uint64_t& h, const std::uint64_t& m)
 }
 
 extern const std::uint32_t crc32Table_EDB88320[256];
-#if !ENABLE_X86_64_AVX
+#if !ENABLE_X86_64_SIMD
 extern const std::uint32_t crc32Table_82F63B78[256];
 #endif
 
@@ -207,7 +206,7 @@ inline void hashFunctionCRC32(std::uint32_t& h, unsigned char c)
 template< typename T > inline void hashFunctionCRC32C(
     std::uint32_t& h, const T& c)
 {
-#if ENABLE_X86_64_AVX
+#if ENABLE_X86_64_SIMD
   if (sizeof(T) == 8)
     h = std::uint32_t(__builtin_ia32_crc32di(h, c));
   else if (sizeof(T) == 4)
@@ -217,8 +216,9 @@ template< typename T > inline void hashFunctionCRC32C(
   else if (sizeof(T) == 1)
     h = std::uint32_t(__builtin_ia32_crc32qi(h, c));
 #else
-  for (size_t i = 0; i < sizeof(T); i++, c = c >> 8)
-    h = (h >> 8) ^ crc32Table_82F63B78[(h ^ c) & 0xFFU];
+  T   b = c;
+  for (size_t i = 0; i < sizeof(T); i++, b = b >> 8)
+    h = (h >> 8) ^ crc32Table_82F63B78[(h ^ b) & 0xFFU];
 #endif
 }
 
@@ -285,11 +285,11 @@ inline unsigned char blendDithered(unsigned char a, unsigned char b,
   return (((((unsigned int) opacityB + 2) >> 2) + d) < 64 ? a : b);
 }
 
-long parseInteger(const char *s, int base = 0, const char *errMsg = (char *) 0,
+long parseInteger(const char *s, int base = 0, const char *errMsg = nullptr,
                   long minVal = long((~0UL >> 1) + 1UL),
                   long maxVal = long(~0UL >> 1));
 
-double parseFloat(const char *s, const char *errMsg = (char *) 0,
+double parseFloat(const char *s, const char *errMsg = nullptr,
                   double minVal = -1.0e38, double maxVal = 1.0e38);
 
 inline std::uint64_t timerFunctionRDTSC()

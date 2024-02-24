@@ -47,7 +47,7 @@ const unsigned char * ESMFile::uncompressRecord(ESMRecord& r)
 unsigned int ESMFile::loadRecords(size_t& groupCnt, FileBuffer& buf,
                                   size_t endPos, unsigned int parent)
 {
-  ESMRecord *prv = (ESMRecord *) 0;
+  ESMRecord *prv = nullptr;
   unsigned int  r = 0U;
   while (buf.getPosition() < endPos)
   {
@@ -81,7 +81,7 @@ unsigned int ESMFile::loadRecords(size_t& groupCnt, FileBuffer& buf,
         errorMessage("invalid ESM record size");
       buf.setPosition(buf.getPosition() + recordSize);
     }
-    if (BRANCH_LIKELY(!esmRecord->fileData))
+    if (!esmRecord->fileData) [[likely]]
     {
       esmRecord->parent = parent;
       if (prv)
@@ -133,7 +133,7 @@ ESMFile::ESMFile(const char *fileNames, bool enableZLibCache)
       tmpFileNames.push_back(fileName);
     if (tmpFileNames.size() < 1)
       errorMessage("ESMFile: no input files");
-    esmFiles.resize(tmpFileNames.size(), (FileBuffer *) 0);
+    esmFiles.resize(tmpFileNames.size(), nullptr);
     for (size_t i = 0; i < tmpFileNames.size(); i++)
     {
       const char  *fName = tmpFileNames[i].c_str();
@@ -326,7 +326,7 @@ ESMFile::ESMField::ESMField(const ESMRecord& r, const ESMFile& f)
     type(0),
     dataRemaining(FileBuffer::readUInt32Fast(r.fileData + 4))
 {
-  if (BRANCH_UNLIKELY(r.type == 0x50555247 || (r.flags & 0x00040000)))
+  if (r.type == 0x50555247 || (r.flags & 0x00040000)) [[unlikely]]
   {
     // "GRUP" or compressed record
     dataRemaining = 0;
@@ -344,9 +344,9 @@ bool ESMFile::ESMField::next()
     errorMessage("end of record data");
   type = readUInt32Fast();
   size_t  n = readUInt16Fast();
-  if (BRANCH_UNLIKELY(type == 0x58585858))      // "XXXX"
+  if (type == 0x58585858) [[unlikely]]          // "XXXX"
   {
-    if (BRANCH_LIKELY(n == 4))
+    if (n == 4) [[likely]]
     {
       if (dataRemaining < 16)
         errorMessage("end of record data");
@@ -367,9 +367,9 @@ bool ESMFile::ESMField::next()
 ESMFile::CDBRecord::CDBRecord(ESMField& f)
   : FileBuffer(f.data(), f.size(), 0),
     stringTableSize(0U),
-    stringTable((char *) 0)
+    stringTable(nullptr)
 {
-  if (BRANCH_LIKELY(f.size() >= 16))
+  if (f.size() >= 16) [[likely]]
   {
     dataRemaining = (unsigned int) (f.size() - 16);
     type = FileBuffer::readUInt32Fast(f.data());
@@ -377,7 +377,7 @@ ESMFile::CDBRecord::CDBRecord(ESMField& f)
     fileBufSize = FileBuffer::readUInt32Fast(f.data() + 4);
     if (type == 0x48544542U && fileBufSize == 8)        // "BETH"
     {
-      if (BRANCH_LIKELY(FileBuffer::readUInt32Fast(f.data() + 8) == 4U))
+      if (FileBuffer::readUInt32Fast(f.data() + 8) == 4U) [[likely]]
       {
         recordsRemaining = FileBuffer::readUInt32Fast(f.data() + 12);
         recordsRemaining -= (unsigned int) (recordsRemaining > 0U);
@@ -409,7 +409,7 @@ bool ESMFile::CDBRecord::next()
   fileBuf = fileBuf + 8;
   fileBufSize = n;
   filePos = 0;
-  if (BRANCH_UNLIKELY(type == 0x54525453U))     // "STRT"
+  if (type == 0x54525453U) [[unlikely]]         // "STRT"
   {
     for ( ; n > 0; n--)
     {
