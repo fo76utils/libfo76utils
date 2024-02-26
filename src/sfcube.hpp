@@ -65,6 +65,12 @@ class SFCubeMapFilter
   {
     normalizeLevel = 1.0f / ((n > 0.0f ? n : 65536.0f) * 3.0f);
   }
+  void setOutputWidth(size_t w)
+  {
+    if (w < minWidth || w > 2048 || (w & (w - 1)))
+      errorMessage("SFCubeMapFilter: invalid output dimensions");
+    width = std::uint32_t(w);
+  }
 };
 
 // face 0: E,      -X = up,   +X = down, -Y = N,    +Y = S
@@ -113,7 +119,7 @@ inline FloatVector4 SFCubeMapFilter::convertCoord(int x, int y, int w, int n)
   return v;
 }
 
-class SFCubeMapCache
+class SFCubeMapCache : public SFCubeMapFilter
 {
  protected:
   std::map< std::uint64_t, std::vector< unsigned char > > cachedTextures;
@@ -126,7 +132,7 @@ class SFCubeMapCache
   ~SFCubeMapCache();
   size_t convertImage(unsigned char *buf, size_t bufSize,
                       bool outFmtFloat = false, size_t bufCapacity = 0,
-                      size_t outputWidth = 256);
+                      size_t outputWidth = 0);
   // Convert Radiance HDR format image to DDS cube map.
   //   cubeWidth:       output resolution per face
   //   invertCoord:     invert Z axis if true

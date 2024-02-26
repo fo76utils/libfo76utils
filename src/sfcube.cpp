@@ -425,12 +425,7 @@ void SFCubeMapFilter::upsampleImage(
 
 SFCubeMapFilter::SFCubeMapFilter(size_t outputWidth)
 {
-  if (outputWidth < minWidth || outputWidth > 2048 ||
-      (outputWidth & (outputWidth - 1)))
-  {
-    errorMessage("SFCubeMapFilter: invalid output dimensions");
-  }
-  width = std::uint32_t(outputWidth);
+  setOutputWidth(outputWidth);
   roughnessTable = &(defaultRoughnessTable[0]);
   roughnessTableSize = int(sizeof(defaultRoughnessTable) / sizeof(float));
   normalizeLevel = float(12.5 / 3.0);
@@ -587,6 +582,7 @@ void SFCubeMapFilter::setRoughnessTable(const float *p, size_t n)
 }
 
 SFCubeMapCache::SFCubeMapCache()
+  : SFCubeMapFilter(256)
 {
 }
 
@@ -598,7 +594,9 @@ size_t SFCubeMapCache::convertImage(
     unsigned char *buf, size_t bufSize, bool outFmtFloat, size_t bufCapacity,
     size_t outputWidth)
 {
-  std::uint32_t h1 = std::uint32_t(outputWidth);
+  if (outputWidth)
+    setOutputWidth(outputWidth);
+  std::uint32_t h1 = width;
   std::uint32_t h2 = ~h1;
   size_t  i = 0;
   for ( ; (i + 16) <= bufSize; i = i + 16)
@@ -620,18 +618,16 @@ size_t SFCubeMapCache::convertImage(
     std::memcpy(buf, v.data(), v.size());
     return v.size();
   }
-  SFCubeMapFilter cubeMapFilter(outputWidth);
   size_t  newSize =
-      cubeMapFilter.convertImage(buf, bufSize, outFmtFloat, bufCapacity);
+      SFCubeMapFilter::convertImage(buf, bufSize, outFmtFloat, bufCapacity);
   if (!newSize && bufSize >= 11 &&
       FileBuffer::readUInt64Fast(buf) == 0x4E41494441523F23ULL) // "#?RADIAN"
   {
     std::vector< unsigned char >  tmpBuf;
     if (convertHDRToDDS(tmpBuf, buf, bufSize, 2048, false, 65504.0f, 0x0A))
     {
-      cubeMapFilter.setNormalizeLevel(0.25f);
-      newSize = cubeMapFilter.convertImage(tmpBuf.data(), tmpBuf.size(),
-                                           outFmtFloat, tmpBuf.size());
+      newSize = SFCubeMapFilter::convertImage(tmpBuf.data(), tmpBuf.size(),
+                                              outFmtFloat, tmpBuf.size());
       if (newSize && newSize <= std::max(bufSize, bufCapacity))
         std::memcpy(buf, tmpBuf.data(), newSize);
       else
