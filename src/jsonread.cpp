@@ -97,7 +97,7 @@ std::string& JSONReader::readToken()
         case 'u':
           {
             unsigned int  tmp = 0U;
-            for (int i = 0; i < 4; i++, tmp = tmp << 4)
+            for (int i = 0; i < 4; i++)
             {
               if (filePos >= fileBufSize)
               {
@@ -108,11 +108,11 @@ std::string& JSONReader::readToken()
               filePos++;
               if (c >= '0' && c <= '9')
               {
-                tmp = tmp | (unsigned int) (c & 0x0F);
+                tmp = (tmp << 4) | (unsigned int) (c & 0x0F);
               }
               else if ((c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'))
               {
-                tmp = tmp | (unsigned int) ((c & 0x0F) + 9);
+                tmp = (tmp << 4) | (unsigned int) ((c & 0x0F) + 9);
               }
               else
               {
