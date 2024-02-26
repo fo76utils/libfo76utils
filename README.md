@@ -16,6 +16,7 @@ Defining the macro BUILD\_CE2UTILS enables the use of default paths and environm
 * **filebuf.cpp**, **filebuf.hpp**: class FileBuffer: general file input, can be used to memory map files, or to read memory buffers using the same interface. The same source files also include code for writing uncompressed DDS images.
 * **fp32vec4.hpp**, **fp32vec8.hpp**: class FloatVector4, FloatVector8: fast vector math using AVX instructions if available.
 * **frtable.cpp**: Tables for Fresnel approximation using polynomials.
+* **jsonread.cpp**, **jsonread.hpp**: class JSONReader: JSON file reader.
 * **markers.cpp**, **markers.hpp**: class MapImage: finds references to a set of form IDs defined in a text file, and marks their locations on an RGBA format image.
 * **mat_dirs.cpp**: Table of Starfield material directory names.
 * **matcomps.cpp**, **material.cpp**, **material.hpp**, **mat_dump.cpp**: Starfield material database support (class CE2MaterialDB).
