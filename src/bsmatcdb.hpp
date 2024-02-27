@@ -6,22 +6,22 @@
 #include "filebuf.hpp"
 #include "bsrefl.hpp"
 
-class BSMaterialsCDB : public BSReflStream
+class BSMaterialsCDB
 {
  public:
   struct BSResourceID
   {
-    std::uint32_t dir;
-    std::uint32_t file;
-    std::uint32_t ext;
+    std::uint32_t file; // CRC32 of base name (not including the extension)
+    std::uint32_t ext;  // extension (0x0074616D for "mat\0")
+    std::uint32_t dir;  // CRC32 of directory name (e.g. "materials\\test")
     inline BSResourceID()
     {
     }
     BSResourceID(const std::string& fileName);
     inline bool operator<(const BSResourceID& r) const
     {
-      return (dir < r.dir || (dir == r.dir && file < r.file) ||
-              (dir == r.dir && file == r.file && ext < r.ext));
+      return (file < r.file || (file == r.file && ext < r.ext) ||
+              (file == r.file && ext == r.ext && dir < r.dir));
     }
   };
   struct CDBClassDef
@@ -40,29 +40,72 @@ class BSMaterialsCDB : public BSReflStream
   struct CDBObject
   {
     std::uint16_t type;                 // BSReflStream::stringTable[] index
-    // Size of data.children for structure, reference, list and map types.
+    // Size of children[] for compound types (struct, ref, list and map).
     // For maps, childCnt = 2 * elements, and data.children[N * 2] and
     // data.children[N * 2 + 1] contain the key and value for element N.
     std::uint16_t childCnt;
     std::uint32_t refCnt;
-    union
-    {
-      CDBObject     *children[1];
-      bool          boolValue;          // valid if type == String_Bool,
-      std::int8_t   int8Value;          //   String_Int8,
-      std::uint8_t  uint8Value;         //   String_UInt8,
-      std::int16_t  int16Value;         //   String_Int16,
-      std::uint16_t uint16Value;        //   String_UInt16,
-      std::int32_t  int32Value;         //   String_Int32,
-      std::uint32_t uint32Value;        //   String_UInt32,
-      std::int64_t  int64Value;         //   String_Int64,
-      std::uint64_t uint64Value;        //   String_UInt64,
-      float         floatValue;         //   String_Float,
-      double        doubleValue;        //   String_Double,
-      const char    *stringValue;       //   String_String,
-      const MaterialObject  *objectPtr; //   or String_BSComponentDB2_ID
-    }
-    data;
+    // for type == BSReflStream::String_Bool
+    inline bool boolValue() const;
+    // for type == String_Int8, String_Int16 and String_Int32
+    inline std::int32_t intValue() const;
+    // for type == String_UInt8, String_UInt16 and String_UInt32
+    inline std::uint32_t uintValue() const;
+    // for type == String_Int64
+    inline std::int64_t int64Value() const;
+    // for type == String_UInt64
+    inline std::uint64_t uint64Value() const;
+    // for type == String_Float
+    inline float floatValue() const;
+    // for type == String_Double
+    inline double doubleValue() const;
+    // for type == String_String
+    inline const char *stringValue() const;
+    // for type == String_List, String_Map, String_Ref and structures
+    inline CDBObject **children();
+    inline const CDBObject * const *children() const;
+    // for type == String_BSComponentDB2_ID
+    inline const MaterialObject *linkedObject() const;
+  };
+  struct CDBObject_Bool : public CDBObject
+  {
+    bool    value;
+  };
+  struct CDBObject_Int : public CDBObject
+  {
+    std::int32_t  value;
+  };
+  struct CDBObject_UInt : public CDBObject
+  {
+    std::uint32_t value;
+  };
+  struct CDBObject_Int64 : public CDBObject
+  {
+    std::int64_t  value;
+  };
+  struct CDBObject_UInt64 : public CDBObject
+  {
+    std::uint64_t value;
+  };
+  struct CDBObject_Float : public CDBObject
+  {
+    float   value;
+  };
+  struct CDBObject_Double : public CDBObject
+  {
+    double  value;
+  };
+  struct CDBObject_String : public CDBObject
+  {
+    const char  *value;
+  };
+  struct CDBObject_Compound : public CDBObject
+  {
+    CDBObject *children[1];
+  };
+  struct CDBObject_Link : public CDBObject
+  {
+    const MaterialObject  *objectPtr;
   };
   struct MaterialComponent
   {
@@ -95,6 +138,7 @@ class BSMaterialsCDB : public BSReflStream
     }
   };
  protected:
+  static const std::uint8_t cdbObjectSizeAlignTable[38];
   std::vector< CDBClassDef >  classes;
   MaterialObject  **objectTablePtr;
   size_t  objectTableSize;
@@ -109,26 +153,99 @@ class BSMaterialsCDB : public BSReflStream
                             size_t elementCnt = 0);
   void copyObject(CDBObject*& o);
   void copyBaseObject(MaterialObject& o);
-  void loadItem(CDBObject*& o, Chunk& chunkBuf, bool isDiff,
-                std::uint32_t itemType);
-  void readAllChunks();
+  void loadItem(CDBObject*& o,
+                BSReflStream& cdbFile, BSReflStream::Chunk& chunkBuf,
+                bool isDiff, std::uint32_t itemType);
+  void readAllChunks(BSReflStream& cdbFile);
+  CDBClassDef& allocateClassDef(std::uint32_t className);
   void dumpObject(std::string& s, const CDBObject *o, int indentCnt) const;
  public:
-  BSMaterialsCDB(const unsigned char *fileData, size_t fileSize)
-    : BSReflStream(fileData, fileSize)
+  void loadCDBFile(const unsigned char *fileData, size_t fileSize)
   {
-    readAllChunks();
+    BSReflStream  cdbFile(fileData, fileSize);
+    readAllChunks(cdbFile);
+  }
+  void loadCDBFile(const char *fileName)
+  {
+    BSReflStream  cdbFile(fileName);
+    readAllChunks(cdbFile);
+  }
+  BSMaterialsCDB(const unsigned char *fileData, size_t fileSize)
+  {
+    loadCDBFile(fileData, fileSize);
   }
   BSMaterialsCDB(const char *fileName)
-    : BSReflStream(fileName)
   {
-    readAllChunks();
+    loadCDBFile(fileName);
   }
   const CDBClassDef *getClassDef(std::uint32_t type) const;
   const MaterialObject *getMaterial(const std::string& materialPath) const;
+  const std::map< BSResourceID, const MaterialObject * >& getMaterials() const
+  {
+    return matFileObjectMap;
+  }
   void getJSONMaterial(std::string& jsonBuf,
                        const std::string& materialPath) const;
+  void loadJSONFile(const unsigned char *fileData, size_t fileSize);
+  void loadJSONFile(const char *fileName);
 };
+
+inline bool BSMaterialsCDB::CDBObject::boolValue() const
+{
+  return static_cast< const CDBObject_Bool * >(this)->value;
+}
+
+inline std::int32_t BSMaterialsCDB::CDBObject::intValue() const
+{
+  return static_cast< const CDBObject_Int * >(this)->value;
+}
+
+inline std::uint32_t BSMaterialsCDB::CDBObject::uintValue() const
+{
+  return static_cast< const CDBObject_UInt * >(this)->value;
+}
+
+inline std::int64_t BSMaterialsCDB::CDBObject::int64Value() const
+{
+  return static_cast< const CDBObject_Int64 * >(this)->value;
+}
+
+inline std::uint64_t BSMaterialsCDB::CDBObject::uint64Value() const
+{
+  return static_cast< const CDBObject_UInt64 * >(this)->value;
+}
+
+inline float BSMaterialsCDB::CDBObject::floatValue() const
+{
+  return static_cast< const CDBObject_Float * >(this)->value;
+}
+
+inline double BSMaterialsCDB::CDBObject::doubleValue() const
+{
+  return static_cast< const CDBObject_Double * >(this)->value;
+}
+
+inline const char * BSMaterialsCDB::CDBObject::stringValue() const
+{
+  return static_cast< const CDBObject_String * >(this)->value;
+}
+
+inline BSMaterialsCDB::CDBObject ** BSMaterialsCDB::CDBObject::children()
+{
+  return static_cast< CDBObject_Compound * >(this)->children;
+}
+
+inline const BSMaterialsCDB::CDBObject * const *
+    BSMaterialsCDB::CDBObject::children() const
+{
+  return static_cast< const CDBObject_Compound * >(this)->children;
+}
+
+inline const BSMaterialsCDB::MaterialObject *
+    BSMaterialsCDB::CDBObject::linkedObject() const
+{
+  return static_cast< const CDBObject_Link * >(this)->objectPtr;
+}
 
 #endif
 

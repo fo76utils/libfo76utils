@@ -702,8 +702,8 @@ const CE2Material * CE2MaterialDB::findMaterial(
     const std::string& fileName) const
 {
   BSMaterialsCDB::BSResourceID  tmpID(fileName);
-  std::uint64_t tmp = (std::uint64_t(tmpID.ext) << 32) | tmpID.dir;
-  std::uint32_t e = tmpID.file;
+  std::uint64_t tmp = (std::uint64_t(tmpID.dir) << 32) | tmpID.file;
+  std::uint32_t e = tmpID.ext;
   std::uint64_t h = 0xFFFFFFFFU;
   hashFunctionUInt64(h, tmp);
   hashFunctionUInt64(h, e);

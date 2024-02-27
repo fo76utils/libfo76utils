@@ -38,7 +38,7 @@ BSMaterialsCDB::BSResourceID::BSResourceID(const std::string& fileName)
     }
     i++;
   }
-  ext = crcValue;
+  dir = crcValue;
   crcValue = 0U;
   for ( ; i < extPos; i++)
   {
@@ -48,18 +48,18 @@ BSMaterialsCDB::BSResourceID::BSResourceID(const std::string& fileName)
       c = c | 0x20;                     // convert to lower case
     hashFunctionCRC32(crcValue, c);
   }
-  dir = crcValue;
+  file = crcValue;
   i++;
   if ((i + 3) <= fileName.length())
-    file = FileBuffer::readUInt32Fast(fileName.c_str() + i);
+    ext = FileBuffer::readUInt32Fast(fileName.c_str() + i);
   else if ((i + 2) <= fileName.length())
-    file = FileBuffer::readUInt16Fast(fileName.c_str() + i);
+    ext = FileBuffer::readUInt16Fast(fileName.c_str() + i);
   else if (i < fileName.length())
-    file = (unsigned char) fileName.c_str()[i];
+    ext = (unsigned char) fileName.c_str()[i];
   else
-    file = 0U;
+    ext = 0U;
   // convert extension to lower case
-  file = file | ((file >> 1) & 0x20202020U);
+  ext = ext | ((ext >> 1) & 0x20202020U);
 }
 
 BSMaterialsCDB::MaterialComponent& BSMaterialsCDB::findComponent(
@@ -123,43 +123,81 @@ void * BSMaterialsCDB::allocateSpace(size_t nBytes, size_t alignBytes)
     addr0 = reinterpret_cast< std::uintptr_t >(objectBuffers.back().data());
     addr = (addr0 + alignMask) & ~alignMask;
   }
-  objectBuffers.back().resize(size_t((addr + bytesRequired) - addr0));
+  objectBuffers.back().resize(size_t((addr + bytesRequired) - addr0), 0);
   unsigned char *p = reinterpret_cast< unsigned char * >(addr);
   return p;
 }
 
+const std::uint8_t BSMaterialsCDB::cdbObjectSizeAlignTable[38] =
+{
+  std::uint8_t(sizeof(CDBObject)), std::uint8_t(alignof(CDBObject)),
+  std::uint8_t(sizeof(CDBObject_String)),
+  std::uint8_t(alignof(CDBObject_String)),
+  std::uint8_t(sizeof(CDBObject_Compound)),
+  std::uint8_t(alignof(CDBObject_Compound)),
+  std::uint8_t(sizeof(CDBObject_Compound)),
+  std::uint8_t(alignof(CDBObject_Compound)),
+  std::uint8_t(sizeof(CDBObject_Compound)),
+  std::uint8_t(alignof(CDBObject_Compound)),
+  std::uint8_t(sizeof(CDBObject)), std::uint8_t(alignof(CDBObject)),
+  std::uint8_t(sizeof(CDBObject)), std::uint8_t(alignof(CDBObject)),
+  std::uint8_t(sizeof(CDBObject_Int)), std::uint8_t(alignof(CDBObject_Int)),
+  std::uint8_t(sizeof(CDBObject_UInt)), std::uint8_t(alignof(CDBObject_UInt)),
+  std::uint8_t(sizeof(CDBObject_Int)), std::uint8_t(alignof(CDBObject_Int)),
+  std::uint8_t(sizeof(CDBObject_UInt)), std::uint8_t(alignof(CDBObject_UInt)),
+  std::uint8_t(sizeof(CDBObject_Int)), std::uint8_t(alignof(CDBObject_Int)),
+  std::uint8_t(sizeof(CDBObject_UInt)), std::uint8_t(alignof(CDBObject_UInt)),
+  std::uint8_t(sizeof(CDBObject_Int64)), std::uint8_t(alignof(CDBObject_Int64)),
+  std::uint8_t(sizeof(CDBObject_UInt64)),
+  std::uint8_t(alignof(CDBObject_UInt64)),
+  std::uint8_t(sizeof(CDBObject_Bool)), std::uint8_t(alignof(CDBObject_Bool)),
+  std::uint8_t(sizeof(CDBObject_Float)), std::uint8_t(alignof(CDBObject_Float)),
+  std::uint8_t(sizeof(CDBObject_Double)),
+  std::uint8_t(alignof(CDBObject_Double)),
+  std::uint8_t(sizeof(CDBObject)), std::uint8_t(alignof(CDBObject))
+};
+
 BSMaterialsCDB::CDBObject * BSMaterialsCDB::allocateObject(
     std::uint32_t itemType, const CDBClassDef *classDef, size_t elementCnt)
 {
-  size_t  dataSize = sizeof(CDBObject);
+  size_t  dataSize, alignSize;
   size_t  childCnt = 0;
-  if (itemType == String_List || itemType == String_Map)
-    childCnt = elementCnt;
-  else if (itemType == String_Ref)
-    childCnt = 1;
-  else if (classDef)
-    childCnt = classDef->fieldCnt;
-  if (childCnt > 1)
-    dataSize += (sizeof(CDBObject *) * (childCnt - 1));
-  CDBObject *o =
-      reinterpret_cast< CDBObject * >(allocateSpace(dataSize,
-                                                    alignof(CDBObject)));
-  o->type = std::uint16_t(itemType);
-  o->childCnt = std::uint16_t(childCnt);
-  o->refCnt = 0;
-  if (childCnt)
+  if (itemType > BSReflStream::String_Unknown ||
+      (itemType >= BSReflStream::String_List &&
+       itemType <= BSReflStream::String_Ref))
   {
-    for (size_t i = 0; i < childCnt; i++)
-      o->data.children[i] = nullptr;
-  }
-  else if (itemType == String_String)
-  {
-    o->data.stringValue = "";
+    if (itemType > BSReflStream::String_Unknown && classDef)
+      childCnt = classDef->fieldCnt;
+    else if (itemType < BSReflStream::String_Ref)
+      childCnt = elementCnt;
+    else
+      childCnt = 1;
+    dataSize = sizeof(CDBObject_Compound);
+    alignSize = alignof(CDBObject_Compound);
+    if (childCnt > 1)
+      dataSize += (sizeof(CDBObject *) * (childCnt - 1));
   }
   else
   {
-    o->data.uint64Value = 0U;
+    dataSize = cdbObjectSizeAlignTable[itemType << 1];
+    alignSize = cdbObjectSizeAlignTable[(itemType << 1) + 1];
   }
+  CDBObject *o =
+      reinterpret_cast< CDBObject * >(allocateSpace(dataSize, alignSize));
+  o->type = std::uint16_t(itemType);
+  o->childCnt = std::uint16_t(childCnt);
+  if (itemType == BSReflStream::String_String)
+    static_cast< CDBObject_String * >(o)->value = "";
+#if !(defined(__i386__) || defined(__x86_64__) || defined(__x86_64))
+  else if (itemType == BSReflStream::String_Float)
+    static_cast< CDBObject_Float * >(o)->value = 0.0f;
+  else if (itemType == BSReflStream::String_Double)
+    static_cast< CDBObject_Double * >(o)->value = 0.0;
+  else if (itemType == BSReflStream::String_BSComponentDB2_ID)
+    static_cast< CDBObject_Link * >(o)->objectPtr = nullptr;
+  for (size_t i = 0; i < childCnt; i++)
+    o->children()[i] = nullptr;
+#endif
   return o;
 }
 
@@ -168,8 +206,8 @@ void BSMaterialsCDB::copyObject(CDBObject*& o)
   o->refCnt++;
   for (std::uint32_t i = 0U; i < o->childCnt; i++)
   {
-    if (o->data.children[i])
-      copyObject(o->data.children[i]);
+    if (o->children()[i])
+      copyObject(o->children()[i]);
   }
 }
 
@@ -190,8 +228,11 @@ void BSMaterialsCDB::copyBaseObject(MaterialObject& o)
     tmp->className = i->className;
     tmp->o = i->o;
 #if !CDB_COPY_CONTROLLERS
-    if (tmp->className == String_BSBind_ControllerComponent) [[unlikely]]
+    if (tmp->className
+        == BSReflStream::String_BSBind_ControllerComponent) [[unlikely]]
+    {
       tmp->o = allocateObject(tmp->className, getClassDef(tmp->className), 0);
+    }
     else
 #endif
     if (tmp->o) [[likely]]
@@ -202,54 +243,69 @@ void BSMaterialsCDB::copyBaseObject(MaterialObject& o)
   }
 }
 
-void BSMaterialsCDB::loadItem(CDBObject*& o, Chunk& chunkBuf, bool isDiff,
-                              std::uint32_t itemType)
+void BSMaterialsCDB::loadItem(
+    CDBObject*& o, BSReflStream& cdbFile, BSReflStream::Chunk& chunkBuf,
+    bool isDiff, std::uint32_t itemType)
 {
   if (o && o->refCnt)
   {
     o->refCnt--;
-    size_t  dataSize = sizeof(CDBObject);
-    if (o->childCnt > 1)
-      dataSize += (sizeof(CDBObject *) * (o->childCnt - 1));
+    size_t  dataSize, alignSize;
+    if (o->type > BSReflStream::String_Unknown)
+    {
+      dataSize = sizeof(CDBObject_Compound);
+      alignSize = alignof(CDBObject_Compound);
+    }
+    else
+    {
+      dataSize = cdbObjectSizeAlignTable[o->type << 1];
+      alignSize = cdbObjectSizeAlignTable[(o->type << 1) + 1];
+    }
+    size_t  childCnt = o->childCnt;
+    if (childCnt > 1)
+      dataSize += (sizeof(CDBObject *) * (childCnt - 1));
     CDBObject *p =
-        reinterpret_cast< CDBObject * >(
-            allocateSpace(dataSize, alignof(CDBObject)));
+        reinterpret_cast< CDBObject * >(allocateSpace(dataSize, alignSize));
     std::memcpy(p, o, dataSize);
     o = p;
     o->refCnt = 0;
   }
   const CDBClassDef *classDef = nullptr;
-  if (itemType > String_Unknown)
+  if (itemType > BSReflStream::String_Unknown)
   {
     classDef = getClassDef(itemType);
     if (!classDef)
-      itemType = String_Unknown;
+      itemType = BSReflStream::String_Unknown;
   }
   if (!(o && o->type == itemType))
   {
-    if (!(itemType == String_List || itemType == String_Map))
+    if (!(itemType == BSReflStream::String_List ||
+          itemType == BSReflStream::String_Map))
+    {
       o = allocateObject(itemType, classDef, 0);
+    }
   }
-  if (itemType > String_Unknown)
+  if (itemType > BSReflStream::String_Unknown)
   {
     unsigned int  nMax = classDef->fieldCnt;
     if (classDef->isUser) [[unlikely]]
     {
-      Chunk userBuf;
-      unsigned int  userChunkType = readChunk(userBuf);
-      if (userChunkType != ChunkType_USER && userChunkType != ChunkType_USRD)
+      BSReflStream::Chunk userBuf;
+      unsigned int  userChunkType = cdbFile.readChunk(userBuf);
+      if (userChunkType != BSReflStream::ChunkType_USER &&
+          userChunkType != BSReflStream::ChunkType_USRD)
       {
         throw FO76UtilsError("unexpected chunk type in CDB file at 0x%08x",
-                             (unsigned int) getPosition());
+                             (unsigned int) cdbFile.getPosition());
       }
-      isDiff = (userChunkType == ChunkType_USRD);
-      std::uint32_t className1 = findString(userBuf.readUInt32());
+      isDiff = (userChunkType == BSReflStream::ChunkType_USRD);
+      std::uint32_t className1 = cdbFile.findString(userBuf.readUInt32());
       if (className1 != itemType)
       {
         throw FO76UtilsError("USER chunk has unexpected type at 0x%08x",
-                             (unsigned int) getPosition());
+                             (unsigned int) cdbFile.getPosition());
       }
-      std::uint32_t className2 = findString(userBuf.readUInt32());
+      std::uint32_t className2 = cdbFile.findString(userBuf.readUInt32());
       if (className2 == className1)
       {
         // no type conversion
@@ -257,31 +313,31 @@ void BSMaterialsCDB::loadItem(CDBObject*& o, Chunk& chunkBuf, bool isDiff,
         for (unsigned int n = 0U - 1U;
              userBuf.getFieldNumber(n, nMax, isDiff); )
         {
-          loadItem(o->data.children[n], userBuf, isDiff,
+          loadItem(o->children()[n], cdbFile, userBuf, isDiff,
                    classDef->fields[n].type);
         }
       }
-      else if (className2 < String_Unknown)
+      else if (className2 < BSReflStream::String_Unknown)
       {
         if (!o->childCnt)
         {
           o->childCnt++;
-          o->data.children[0] = nullptr;
+          o->children()[0] = nullptr;
         }
         unsigned int  n = 0U;
         do
         {
-          loadItem(o->data.children[n], userBuf, isDiff, className2);
-          className2 = findString(userBuf.readUInt32());
+          loadItem(o->children()[n], cdbFile, userBuf, isDiff, className2);
+          className2 = cdbFile.findString(userBuf.readUInt32());
         }
-        while (++n < nMax && className2 < String_Unknown);
+        while (++n < nMax && className2 < BSReflStream::String_Unknown);
       }
       return;
     }
     nMax--;
-    if (itemType == String_BSComponentDB2_ID) [[unlikely]]
+    if (itemType == BSReflStream::String_BSComponentDB2_ID) [[unlikely]]
     {
-      if (!nMax && classDef->fields[0].type == String_UInt32)
+      if (!nMax && classDef->fields[0].type == BSReflStream::String_UInt32)
       {
         std::uint32_t objectID = 0U;
         for (unsigned int n = 0U - 1U; chunkBuf.getFieldNumber(n, 0U, isDiff); )
@@ -290,18 +346,21 @@ void BSMaterialsCDB::loadItem(CDBObject*& o, Chunk& chunkBuf, bool isDiff,
             break;
         }
         o->childCnt = 0;
-        o->data.objectPtr = findObject(objectID);
-        return;
+        static_cast< CDBObject_Link * >(o)->objectPtr = findObject(objectID);
       }
+      return;
     }
     for (unsigned int n = 0U - 1U; chunkBuf.getFieldNumber(n, nMax, isDiff); )
-      loadItem(o->data.children[n], chunkBuf, isDiff, classDef->fields[n].type);
+    {
+      loadItem(o->children()[n], cdbFile, chunkBuf, isDiff,
+               classDef->fields[n].type);
+    }
     return;
   }
   FileBuffer& buf2 = *(static_cast< FileBuffer * >(&chunkBuf));
   switch (itemType)
   {
-    case String_String:
+    case BSReflStream::String_String:
       {
         unsigned int  len = buf2.readUInt16();
         if ((buf2.getPosition() + std::uint64_t(len)) > buf2.size())
@@ -310,26 +369,27 @@ void BSMaterialsCDB::loadItem(CDBObject*& o, Chunk& chunkBuf, bool isDiff,
             reinterpret_cast< char * >(allocateSpace(len + 1U, sizeof(char)));
         std::memcpy(s, buf2.getReadPtr(), len);
         s[len] = '\0';
-        o->data.stringValue = s;
+        static_cast< CDBObject_String * >(o)->value = s;
         buf2.setPosition(buf2.getPosition() + len);
       }
       break;
-    case String_List:
-    case String_Map:
+    case BSReflStream::String_List:
+    case BSReflStream::String_Map:
       {
-        Chunk listBuf;
-        unsigned int  chunkType = readChunk(listBuf);
-        bool    isMap = (itemType == String_Map);
-        if (chunkType != (!isMap ? ChunkType_LIST : ChunkType_MAPC))
+        BSReflStream::Chunk listBuf;
+        unsigned int  chunkType = cdbFile.readChunk(listBuf);
+        bool    isMap = (itemType == BSReflStream::String_Map);
+        if (chunkType != (!isMap ? BSReflStream::ChunkType_LIST
+                                   : BSReflStream::ChunkType_MAPC))
         {
           throw FO76UtilsError("unexpected chunk type in CDB file at 0x%08x",
-                               (unsigned int) getPosition());
+                               (unsigned int) cdbFile.getPosition());
         }
         std::uint32_t classNames[2];
-        classNames[0] = findString(listBuf.readUInt32());
+        classNames[0] = cdbFile.findString(listBuf.readUInt32());
         classNames[1] = classNames[0];
         if (isMap)
-          classNames[1] = findString(listBuf.readUInt32());
+          classNames[1] = cdbFile.findString(listBuf.readUInt32());
         std::uint64_t listSize = 0U;
         if ((listBuf.getPosition() + 4ULL) <= listBuf.size())
           listSize = listBuf.readUInt32Fast();
@@ -337,12 +397,17 @@ void BSMaterialsCDB::loadItem(CDBObject*& o, Chunk& chunkBuf, bool isDiff,
         std::uint32_t n = 0U;
         bool    appendingItems = false;
         if (isDiff && o && o->type == itemType && o->childCnt &&
-            o->data.children[0]->type == classNames[0])
+            o->children()[0]->type == classNames[0])
         {
           if (!isMap)
-            appendingItems = (std::uint32_t(classNames[0] - String_Int8) > 11U);
+          {
+            appendingItems = (std::uint32_t(classNames[0]
+                                            - BSReflStream::String_Int8) > 11U);
+          }
           else
-            appendingItems = (o->data.children[1]->type == classNames[1]);
+          {
+            appendingItems = (o->children()[1]->type == classNames[1]);
+          }
           if (appendingItems)
             listSize = listSize + o->childCnt;
         }
@@ -356,23 +421,25 @@ void BSMaterialsCDB::loadItem(CDBObject*& o, Chunk& chunkBuf, bool isDiff,
           {
             std::uint32_t prvSize = o->childCnt;
             for ( ; n < prvSize; n++)
-              p->data.children[n] = o->data.children[n];
+              p->children()[n] = o->children()[n];
           }
           o = p;
         }
         o->childCnt = std::uint16_t(listSize);
         for ( ; n < listSize; n++)
         {
-          loadItem(o->data.children[n], listBuf, isDiff, classNames[n & 1U]);
-          if (isMap && !(n & 1U) && classNames[0] == String_String)
+          loadItem(o->children()[n], cdbFile, listBuf, isDiff,
+                   classNames[n & 1U]);
+          if (isMap && !(n & 1U) &&
+              classNames[0] == BSReflStream::String_String)
           {
             // check for duplicate keys
             for (std::uint32_t k = 0U; k < n; k = k + 2U)
             {
-              if (std::strcmp(o->data.children[k]->data.stringValue,
-                              o->data.children[n]->data.stringValue) == 0)
+              if (std::strcmp(o->children()[k]->stringValue(),
+                              o->children()[n]->stringValue()) == 0)
               {
-                loadItem(o->data.children[k + 1U], listBuf, isDiff,
+                loadItem(o->children()[k + 1U], cdbFile, listBuf, isDiff,
                          classNames[1]);
                 listSize = listSize - 2U;
                 o->childCnt = std::uint16_t(listSize);
@@ -385,46 +452,48 @@ void BSMaterialsCDB::loadItem(CDBObject*& o, Chunk& chunkBuf, bool isDiff,
         return;
       }
       break;
-    case String_Ref:
+    case BSReflStream::String_Ref:
       {
-        std::uint32_t refType = findString(buf2.readUInt32());
-        loadItem(o->data.children[0], chunkBuf, isDiff, refType);
+        std::uint32_t refType = cdbFile.findString(buf2.readUInt32());
+        loadItem(o->children()[0], cdbFile, chunkBuf, isDiff, refType);
         return;
       }
       break;
-    case String_Int8:
-      o->data.int8Value = std::int8_t(buf2.readUInt8());
+    case BSReflStream::String_Int8:
+      static_cast< CDBObject_Int * >(o)->value = std::int8_t(buf2.readUInt8());
       break;
-    case String_UInt8:
-      o->data.uint8Value = buf2.readUInt8();
+    case BSReflStream::String_UInt8:
+      static_cast< CDBObject_UInt * >(o)->value = buf2.readUInt8();
       break;
-    case String_Int16:
-      o->data.int16Value = std::int16_t(buf2.readUInt16());
+    case BSReflStream::String_Int16:
+      static_cast< CDBObject_Int * >(o)->value =
+          std::int16_t(buf2.readUInt16());
       break;
-    case String_UInt16:
-      o->data.uint16Value = buf2.readUInt16();
+    case BSReflStream::String_UInt16:
+      static_cast< CDBObject_UInt * >(o)->value = buf2.readUInt16();
       break;
-    case String_Int32:
-      o->data.int32Value = buf2.readInt32();
+    case BSReflStream::String_Int32:
+      static_cast< CDBObject_Int * >(o)->value = buf2.readInt32();
       break;
-    case String_UInt32:
-      o->data.uint32Value = buf2.readUInt32();
+    case BSReflStream::String_UInt32:
+      static_cast< CDBObject_UInt * >(o)->value = buf2.readUInt32();
       break;
-    case String_Int64:
-      o->data.int64Value = std::int64_t(buf2.readUInt64());
+    case BSReflStream::String_Int64:
+      static_cast< CDBObject_Int64 * >(o)->value =
+          std::int64_t(buf2.readUInt64());
       break;
-    case String_UInt64:
-      o->data.uint64Value = buf2.readUInt64();
+    case BSReflStream::String_UInt64:
+      static_cast< CDBObject_UInt64 * >(o)->value = buf2.readUInt64();
       break;
-    case String_Bool:
-      o->data.boolValue = bool(buf2.readUInt8());
+    case BSReflStream::String_Bool:
+      static_cast< CDBObject_Bool * >(o)->value = bool(buf2.readUInt8());
       break;
-    case String_Float:
-      o->data.floatValue = buf2.readFloat();
+    case BSReflStream::String_Float:
+      static_cast< CDBObject_Float * >(o)->value = buf2.readFloat();
       break;
-    case String_Double:
+    case BSReflStream::String_Double:
       // FIXME: implement this in a portable way
-      o->data.doubleValue =
+      static_cast< CDBObject_Double * >(o)->value =
           std::bit_cast< double, std::uint64_t >(buf2.readUInt64());
       break;
     default:
@@ -433,100 +502,100 @@ void BSMaterialsCDB::loadItem(CDBObject*& o, Chunk& chunkBuf, bool isDiff,
   }
 }
 
-void BSMaterialsCDB::readAllChunks()
+void BSMaterialsCDB::readAllChunks(BSReflStream& cdbFile)
 {
-  objectBuffers.emplace_back();
-  objectBuffers.back().reserve(65536);
+  if (classes.size() < 1)
+  {
+    classes.resize(512);
+    for (size_t i = 0; i < 512; i++)
+      classes[i].className = 0U;
+  }
+  if (objectBuffers.size() < 1)
+  {
+    objectBuffers.emplace_back();
+    objectBuffers.back().reserve(65536);
+  }
+
   std::vector< MaterialObject * > objectTable;
   std::vector< std::pair< std::uint32_t, std::uint32_t > >  componentInfo;
-  Chunk chunkBuf;
+  BSReflStream::Chunk chunkBuf;
   unsigned int  chunkType;
   size_t  componentID = 0;
   size_t  componentCnt = 0;
-  size_t  classCnt = 0;
-  while ((chunkType = readChunk(chunkBuf)) != 0U)
+  while ((chunkType = cdbFile.readChunk(chunkBuf)) != 0U)
   {
-    std::uint32_t className = String_None;
-    if (chunkType != ChunkType_TYPE && chunkBuf.size() >= 4) [[likely]]
-      className = findString(chunkBuf.readUInt32Fast());
-    if (chunkType == ChunkType_DIFF || chunkType == ChunkType_OBJT) [[likely]]
+    std::uint32_t className = BSReflStream::String_None;
+    if (chunkType != BSReflStream::ChunkType_TYPE &&
+        chunkBuf.size() >= 4) [[likely]]
     {
-      bool    isDiff = (chunkType == ChunkType_DIFF);
+      className = cdbFile.findString(chunkBuf.readUInt32Fast());
+    }
+    if (chunkType == BSReflStream::ChunkType_DIFF ||
+        chunkType == BSReflStream::ChunkType_OBJT) [[likely]]
+    {
+      bool    isDiff = (chunkType == BSReflStream::ChunkType_DIFF);
       if (componentID < componentCnt) [[likely]]
       {
         std::uint32_t dbID = componentInfo[componentID].first;
         std::uint32_t key = componentInfo[componentID].second;
         MaterialObject  *i = findObject(dbID);
-        if (i && className > String_Unknown)
+        if (i && className > BSReflStream::String_Unknown)
         {
           if (i->baseObject && i->baseObject->baseObject)
             copyBaseObject(*i);
           loadItem(findComponent(*i, key, className).o,
-                   chunkBuf, isDiff, className);
+                   cdbFile, chunkBuf, isDiff, className);
         }
         componentID++;
       }
       continue;
     }
-    if (chunkType == ChunkType_CLAS)
+    if (chunkType == BSReflStream::ChunkType_TYPE) [[unlikely]]
     {
-      if (className < String_Unknown)
-        errorMessage("invalid class ID in CDB file");
-      if (className == String_Unknown)
-        continue;
-      if (classCnt-- < 1)
-        errorMessage("unexpected CLAS chunk in CDB file");
-      std::uint32_t h = 0xFFFFFFFFU;
-      hashFunctionCRC32C< std::uint32_t >(h, className);
-      std::uint32_t m = std::uint32_t(classes.size() - 1);
-      for (h = h & m; classes[h].className; h = (h + 1U) & m)
+      for (size_t classCnt = chunkBuf.readUInt32(); classCnt > 0; classCnt--)
       {
-        if (classes[h].className == className)
-          break;
-      }
-      CDBClassDef&  classDef = classes[h];
-      classDef.className = className;
-      (void) chunkBuf.readUInt32();     // classVersion
-      unsigned int  classFlags = chunkBuf.readUInt16();
-      classDef.isUser = bool(classFlags & 4U);
-      classDef.fieldCnt = chunkBuf.readUInt16();
-      classDef.fields =
-          reinterpret_cast< CDBClassDef::Field * >(
-              allocateSpace(sizeof(CDBClassDef::Field) * classDef.fieldCnt,
-                            alignof(CDBClassDef::Field)));
-      for (size_t i = 0; i < classDef.fieldCnt; i++)
-      {
-        CDBClassDef::Field& f =
-            const_cast< CDBClassDef::Field * >(classDef.fields)[i];
-        f.name = findString(chunkBuf.readUInt32());
-        if (f.name < String_Unknown)
-          errorMessage("invalid field name in class definition in CDB file");
-        f.type = findString(chunkBuf.readUInt32());
-        (void) chunkBuf.readUInt16();   // dataOffset
-        (void) chunkBuf.readUInt16();   // dataSize
+        if ((chunkType = cdbFile.readChunk(chunkBuf))
+            != BSReflStream::ChunkType_CLAS)
+        {
+          throw FO76UtilsError("unexpected chunk type in CDB file at 0x%08x",
+                               (unsigned int) cdbFile.getPosition());
+        }
+        className = BSReflStream::String_None;
+        if (chunkBuf.size() >= 4) [[likely]]
+          className = cdbFile.findString(chunkBuf.readUInt32Fast());
+        if (className < BSReflStream::String_Unknown)
+          errorMessage("invalid class ID in CDB file");
+        if (className == BSReflStream::String_Unknown)
+          continue;
+        CDBClassDef&  classDef = allocateClassDef(className);
+        (void) chunkBuf.readUInt32();   // classVersion
+        unsigned int  classFlags = chunkBuf.readUInt16();
+        classDef.isUser = bool(classFlags & 4U);
+        classDef.fieldCnt = chunkBuf.readUInt16();
+        classDef.fields =
+            reinterpret_cast< CDBClassDef::Field * >(
+                allocateSpace(sizeof(CDBClassDef::Field) * classDef.fieldCnt,
+                              alignof(CDBClassDef::Field)));
+        for (size_t i = 0; i < classDef.fieldCnt; i++)
+        {
+          CDBClassDef::Field& f =
+              const_cast< CDBClassDef::Field * >(classDef.fields)[i];
+          f.name = cdbFile.findString(chunkBuf.readUInt32());
+          if (f.name < BSReflStream::String_Unknown)
+            errorMessage("invalid field name in class definition in CDB file");
+          f.type = cdbFile.findString(chunkBuf.readUInt32());
+          (void) chunkBuf.readUInt16(); // dataOffset
+          (void) chunkBuf.readUInt16(); // dataSize
+        }
       }
       continue;
     }
-    if (chunkType == ChunkType_TYPE) [[unlikely]]
-    {
-      classCnt = chunkBuf.readUInt32();
-      if (classCnt > 4096)
-        errorMessage("invalid number of class definitions in CDB file");
-      size_t  m = 16;
-      while (m < (classCnt << 2))
-        m = m << 1;
-      classes.clear();
-      classes.resize(m);
-      for (size_t i = 0; i < m; i++)
-        classes[i].className = 0U;
-      continue;
-    }
-    if (chunkType != ChunkType_LIST)
+    if (chunkType != BSReflStream::ChunkType_LIST)
       continue;
     std::uint32_t n = 0U;
     if (chunkBuf.size() >= 8)
       n = chunkBuf.readUInt32Fast();
-    if (className == String_BSComponentDB2_DBFileIndex_ObjectInfo)
+    if (className == BSReflStream::String_BSComponentDB2_DBFileIndex_ObjectInfo)
     {
       if (n > ((chunkBuf.size() - chunkBuf.getPosition()) / 21))
         errorMessage("unexpected end of LIST chunk in material database");
@@ -546,9 +615,9 @@ void BSMaterialsCDB::readAllChunks()
       for (std::uint32_t i = 0U; i < n; i++)
       {
         BSResourceID  persistentID;
-        persistentID.dir = chunkBuf.readUInt32();
         persistentID.file = chunkBuf.readUInt32();
         persistentID.ext = chunkBuf.readUInt32();
+        persistentID.dir = chunkBuf.readUInt32();
         std::uint32_t dbID = chunkBuf.readUInt32();
         if (!(dbID && dbID <= maxObjID))
           errorMessage("invalid object ID in material database");
@@ -568,7 +637,8 @@ void BSMaterialsCDB::readAllChunks()
         o->next = nullptr;
       }
     }
-    else if (className == String_BSComponentDB2_DBFileIndex_ComponentInfo)
+    else if (className
+             == BSReflStream::String_BSComponentDB2_DBFileIndex_ComponentInfo)
     {
       componentID = 0;
       componentCnt = 0;
@@ -580,7 +650,8 @@ void BSMaterialsCDB::readAllChunks()
         componentCnt++;
       }
     }
-    else if (className == String_BSComponentDB2_DBFileIndex_EdgeInfo)
+    else if (className
+             == BSReflStream::String_BSComponentDB2_DBFileIndex_EdgeInfo)
     {
       if (n > ((chunkBuf.size() - chunkBuf.getPosition()) / 12))
         errorMessage("unexpected end of LIST chunk in material database");
@@ -616,9 +687,31 @@ void BSMaterialsCDB::readAllChunks()
       continue;
     if (p->baseObject && p->baseObject->baseObject)
       copyBaseObject(*p);
-    if (!p->parent && p->persistentID.file == 0x0074616DU)      // "mat\0"
+    if (!p->parent && p->persistentID.ext == 0x0074616DU)       // "mat\0"
       matFileObjectMap[p->persistentID] = p;
   }
+}
+
+BSMaterialsCDB::CDBClassDef& BSMaterialsCDB::allocateClassDef(
+    std::uint32_t className)
+{
+  std::uint32_t h = 0xFFFFFFFFU;
+  hashFunctionCRC32C< std::uint32_t >(h, className);
+  size_t  n = classes.size();
+  std::uint32_t m = std::uint32_t(n - 1);
+  for (h = h & m; true; n--, h = (h + 1U) & m)
+  {
+    if (n < 1) [[unlikely]]
+    {
+      errorMessage("BSMaterialsCDB: internal error: "
+                   "too many class definitions");
+    }
+    if (!classes[h].className || classes[h].className == className)
+      break;
+  }
+  CDBClassDef&  classDef = classes[h];
+  classDef.className = className;
+  return classDef;
 }
 
 void BSMaterialsCDB::dumpObject(
@@ -629,24 +722,25 @@ void BSMaterialsCDB::dumpObject(
     printToString(s, "null");
     return;
   }
-  if (o->type > String_Unknown)
+  if (o->type > BSReflStream::String_Unknown)
   {
     const CDBClassDef *classDef = getClassDef(o->type);
-    if (o->type == String_BSComponentDB2_ID) [[unlikely]]
+    if (o->type == BSReflStream::String_BSComponentDB2_ID) [[unlikely]]
     {
+      const MaterialObject  *p = o->linkedObject();
       if (classDef && classDef->fieldCnt == 1 &&
-          classDef->fields[0].type == String_UInt32)
+          classDef->fields[0].type == BSReflStream::String_UInt32)
       {
-        if (!o->data.objectPtr)
+        if (!p)
         {
           printToString(s, "\"\"");
         }
         else
         {
           printToString(s, "\"res:%08X:%08X:%08X\"",
-                        (unsigned int) o->data.objectPtr->persistentID.ext,
-                        (unsigned int) o->data.objectPtr->persistentID.dir,
-                        (unsigned int) o->data.objectPtr->persistentID.file);
+                        (unsigned int) p->persistentID.dir,
+                        (unsigned int) p->persistentID.file,
+                        (unsigned int) p->persistentID.ext);
         }
         return;
       }
@@ -661,9 +755,9 @@ void BSMaterialsCDB::dumpObject(
       int     fieldNum = -1;
       for (std::uint32_t i = 0U; i < o->childCnt; i++)
       {
-        if (!o->data.children[i])
+        if (!o->children()[i])
           continue;
-        int     tmpFieldNameID = String_None;
+        int     tmpFieldNameID = BSReflStream::String_None;
         if (classDef && i < classDef->fieldCnt)
           tmpFieldNameID = int(classDef->fields[i].name);
         if (tmpFieldNameID > prvFieldNameID && tmpFieldNameID < fieldNameID)
@@ -676,20 +770,23 @@ void BSMaterialsCDB::dumpObject(
         break;
       prvFieldNameID = fieldNameID;
       printToString(s, "\n%*s\"%s\": ",
-                    indentCnt + 4, "", stringTable[fieldNameID]);
-      dumpObject(s, o->data.children[fieldNum], indentCnt + 4);
+                    indentCnt + 4, "", BSReflStream::stringTable[fieldNameID]);
+      dumpObject(s, o->children()[fieldNum], indentCnt + 4);
       printToString(s, ",");
     }
 #else
     for (std::uint32_t fieldNum = 0U; fieldNum < o->childCnt; fieldNum++)
     {
-      if (!o->data.children[fieldNum])
+      if (!o->children()[fieldNum])
         continue;
       const char  *fieldNameStr = "null";
       if (classDef && fieldNum < classDef->fieldCnt)
-        fieldNameStr = stringTable[classDef->fields[fieldNum].name];
+      {
+        fieldNameStr =
+            BSReflStream::stringTable[classDef->fields[fieldNum].name];
+      }
       printToString(s, "\n%*s\"%s\": ", indentCnt + 4, "", fieldNameStr);
-      dumpObject(s, o->data.children[fieldNum], indentCnt + 4);
+      dumpObject(s, o->children()[fieldNum], indentCnt + 4);
       printToString(s, ",");
     }
 #endif
@@ -699,20 +796,20 @@ void BSMaterialsCDB::dumpObject(
       printToString(s, "%*s", indentCnt + 2, "");
     }
     printToString(s, "},\n%*s\"Type\": \"%s\"\n",
-                  indentCnt + 2, "", stringTable[o->type]);
+                  indentCnt + 2, "", BSReflStream::stringTable[o->type]);
     printToString(s, "%*s}", indentCnt, "");
     return;
   }
   switch (o->type)
   {
-    case String_None:
+    case BSReflStream::String_None:
       printToString(s, "null");
       break;
-    case String_String:
+    case BSReflStream::String_String:
       s += '"';
-      for (size_t i = 0; o->data.stringValue[i]; i++)
+      for (size_t i = 0; o->stringValue()[i]; i++)
       {
-        char    c = o->data.stringValue[i];
+        char    c = o->stringValue()[i];
         if ((unsigned char) c < 0x20 || c == '"' || c == '\\')
         {
           s += '\\';
@@ -746,12 +843,12 @@ void BSMaterialsCDB::dumpObject(
       }
       s += '"';
       break;
-    case String_List:
+    case BSReflStream::String_List:
       printToString(s, "{\n%*s\"Data\": [", indentCnt + 2, "");
       for (std::uint32_t i = 0U; i < o->childCnt; i++)
       {
         printToString(s, "\n%*s", indentCnt + 4, "");
-        dumpObject(s, o->data.children[i], indentCnt + 4);
+        dumpObject(s, o->children()[i], indentCnt + 4);
         if ((i + 1U) < o->childCnt)
           printToString(s, ",");
         else
@@ -761,13 +858,13 @@ void BSMaterialsCDB::dumpObject(
       if (o->childCnt)
       {
         std::uint32_t elementType = 0U;
-        if (o->data.children[0])
-          elementType = o->data.children[0]->type;
-        const char  *elementTypeStr = stringTable[elementType];
-        if (elementType && elementType < String_Ref)
+        if (o->children()[0])
+          elementType = o->children()[0]->type;
+        const char  *elementTypeStr = BSReflStream::stringTable[elementType];
+        if (elementType && elementType < BSReflStream::String_Ref)
         {
-          elementTypeStr =
-              (elementType == String_String ? "BSFixedString" : "<collection>");
+          elementTypeStr = (elementType == BSReflStream::String_String ?
+                            "BSFixedString" : "<collection>");
         }
         printToString(s, "%*s\"ElementType\": \"%s\",\n",
                       indentCnt + 2, "", elementTypeStr);
@@ -775,17 +872,17 @@ void BSMaterialsCDB::dumpObject(
       printToString(s, "%*s\"Type\": \"<collection>\"\n", indentCnt + 2, "");
       printToString(s, "%*s}", indentCnt, "");
       break;
-    case String_Map:
+    case BSReflStream::String_Map:
       printToString(s, "{\n%*s\"Data\": [", indentCnt + 2, "");
       for (std::uint32_t i = 0U; i < o->childCnt; i++)
       {
         printToString(s, "\n%*s{", indentCnt + 4, "");
         printToString(s, "\n%*s\"Data\": {", indentCnt + 6, "");
         printToString(s, "\n%*s\"Key\": ", indentCnt + 8, "");
-        dumpObject(s, o->data.children[i], indentCnt + 8);
+        dumpObject(s, o->children()[i], indentCnt + 8);
         i++;
         printToString(s, ",\n%*s\"Value\": ", indentCnt + 8, "");
-        dumpObject(s, o->data.children[i], indentCnt + 8);
+        dumpObject(s, o->children()[i], indentCnt + 8);
         printToString(s, "\n%*s},", indentCnt + 6, "");
         printToString(s, "\n%*s\"Type\": \"StdMapType::Pair\"\n",
                       indentCnt + 6, "");
@@ -800,79 +897,63 @@ void BSMaterialsCDB::dumpObject(
       printToString(s, "%*s\"Type\": \"<collection>\"\n", indentCnt + 2, "");
       printToString(s, "%*s}", indentCnt, "");
       break;
-    case String_Ref:
+    case BSReflStream::String_Ref:
       printToString(s, "{\n%*s\"Data\": ", indentCnt + 2, "");
-      dumpObject(s, o->data.children[0], indentCnt + 2);
+      dumpObject(s, o->children()[0], indentCnt + 2);
       printToString(s, ",\n%*s\"Type\": \"<ref>\"\n", indentCnt + 2, "");
       printToString(s, "%*s}", indentCnt, "");
       break;
 #if CDB_JSON_QUOTE_NUMBERS
-    case String_Int8:
-      printToString(s, "\"%d\"", int(o->data.int8Value));
+    case BSReflStream::String_Int8:
+    case BSReflStream::String_Int16:
+    case BSReflStream::String_Int32:
+      printToString(s, "\"%d\"", int(o->intValue()));
       break;
-    case String_UInt8:
-      printToString(s, "\"%u\"", (unsigned int) o->data.uint8Value);
+    case BSReflStream::String_UInt8:
+    case BSReflStream::String_UInt16:
+    case BSReflStream::String_UInt32:
+      printToString(s, "\"%u\"", (unsigned int) o->uintValue());
       break;
-    case String_Int16:
-      printToString(s, "\"%d\"", int(o->data.int16Value));
+    case BSReflStream::String_Int64:
+      printToString(s, "\"%lld\"", (long long) o->int64Value());
       break;
-    case String_UInt16:
-      printToString(s, "\"%u\"", (unsigned int) o->data.uint16Value);
+    case BSReflStream::String_UInt64:
+      printToString(s, "\"%llu\"", (unsigned long long) o->uint64Value());
       break;
-    case String_Int32:
-      printToString(s, "\"%d\"", int(o->data.int32Value));
+    case BSReflStream::String_Bool:
+      printToString(s, "%s", (!o->boolValue() ? "\"false\"" : "\"true\""));
       break;
-    case String_UInt32:
-      printToString(s, "\"%u\"", (unsigned int) o->data.uint32Value);
+    case BSReflStream::String_Float:
+      printToString(s, "\"%f\"", o->floatValue());
       break;
-    case String_Int64:
-      printToString(s, "\"%lld\"", (long long) o->data.int64Value);
-      break;
-    case String_UInt64:
-      printToString(s, "\"%llu\"", (unsigned long long) o->data.uint64Value);
-      break;
-    case String_Bool:
-      printToString(s, "%s", (!o->data.boolValue ? "\"false\"" : "\"true\""));
-      break;
-    case String_Float:
-      printToString(s, "\"%f\"", o->data.floatValue);
-      break;
-    case String_Double:
-      printToString(s, "\"%f\"", o->data.doubleValue);
+    case BSReflStream::String_Double:
+      printToString(s, "\"%f\"", o->doubleValue());
       break;
 #else
-    case String_Int8:
-      printToString(s, "%d", int(o->data.int8Value));
+    case BSReflStream::String_Int8:
+    case BSReflStream::String_Int16:
+    case BSReflStream::String_Int32:
+      printToString(s, "%d", int(o->intValue()));
       break;
-    case String_UInt8:
-      printToString(s, "%u", (unsigned int) o->data.uint8Value);
+    case BSReflStream::String_UInt8:
+    case BSReflStream::String_UInt16:
+    case BSReflStream::String_UInt32:
+      printToString(s, "%u", (unsigned int) o->uintValue());
       break;
-    case String_Int16:
-      printToString(s, "%d", int(o->data.int16Value));
+    case BSReflStream::String_Int64:
+      printToString(s, "\"%lld\"", (long long) o->int64Value());
       break;
-    case String_UInt16:
-      printToString(s, "%u", (unsigned int) o->data.uint16Value);
+    case BSReflStream::String_UInt64:
+      printToString(s, "\"%llu\"", (unsigned long long) o->uint64Value());
       break;
-    case String_Int32:
-      printToString(s, "%d", int(o->data.int32Value));
+    case BSReflStream::String_Bool:
+      printToString(s, "%s", (!o->boolValue() ? "false" : "true"));
       break;
-    case String_UInt32:
-      printToString(s, "%u", (unsigned int) o->data.uint32Value);
+    case BSReflStream::String_Float:
+      printToString(s, "%.7g", o->floatValue());
       break;
-    case String_Int64:
-      printToString(s, "\"%lld\"", (long long) o->data.int64Value);
-      break;
-    case String_UInt64:
-      printToString(s, "\"%llu\"", (unsigned long long) o->data.uint64Value);
-      break;
-    case String_Bool:
-      printToString(s, "%s", (!o->data.boolValue ? "false" : "true"));
-      break;
-    case String_Float:
-      printToString(s, "%.7g", o->data.floatValue);
-      break;
-    case String_Double:
-      printToString(s, "%.14g", o->data.doubleValue);
+    case BSReflStream::String_Double:
+      printToString(s, "%.14g", o->doubleValue());
       break;
 #endif
     default:
@@ -956,24 +1037,24 @@ void BSMaterialsCDB::getJSONMaterial(
     if (i->parent)
     {
       printToString(jsonBuf, "      \"ID\": \"res:%08X:%08X:%08X\",\n",
-                    (unsigned int) i->persistentID.ext,
                     (unsigned int) i->persistentID.dir,
-                    (unsigned int) i->persistentID.file);
+                    (unsigned int) i->persistentID.file,
+                    (unsigned int) i->persistentID.ext);
     }
     const char  *parentStr = "";
     if (j)
     {
-      if (j->persistentID.dir == 0x7EA3660CU)
+      if (j->persistentID.file == 0x7EA3660CU)
         parentStr = "materials\\\\layered\\\\root\\\\layeredmaterials.mat";
-      else if (j->persistentID.dir == 0x8EBE84FFU)
+      else if (j->persistentID.file == 0x8EBE84FFU)
         parentStr = "materials\\\\layered\\\\root\\\\blenders.mat";
-      else if (j->persistentID.dir == 0x574A4CF3U)
+      else if (j->persistentID.file == 0x574A4CF3U)
         parentStr = "materials\\\\layered\\\\root\\\\layers.mat";
-      else if (j->persistentID.dir == 0x7D1E021BU)
+      else if (j->persistentID.file == 0x7D1E021BU)
         parentStr = "materials\\\\layered\\\\root\\\\materials.mat";
-      else if (j->persistentID.dir == 0x06F52154U)
+      else if (j->persistentID.file == 0x06F52154U)
         parentStr = "materials\\\\layered\\\\root\\\\texturesets.mat";
-      else if (j->persistentID.dir == 0x4298BB09U)
+      else if (j->persistentID.file == 0x4298BB09U)
         parentStr = "materials\\\\layered\\\\root\\\\uvstreams.mat";
     }
     printToString(jsonBuf, "      \"Parent\": \"%s\"\n    },\n", parentStr);
