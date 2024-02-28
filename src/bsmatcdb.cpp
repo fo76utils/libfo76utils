@@ -62,6 +62,36 @@ BSMaterialsCDB::BSResourceID::BSResourceID(const std::string& fileName)
   ext = ext | ((ext >> 1) & 0x20202020U);
 }
 
+void BSMaterialsCDB::BSResourceID::fromJSONString(const std::string& s)
+{
+  if (s.length() == 30 && s[12] == ':' && s[21] == ':' && s[26] != '.')
+  {
+    std::uint32_t tmp = FileBuffer::readUInt32Fast(s.c_str());
+    if ((tmp | ((tmp >> 1) & 0x20202020)) == 0x3A736572)        // "res:"
+    {
+      file = 0;
+      ext = 0;
+      dir = 0;
+      for (size_t i = 4; true; i++)
+      {
+        if (i == 12 || i == 21)
+          continue;
+        char    c = s[i];
+        if ((c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'))
+          c = char(c + 9);
+        else if (!(c >= '0' && c <= '9'))
+          break;
+        dir = (dir << 4) | ((file >> 28) & 0x0F);
+        file = ((file & 0x0FFFFFFF) << 4) | ((ext >> 28) & 0x0F);
+        ext = ((ext & 0x0FFFFFFF) << 4) | std::uint32_t(c & 0x0F);
+        if (i == 29)
+          return;
+      }
+    }
+  }
+  (void) new(this) BSResourceID(s);
+}
+
 BSMaterialsCDB::MaterialComponent& BSMaterialsCDB::findComponent(
     MaterialObject& o, std::uint32_t key, std::uint32_t className)
 {

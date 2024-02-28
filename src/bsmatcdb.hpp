@@ -5,6 +5,7 @@
 #include "common.hpp"
 #include "filebuf.hpp"
 #include "bsrefl.hpp"
+#include "jsonread.hpp"
 
 class BSMaterialsCDB
 {
@@ -18,6 +19,8 @@ class BSMaterialsCDB
     {
     }
     BSResourceID(const std::string& fileName);
+    // convert .mat file path or "res:dir:file:ext" format resource ID
+    void fromJSONString(const std::string& s);
     inline bool operator<(const BSResourceID& r) const
     {
       return (file < r.file || (file == r.file && ext < r.ext) ||
@@ -159,6 +162,9 @@ class BSMaterialsCDB
   void readAllChunks(BSReflStream& cdbFile);
   CDBClassDef& allocateClassDef(std::uint32_t className);
   void dumpObject(std::string& s, const CDBObject *o, int indentCnt) const;
+  void loadJSONItem(CDBObject*& o, const JSONReader::JSONItem *jsonItem,
+                    std::uint32_t itemType, MaterialObject *materialObject,
+                    std::map< BSResourceID, MaterialObject * >& objectMap);
  public:
   void loadCDBFile(const unsigned char *fileData, size_t fileSize)
   {
@@ -178,6 +184,10 @@ class BSMaterialsCDB
   {
     loadCDBFile(fileName);
   }
+  void loadJSONFile(const JSONReader& matFile, const char *materialPath);
+  void loadJSONFile(const unsigned char *fileData, size_t fileSize,
+                    const char *materialPath);
+  void loadJSONFile(const char *fileName, const char *materialPath);
   const CDBClassDef *getClassDef(std::uint32_t type) const;
   const MaterialObject *getMaterial(const std::string& materialPath) const;
   const std::map< BSResourceID, const MaterialObject * >& getMaterials() const
@@ -186,8 +196,6 @@ class BSMaterialsCDB
   }
   void getJSONMaterial(std::string& jsonBuf,
                        const std::string& materialPath) const;
-  void loadJSONFile(const unsigned char *fileData, size_t fileSize);
-  void loadJSONFile(const char *fileName);
 };
 
 inline bool BSMaterialsCDB::CDBObject::boolValue() const
