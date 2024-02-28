@@ -156,9 +156,8 @@ std::string& JSONReader::readToken()
   return curToken;
 }
 
-bool JSONReader::readJSONValue(JSONItem*& o)
+bool JSONReader::parseJSONValue(JSONItem*& o, const std::string& s)
 {
-  std::string&  s = readToken();
   if (s.empty())
     return false;
   if (s.starts_with("\"") && s.ends_with("\""))
@@ -212,7 +211,8 @@ bool JSONReader::readJSONValue(JSONItem*& o)
       {
         if (t == ":")
         {
-          if (readJSONValue(*(const_cast< JSONItem ** >(curItem))))
+          if (parseJSONValue(*(const_cast< JSONItem ** >(curItem)),
+                             readToken()))
           {
             curItem = nullptr;
             braceExpected = true;
@@ -231,26 +231,30 @@ bool JSONReader::readJSONValue(JSONItem*& o)
     JSONArray *p = new JSONArray;
     o = p;
     p->type = JSONItemType_Array;
+    bool    bracketExpected = true;
+    bool    commaExpected = false;
     while (true)
     {
-      p->children.push_back(nullptr);
-      if (!readJSONValue(*(const_cast< JSONItem ** >(&(p->children.back())))))
-      {
-        throw FO76UtilsError("unexpected end of JSON file at line %lu",
-                             (unsigned long) curLine);
-      }
       std::string&  t = readToken();
       if (t.empty())
       {
         throw FO76UtilsError("unexpected end of JSON file at line %lu",
                              (unsigned long) curLine);
       }
-      if (t == ",")
-        continue;
-      if (t == "]")
+      if (t == "]" && bracketExpected)
         break;
-      throw FO76UtilsError("syntax error in JSON file at line %lu",
-                           (unsigned long) curLine);
+      if ((t == ",") != commaExpected)
+      {
+        throw FO76UtilsError("syntax error in JSON file at line %lu",
+                             (unsigned long) curLine);
+      }
+      bracketExpected = !commaExpected;
+      commaExpected = !commaExpected;
+      if (!commaExpected)
+        continue;
+      p->children.push_back(nullptr);
+      (void) parseJSONValue(*(const_cast< JSONItem ** >(&(p->children.back()))),
+                            t);
     }
   }
   else if ((s[0] >= '0' && s[0] <= '9') ||
@@ -305,7 +309,7 @@ void JSONReader::parseJSONData()
     rootObject = nullptr;
   }
   curLine = 1;
-  (void) readJSONValue(rootObject);
+  (void) parseJSONValue(rootObject, readToken());
 }
 
 void JSONReader::deleteJSONObjects(JSONItem *p)

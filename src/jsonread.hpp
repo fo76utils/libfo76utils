@@ -48,8 +48,8 @@ class JSONReader : public FileBuffer
   std::string curToken;
   // returns empty string on EOF
   std::string& readToken();
-  // returns false on EOF
-  bool readJSONValue(JSONItem*& o);
+  // returns false if s is empty
+  bool parseJSONValue(JSONItem*& o, const std::string& s);
   void parseJSONData();
   void deleteJSONObjects(JSONItem *p);
  public:
