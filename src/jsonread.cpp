@@ -294,6 +294,11 @@ bool JSONReader::readJSONValue(JSONItem*& o)
 void JSONReader::parseJSONData()
 {
   filePos = 0;
+  if (fileBufSize >= 3 &&
+      readUInt16Fast(fileBuf) == 0xBBEFU && fileBuf[2] == 0xBF)
+  {
+    filePos = 3;
+  }
   if (rootObject)
   {
     deleteJSONObjects(rootObject);
