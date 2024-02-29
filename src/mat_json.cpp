@@ -2,6 +2,64 @@
 #include "common.hpp"
 #include "bsmatcdb.hpp"
 
+std::uint32_t BSMaterialsCDB::findJSONItemType(const std::string& s)
+{
+  size_t  n0 = BSReflStream::String_Unknown + 1;
+  size_t  n2 = sizeof(BSReflStream::stringTable) / sizeof(char *);
+  std::uint32_t itemType = 0U;
+  while (true)
+  {
+    size_t  n1 = n0 + ((n2 - n0) >> 1);
+    int     tmp = s.compare(BSReflStream::stringTable[n1]);
+    if (!tmp || n1 == n0) [[unlikely]]
+    {
+      if (!tmp)
+        itemType = std::uint32_t(n1);
+      break;
+    }
+    if (tmp < 0)
+      n2 = n1;
+    else
+      n0 = n1;
+  }
+  if (!itemType)
+  {
+    static const char *typeNameTable[13] =
+    {
+      "<ref>", "BSFixedString", "bool", "double", "float", "int16_t", "int32_t",
+      "int64_t", "int8_t", "uint16_t", "uint32_t", "uint64_t", "uint8_t"
+    };
+    static const std::uint8_t typeIndexTable[13] =
+    {
+      BSReflStream::String_Ref, BSReflStream::String_String,
+      BSReflStream::String_Bool, BSReflStream::String_Double,
+      BSReflStream::String_Float, BSReflStream::String_Int16,
+      BSReflStream::String_Int32, BSReflStream::String_Int64,
+      BSReflStream::String_Int8, BSReflStream::String_UInt16,
+      BSReflStream::String_UInt32, BSReflStream::String_UInt64,
+      BSReflStream::String_UInt8
+    };
+    size_t  n0 = 0;
+    size_t  n2 = 13;
+    while (true)
+    {
+      size_t  n1 = n0 + ((n2 - n0) >> 1);
+      int     tmp = s.compare(typeNameTable[n1]);
+      if (!tmp || n1 == n0) [[unlikely]]
+      {
+        if (!tmp)
+          itemType = typeIndexTable[n1];
+        break;
+      }
+      if (tmp < 0)
+        n2 = n1;
+      else
+        n0 = n1;
+    }
+  }
+  return itemType;
+}
+
 void BSMaterialsCDB::loadJSONItem(
     CDBObject*& o, const JSONReader::JSONItem *jsonItem, std::uint32_t itemType,
     MaterialObject *materialObject,
@@ -45,38 +103,40 @@ void BSMaterialsCDB::loadJSONItem(
       o = allocateObject(itemType, classDef, 0);
     }
   }
-  if (itemType > BSReflStream::String_Unknown)
+  if (itemType > BSReflStream::String_Unknown ||
+      (itemType >= BSReflStream::String_List &&
+       itemType <= BSReflStream::String_Ref))
   {
-    // structure
+    // compound types (structure, list, map, reference)
     if (itemType == BSReflStream::String_BSComponentDB2_ID) [[unlikely]]
     {
       if (jsonItem->type != JSONReader::JSONItemType_String)
         return;
-      BSResourceID  objectID;
-      objectID.fromJSONString(
-          static_cast< const JSONReader::JSONString * >(jsonItem)->value);
+      const std::string&  itemValue =
+          static_cast< const JSONReader::JSONString * >(jsonItem)->value;
       MaterialObject  *p = nullptr;
-      std::map< BSResourceID, MaterialObject * >::iterator  i =
-          objectMap.find(objectID);
-      if (i != objectMap.end())
-        p = i->second;
+      if (!itemValue.empty())
+      {
+        BSResourceID  objectID;
+        objectID.fromJSONString(itemValue);
+        std::map< BSResourceID, MaterialObject * >::iterator  i =
+            objectMap.find(objectID);
+        if (i != objectMap.end())
+          p = i->second;
+      }
+      static_cast< CDBObject_Link * >(o)->objectPtr = p;
+      if (!(p && !p->parent))
+        return;
       for (MaterialObject *q = materialObject; q;
            q = const_cast< MaterialObject * >(q->parent))
       {
+        // avoid circular links
         if (p == q)
-        {
-          // circular links
-          p = nullptr;
-          break;
-        }
+          return;
       }
-      static_cast< CDBObject_Link * >(o)->objectPtr = p;
-      if (p)
-      {
-        p->parent = materialObject;
-        p->next = materialObject->children;
-        materialObject->children = p;
-      }
+      p->parent = materialObject;
+      p->next = materialObject->children;
+      materialObject->children = p;
       return;
     }
     if (jsonItem->type != JSONReader::JSONItemType_Object)
@@ -92,11 +152,111 @@ void BSMaterialsCDB::loadJSONItem(
     }
     const std::string&  itemTypeStr =
         static_cast< const JSONReader::JSONString * >(j->second)->value;
-    if (itemTypeStr != BSReflStream::stringTable[itemType])
-      return;
     j = jsonObject->children.find("Data");
-    if (j == jsonObject->children.end() ||
-        !j->second || j->second->type != JSONReader::JSONItemType_Object)
+    if (j == jsonObject->children.end() || !j->second)
+      return;
+    if (itemType < BSReflStream::String_Unknown) [[unlikely]]
+    {
+      if (itemType == BSReflStream::String_Ref)
+      {
+        // reference
+        if (j->second->type != JSONReader::JSONItemType_Object ||
+            itemTypeStr != "<ref>")
+        {
+          return;
+        }
+        const JSONReader::JSONObject  *refObject =
+            static_cast< const JSONReader::JSONObject * >(j->second);
+        j = refObject->children.find("Type");
+        if (j == refObject->children.end() ||
+            !j->second || j->second->type != JSONReader::JSONItemType_String)
+        {
+          return;
+        }
+        std::uint32_t refItemType =
+            findJSONItemType(static_cast< const JSONReader::JSONString * >(
+                                 j->second)->value);
+        if (refItemType > BSReflStream::String_Unknown &&
+            getClassDef(refItemType))
+        {
+          loadJSONItem(o->children()[0], refObject, refItemType,
+                       materialObject, objectMap);
+        }
+        return;
+      }
+      // list or map
+      if (j->second->type != JSONReader::JSONItemType_Array ||
+          itemTypeStr != "<collection>")
+      {
+        return;
+      }
+      const JSONReader::JSONArray *collectionData =
+          static_cast< const JSONReader::JSONArray * >(j->second);
+      j = jsonObject->children.find("ElementType");
+      if (j == jsonObject->children.end() ||
+          !j->second || j->second->type != JSONReader::JSONItemType_String)
+      {
+        return;
+      }
+      size_t  elementCnt = collectionData->children.size();
+      const std::string&  elementTypeStr =
+          static_cast< const JSONReader::JSONString * >(j->second)->value;
+      std::uint32_t elementType = 0U;
+      bool    isMap = (itemType == BSReflStream::String_Map);
+      if (isMap)
+      {
+        if (elementTypeStr != "StdMapType::Pair")
+          return;
+        // TODO
+        return;
+      }
+      else
+      {
+        elementType = findJSONItemType(elementTypeStr);
+        if (!elementType ||
+            (elementType > BSReflStream::String_Unknown &&
+             !getClassDef(elementType)))
+        {
+          return;
+        }
+      }
+      std::uint64_t listSize =
+          std::uint64_t(elementCnt) << (unsigned char) isMap;
+      std::uint32_t n = 0U;
+      bool    appendingItems = false;
+      if (o && o->type == itemType && o->childCnt &&
+          o->children()[0] && o->children()[0]->type == elementType)
+      {
+        appendingItems =
+            (std::uint32_t(elementType - BSReflStream::String_Int8) > 11U);
+      }
+      if (appendingItems)
+        listSize = listSize + o->childCnt;
+      if (appendingItems ||
+          !(o && o->type == itemType && o->childCnt >= listSize))
+      {
+        listSize =
+            std::min< std::uint64_t >(listSize, 0xFFFFU - std::uint32_t(isMap));
+        CDBObject *p = allocateObject(itemType, classDef, size_t(listSize));
+        if (appendingItems)
+        {
+          std::uint32_t prvSize = o->childCnt;
+          for ( ; n < prvSize && n < listSize; n++)
+            p->children()[n] = o->children()[n];
+        }
+        o = p;
+      }
+      o->childCnt = std::uint16_t(listSize);
+      for (size_t m = 0; n < listSize; m++, n++)
+      {
+        loadJSONItem(o->children()[n], collectionData->children[m], elementType,
+                     materialObject, objectMap);
+      }
+      return;
+    }
+    // structure
+    if (j->second->type != JSONReader::JSONItemType_Object ||
+        itemTypeStr != BSReflStream::stringTable[itemType])
     {
       return;
     }
@@ -140,17 +300,6 @@ void BSMaterialsCDB::loadJSONItem(
       else
       {
         static_cast< CDBObject_String * >(o)->value = "";
-      }
-      break;
-    case BSReflStream::String_List:
-    case BSReflStream::String_Map:
-      {
-        // TODO
-      }
-      break;
-    case BSReflStream::String_Ref:
-      {
-        // TODO
       }
       break;
     case BSReflStream::String_Int8:
@@ -428,30 +577,44 @@ void BSMaterialsCDB::loadJSONFile(
         continue;
       }
       // find component type
-      size_t  n0 = BSReflStream::String_Unknown + 1;
-      size_t  n2 = sizeof(BSReflStream::stringTable) / sizeof(char *);
-      std::uint32_t itemType = 0U;
-      while (n2 > n0)
-      {
-        size_t  n1 = n0 + ((n2 - n0) >> 1);
-        int     tmp = itemTypeStr.compare(BSReflStream::stringTable[n1]);
-        if (!tmp || n1 == n0) [[unlikely]]
-        {
-          if (!tmp)
-            itemType = std::uint32_t(n1);
-          break;
-        }
-        if (tmp < 0)
-          n2 = n1;
-        else
-          n0 = n1;
-      }
-      if (!(itemType && getClassDef(itemType)))
+      std::uint32_t itemType = findJSONItemType(itemTypeStr);
+      if (itemType <= BSReflStream::String_Unknown || !getClassDef(itemType))
         continue;
       std::uint32_t key = (itemType << 16) | std::uint32_t(itemIndex);
       loadJSONItem(findComponent(*o, key, itemType).o,
                    jsonComponent, itemType, o, objectMap);
     }
+  }
+
+  // sort child objects
+  for (std::map< BSResourceID, MaterialObject * >::iterator
+           i = objectMap.begin(); i != objectMap.end(); i++)
+  {
+    MaterialObject  *o = i->second;
+    if (!o->children)
+      continue;
+    bool    linksSorted;
+    do
+    {
+      linksSorted = true;
+      const MaterialObject  **prv = &(o->children);
+      MaterialObject  *j = const_cast< MaterialObject * >(o->children);
+      while (j && j->next)
+      {
+        MaterialObject  *next = const_cast< MaterialObject * >(j->next);
+        if (next->dbID < j->dbID)
+        {
+          *prv = next;
+          j->next = next->next;
+          next->next = j;
+          linksSorted = false;
+          break;
+        }
+        prv = &(j->next);
+        j = next;
+      }
+    }
+    while (!linksSorted);
   }
 
   // add materials to database

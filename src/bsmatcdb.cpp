@@ -598,6 +598,9 @@ void BSMaterialsCDB::readAllChunks(BSReflStream& cdbFile)
         if (className == BSReflStream::String_Unknown)
           continue;
         CDBClassDef&  classDef = allocateClassDef(className);
+        if (classDef.className)
+          continue;
+        classDef.className = className;
         (void) chunkBuf.readUInt32();   // classVersion
         unsigned int  classFlags = chunkBuf.readUInt16();
         classDef.isUser = bool(classFlags & 4U);
@@ -739,9 +742,7 @@ BSMaterialsCDB::CDBClassDef& BSMaterialsCDB::allocateClassDef(
     if (!classes[h].className || classes[h].className == className)
       break;
   }
-  CDBClassDef&  classDef = classes[h];
-  classDef.className = className;
-  return classDef;
+  return classes[h];
 }
 
 void BSMaterialsCDB::dumpObject(

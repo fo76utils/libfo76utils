@@ -162,6 +162,7 @@ class BSMaterialsCDB
   void readAllChunks(BSReflStream& cdbFile);
   CDBClassDef& allocateClassDef(std::uint32_t className);
   void dumpObject(std::string& s, const CDBObject *o, int indentCnt) const;
+  static std::uint32_t findJSONItemType(const std::string& s);
   void loadJSONItem(CDBObject*& o, const JSONReader::JSONItem *jsonItem,
                     std::uint32_t itemType, MaterialObject *materialObject,
                     std::map< BSResourceID, MaterialObject * >& objectMap);
