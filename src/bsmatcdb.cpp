@@ -2,6 +2,8 @@
 #include "common.hpp"
 #include "bsmatcdb.hpp"
 
+#include <new>
+
 #define CDB_COMPONENTS_SORTED   0
 #define CDB_JSON_QUOTE_NUMBERS  1
 #define CDB_SORT_STRUCT_MEMBERS 1
@@ -92,6 +94,90 @@ void BSMaterialsCDB::BSResourceID::fromJSONString(const std::string& s)
   (void) new(this) BSResourceID(s);
 }
 
+void BSMaterialsCDB::CDBObject_Compound::insertMapItem(
+    CDBObject *key, CDBObject *value, size_t mapCapacity)
+{
+  if (!(key && value)) [[unlikely]]
+    return;
+  if (key->type == BSReflStream::String_String ||
+      (key->type >= BSReflStream::String_Int8 &&
+       key->type <= BSReflStream::String_Double)) [[likely]]
+  {
+    for (size_t i = 0; (i + 2) <= childCnt; i = i + 2)
+    {
+      if (children[i]->type != key->type)
+        continue;
+      bool    foundMatch = false;
+      switch (key->type)
+      {
+        case BSReflStream::String_String:
+          foundMatch = (children[i]->stringValue() == key->stringValue());
+          break;
+        case BSReflStream::String_Int8:
+        case BSReflStream::String_Int16:
+        case BSReflStream::String_Int32:
+          foundMatch = (children[i]->intValue() == key->intValue());
+          break;
+        case BSReflStream::String_UInt8:
+        case BSReflStream::String_UInt16:
+        case BSReflStream::String_UInt32:
+          foundMatch = (children[i]->uintValue() == key->uintValue());
+          break;
+        case BSReflStream::String_Int64:
+          foundMatch = (children[i]->int64Value() == key->int64Value());
+          break;
+        case BSReflStream::String_UInt64:
+          foundMatch = (children[i]->uint64Value() == key->uint64Value());
+          break;
+        case BSReflStream::String_Bool:
+          foundMatch = (children[i]->boolValue() == key->boolValue());
+          break;
+        case BSReflStream::String_Float:
+          foundMatch = (children[i]->floatValue() == key->floatValue());
+          break;
+        case BSReflStream::String_Double:
+          foundMatch = (children[i]->doubleValue() == key->doubleValue());
+          break;
+      }
+      if (foundMatch)
+      {
+        children[i] = key;
+        children[i + 1] = value;
+        return;
+      }
+    }
+  }
+  if ((childCnt + 2U) <= mapCapacity) [[likely]]
+  {
+    children[childCnt] = key;
+    children[childCnt + 1U] = value;
+    childCnt = std::uint16_t(childCnt + 2U);
+  }
+}
+
+BSMaterialsCDB::ObjectBuffers::ObjBuf *
+    BSMaterialsCDB::ObjectBuffers::allocateBuffer(size_t capacity)
+{
+  void    *tmp = std::calloc(sizeof(ObjBuf) + capacity, sizeof(unsigned char));
+  if (!tmp)
+    throw std::bad_alloc();
+  ObjBuf  *prv = lastBuf;
+  lastBuf = reinterpret_cast< ObjBuf * >(tmp);
+  lastBuf->bytesUsed = 0;
+  lastBuf->prv = prv;
+  return lastBuf;
+}
+
+BSMaterialsCDB::ObjectBuffers::~ObjectBuffers()
+{
+  while (lastBuf)
+  {
+    ObjBuf  *prv = lastBuf->prv;
+    std::free(lastBuf);
+    lastBuf = prv;
+  }
+}
+
 BSMaterialsCDB::MaterialComponent& BSMaterialsCDB::findComponent(
     MaterialObject& o, std::uint32_t key, std::uint32_t className)
 {
@@ -136,26 +222,28 @@ inline BSMaterialsCDB::MaterialObject *
 
 void * BSMaterialsCDB::allocateSpace(size_t nBytes, size_t alignBytes)
 {
-  std::uintptr_t  addr0 =
-      reinterpret_cast< std::uintptr_t >(objectBuffers.back().data());
-  std::uintptr_t  endAddr = addr0 + objectBuffers.back().capacity();
-  std::uintptr_t  addr =
-      reinterpret_cast< std::uintptr_t >(&(*(objectBuffers.back().end())));
+  if (nBytes > 0x7FFFFF00U)
+    throw std::bad_alloc();
+  size_t  n = size_t(std::bit_width(std::uintptr_t(alignBytes)));
+  n = std::min< size_t >(std::max< size_t >(n, 2), 4) - 2;
+  ObjectBuffers&  objectBuffer = objectBuffers[n];
+  ObjectBuffers::ObjBuf *buf = objectBuffer.lastBuf;
   std::uintptr_t  alignMask = std::uintptr_t(alignBytes - 1);
+  std::uintptr_t  addr0 = reinterpret_cast< std::uintptr_t >(buf->data());
+  std::uintptr_t  addr = addr0 + std::uintptr_t(buf->bytesUsed);
   addr = (addr + alignMask) & ~alignMask;
+  std::uintptr_t  bufBytes = ObjectBuffers::ObjBuf::minCapacity();
+  std::uintptr_t  endAddr = std::max< std::uintptr_t >(addr0 + bufBytes, addr);
   std::uintptr_t  bytesRequired = (nBytes + alignMask) & ~alignMask;
   if ((endAddr - addr) < bytesRequired) [[unlikely]]
   {
-    std::uintptr_t  bufBytes = 65536U;
-    bufBytes = std::max(bufBytes, bytesRequired);
-    objectBuffers.emplace_back();
-    objectBuffers.back().reserve(size_t(bufBytes));
-    addr0 = reinterpret_cast< std::uintptr_t >(objectBuffers.back().data());
+    bufBytes = std::max< std::uintptr_t >(bufBytes, bytesRequired + alignBytes);
+    buf = objectBuffer.allocateBuffer(size_t(bufBytes));
+    addr0 = reinterpret_cast< std::uintptr_t >(buf->data());
     addr = (addr0 + alignMask) & ~alignMask;
   }
-  objectBuffers.back().resize(size_t((addr + bytesRequired) - addr0), 0);
-  unsigned char *p = reinterpret_cast< unsigned char * >(addr);
-  return p;
+  buf->bytesUsed = size_t((addr + bytesRequired) - addr0);
+  return reinterpret_cast< unsigned char * >(addr);
 }
 
 const std::uint8_t BSMaterialsCDB::cdbObjectSizeAlignTable[38] =
@@ -271,6 +359,30 @@ void BSMaterialsCDB::copyBaseObject(MaterialObject& o)
     *prv = tmp;
     prv = &(tmp->next);
   }
+}
+
+const char * BSMaterialsCDB::storeString(const char *s, size_t len)
+{
+  static const char *emptyString = "";
+  if (len < 1)
+    return emptyString;
+  std::uint32_t h = hashFunctionUInt32(s, len) & stringHashMask;
+  size_t  n = stringHashMask + 1;
+  const char  *t;
+  for ( ; (t = storedStrings[h]) != nullptr; h = (h + 1U) & stringHashMask)
+  {
+    size_t  len2 = std::strlen(t);
+    if (len2 == len && std::memcmp(s, t, len2) == 0)
+      return t;
+    if (--n < 1)
+      errorMessage("BSMaterialsCDB: internal error: stringHashMask is too low");
+  }
+  char    *tmp =
+      reinterpret_cast< char * >(allocateSpace(len + 1, alignof(char)));
+  std::memcpy(tmp, s, len);
+  tmp[len] = '\0';
+  storedStrings[h] = tmp;
+  return tmp;
 }
 
 void BSMaterialsCDB::loadItem(
@@ -395,12 +507,11 @@ void BSMaterialsCDB::loadItem(
         unsigned int  len = buf2.readUInt16();
         if ((buf2.getPosition() + std::uint64_t(len)) > buf2.size())
           errorMessage("unexpected end of CDB file");
-        char    *s =
-            reinterpret_cast< char * >(allocateSpace(len + 1U, sizeof(char)));
-        std::memcpy(s, buf2.getReadPtr(), len);
-        s[len] = '\0';
-        static_cast< CDBObject_String * >(o)->value = s;
+        const char  *s = reinterpret_cast< const char * >(buf2.getReadPtr());
         buf2.setPosition(buf2.getPosition() + len);
+        if (len > 0 && s[len - 1] == '\0')
+          len--;
+        static_cast< CDBObject_String * >(o)->value = storeString(s, len);
       }
       break;
     case BSReflStream::String_List:
@@ -429,17 +540,16 @@ void BSMaterialsCDB::loadItem(
         if (isDiff && o && o->type == itemType && o->childCnt &&
             o->children()[0]->type == classNames[0])
         {
-          if (!isMap)
-          {
-            appendingItems = (std::uint32_t(classNames[0]
-                                            - BSReflStream::String_Int8) > 11U);
-          }
-          else
-          {
-            appendingItems = (o->children()[1]->type == classNames[1]);
-          }
+          appendingItems =
+              (!isMap ?
+               (std::uint32_t(classNames[0] - BSReflStream::String_Int8) > 11U)
+               : (o->children()[1]->type == classNames[1]));
           if (appendingItems)
+          {
+            if (!listSize) [[unlikely]]
+              return;
             listSize = listSize + o->childCnt;
+          }
         }
         if (appendingItems ||
             !(o && o->type == itemType && o->childCnt >= listSize))
@@ -455,29 +565,19 @@ void BSMaterialsCDB::loadItem(
           }
           o = p;
         }
-        o->childCnt = std::uint16_t(listSize);
+        o->childCnt = std::uint16_t(n);
+        CDBObject *key = nullptr;
         for ( ; n < listSize; n++)
         {
-          loadItem(o->children()[n], cdbFile, listBuf, isDiff,
-                   classNames[n & 1U]);
-          if (isMap && !(n & 1U) &&
-              classNames[0] == BSReflStream::String_String)
-          {
-            // check for duplicate keys
-            for (std::uint32_t k = 0U; k < n; k = k + 2U)
-            {
-              if (std::strcmp(o->children()[k]->stringValue(),
-                              o->children()[n]->stringValue()) == 0)
-              {
-                loadItem(o->children()[k + 1U], cdbFile, listBuf, isDiff,
-                         classNames[1]);
-                listSize = listSize - 2U;
-                o->childCnt = std::uint16_t(listSize);
-                n--;
-                break;
-              }
-            }
-          }
+          CDBObject_Compound  *p = static_cast< CDBObject_Compound * >(o);
+          CDBObject *value = nullptr;
+          loadItem(value, cdbFile, listBuf, isDiff, classNames[n & 1U]);
+          if (!isMap)
+            p->insertListItem(value, listSize);
+          else if (!(n & 1U))
+            key = value;
+          else
+            p->insertMapItem(key, value, listSize);
         }
         return;
       }
@@ -534,18 +634,6 @@ void BSMaterialsCDB::loadItem(
 
 void BSMaterialsCDB::readAllChunks(BSReflStream& cdbFile)
 {
-  if (classes.size() < 1)
-  {
-    classes.resize(512);
-    for (size_t i = 0; i < 512; i++)
-      classes[i].className = 0U;
-  }
-  if (objectBuffers.size() < 1)
-  {
-    objectBuffers.emplace_back();
-    objectBuffers.back().reserve(65536);
-  }
-
   std::vector< MaterialObject * > objectTable;
   std::vector< std::pair< std::uint32_t, std::uint32_t > >  componentInfo;
   BSReflStream::Chunk chunkBuf;
@@ -721,8 +809,39 @@ void BSMaterialsCDB::readAllChunks(BSReflStream& cdbFile)
     if (p->baseObject && p->baseObject->baseObject)
       copyBaseObject(*p);
     if (!p->parent && p->persistentID.ext == 0x0074616DU)       // "mat\0"
-      matFileObjectMap[p->persistentID] = p;
+      storeMatFileObject(p);
   }
+}
+
+void BSMaterialsCDB::clear()
+{
+  classes = nullptr;
+  objectTablePtr = nullptr;
+  objectTableSize = 0;
+  storedStrings = nullptr;
+  matFileObjectMap = nullptr;
+  for (size_t i = 0; i < 3; i++)
+  {
+    objectBuffers[i].~ObjectBuffers();
+    (void) new(&(objectBuffers[i])) ObjectBuffers();
+  }
+  classes = reinterpret_cast< CDBClassDef * >(
+                allocateSpace(sizeof(CDBClassDef) * (classHashMask + 1),
+                              alignof(CDBClassDef)));
+  storedStrings =
+      reinterpret_cast< const char ** >(
+          allocateSpace(sizeof(char *) * (stringHashMask + 1),
+                        alignof(char *)));
+  matFileObjectMap =
+      reinterpret_cast< MaterialObject ** >(
+          allocateSpace(sizeof(MaterialObject *) * (objectHashMask + 1),
+                        alignof(MaterialObject *)));
+#if !(defined(__i386__) || defined(__x86_64__) || defined(__x86_64))
+  for (size_t i = 0; i <= stringHashMask; i++)
+    storedStrings[i] = nullptr;
+  for (size_t i = 0; i <= objectHashMask; i++)
+    matFileObjectMap[i] = nullptr;
+#endif
 }
 
 BSMaterialsCDB::CDBClassDef& BSMaterialsCDB::allocateClassDef(
@@ -730,8 +849,8 @@ BSMaterialsCDB::CDBClassDef& BSMaterialsCDB::allocateClassDef(
 {
   std::uint32_t h = 0xFFFFFFFFU;
   hashFunctionCRC32C< std::uint32_t >(h, className);
-  size_t  n = classes.size();
-  std::uint32_t m = std::uint32_t(n - 1);
+  std::uint32_t m = classHashMask;
+  size_t  n = m + 1U;
   for (h = h & m; true; n--, h = (h + 1U) & m)
   {
     if (n < 1) [[unlikely]]
@@ -743,6 +862,46 @@ BSMaterialsCDB::CDBClassDef& BSMaterialsCDB::allocateClassDef(
       break;
   }
   return classes[h];
+}
+
+void BSMaterialsCDB::storeMatFileObject(MaterialObject *o)
+{
+  BSResourceID  objectID(o->persistentID);
+  std::uint32_t h = 0xFFFFFFFFU;
+  hashFunctionUInt32(h, objectID.file);
+  hashFunctionUInt32(h, objectID.ext);
+  hashFunctionUInt32(h, objectID.dir);
+  h = h & objectHashMask;
+  size_t  n = objectHashMask + 1;
+  MaterialObject  *p;
+  for ( ; (p = matFileObjectMap[h]) != nullptr; h = (h + 1U) & objectHashMask)
+  {
+    if (p->persistentID == objectID)
+      break;
+    if (--n < 1)
+      errorMessage("BSMaterialsCDB: internal error: objectHashMask is too low");
+  }
+  matFileObjectMap[h] = o;
+}
+
+const BSMaterialsCDB::MaterialObject * BSMaterialsCDB::findMatFileObject(
+    BSResourceID objectID) const
+{
+  std::uint32_t h = 0xFFFFFFFFU;
+  hashFunctionUInt32(h, objectID.file);
+  hashFunctionUInt32(h, objectID.ext);
+  hashFunctionUInt32(h, objectID.dir);
+  h = h & objectHashMask;
+  size_t  n = objectHashMask + 1;
+  const MaterialObject  *o;
+  for ( ; (o = matFileObjectMap[h]) != nullptr; h = (h + 1U) & objectHashMask)
+  {
+    if (o->persistentID == objectID)
+      return o;
+    if (--n < 1)
+      break;
+  }
+  return nullptr;
 }
 
 void BSMaterialsCDB::dumpObject(
@@ -998,9 +1157,7 @@ const BSMaterialsCDB::CDBClassDef *
 {
   std::uint32_t h = 0xFFFFFFFFU;
   hashFunctionCRC32C< std::uint32_t >(h, type);
-  if (classes.size() < 1) [[unlikely]]
-    return nullptr;
-  std::uint32_t m = std::uint32_t(classes.size() - 1);
+  std::uint32_t m = classHashMask;
   for (h = h & m; classes[h].className; h = (h + 1U) & m)
   {
     if (classes[h].className == type)
@@ -1009,14 +1166,14 @@ const BSMaterialsCDB::CDBClassDef *
   return nullptr;
 }
 
-const BSMaterialsCDB::MaterialObject *
-    BSMaterialsCDB::getMaterial(const std::string& materialPath) const
+void BSMaterialsCDB::getMaterials(
+    std::vector< const MaterialObject * >& materials) const
 {
-  std::map< BSResourceID, const MaterialObject * >::const_iterator  i =
-      matFileObjectMap.find(BSResourceID(materialPath));
-  if (i != matFileObjectMap.end())
-    return i->second;
-  return nullptr;
+  for (size_t i = 0; i <= objectHashMask; i++)
+  {
+    if (matFileObjectMap[i])
+      materials.push_back(matFileObjectMap[i]);
+  }
 }
 
 void BSMaterialsCDB::getJSONMaterial(

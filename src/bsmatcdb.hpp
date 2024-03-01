@@ -26,6 +26,10 @@ class BSMaterialsCDB
       return (file < r.file || (file == r.file && ext < r.ext) ||
               (file == r.file && ext == r.ext && dir < r.dir));
     }
+    inline bool operator==(const BSResourceID& r) const
+    {
+      return (file == r.file && ext == r.ext && dir == r.dir);
+    }
   };
   struct CDBClassDef
   {
@@ -105,6 +109,15 @@ class BSMaterialsCDB
   struct CDBObject_Compound : public CDBObject
   {
     CDBObject *children[1];
+    inline void insertListItem(CDBObject *value, size_t listCapacity)
+    {
+      if (childCnt < listCapacity && value) [[likely]]
+      {
+        children[childCnt] = value;
+        childCnt++;
+      }
+    }
+    void insertMapItem(CDBObject *key, CDBObject *value, size_t mapCapacity);
   };
   struct CDBObject_Link : public CDBObject
   {
@@ -141,12 +154,43 @@ class BSMaterialsCDB
     }
   };
  protected:
+  enum
+  {
+    classHashMask = 0x000001FF,
+    stringHashMask = 0x000FFFFF,
+    objectHashMask = 0x0003FFFF
+  };
+  struct ObjectBuffers
+  {
+    struct ObjBuf
+    {
+      size_t  bytesUsed;
+      ObjBuf  *prv;
+      inline unsigned char *data()
+      {
+        return (reinterpret_cast< unsigned char * >(this) + sizeof(ObjBuf));
+      }
+      static inline size_t minCapacity()
+      {
+        return 65536;
+      }
+    };
+    ObjBuf  *lastBuf;
+    ObjBuf *allocateBuffer(size_t capacity);
+    ObjectBuffers()
+      : lastBuf(nullptr)
+    {
+      allocateBuffer(ObjBuf::minCapacity());
+    }
+    ~ObjectBuffers();
+  };
   static const std::uint8_t cdbObjectSizeAlignTable[38];
-  std::vector< CDBClassDef >  classes;
+  CDBClassDef     *classes;             // classHashMask + 1 elements
   MaterialObject  **objectTablePtr;
-  size_t  objectTableSize;
-  std::map< BSResourceID, const MaterialObject * >  matFileObjectMap;
-  std::vector< std::vector< unsigned char > > objectBuffers;
+  size_t          objectTableSize;
+  const char      **storedStrings;      // stringHashMask + 1 elements
+  MaterialObject  **matFileObjectMap;   // objectHashMask + 1 elements
+  ObjectBuffers   objectBuffers[3];     // for align bytes <= 2, 4 and >= 8
   MaterialComponent& findComponent(MaterialObject& o,
                                    std::uint32_t key, std::uint32_t className);
   inline MaterialObject *findObject(std::uint32_t dbID);
@@ -156,11 +200,14 @@ class BSMaterialsCDB
                             size_t elementCnt = 0);
   void copyObject(CDBObject*& o);
   void copyBaseObject(MaterialObject& o);
+  const char *storeString(const char *s, size_t len);
   void loadItem(CDBObject*& o,
                 BSReflStream& cdbFile, BSReflStream::Chunk& chunkBuf,
                 bool isDiff, std::uint32_t itemType);
   void readAllChunks(BSReflStream& cdbFile);
   CDBClassDef& allocateClassDef(std::uint32_t className);
+  void storeMatFileObject(MaterialObject *o);
+  const MaterialObject *findMatFileObject(BSResourceID objectID) const;
   void dumpObject(std::string& s, const CDBObject *o, int indentCnt) const;
   static std::uint32_t findJSONItemType(const std::string& s);
   void loadJSONItem(CDBObject*& o, const JSONReader::JSONItem *jsonItem,
@@ -177,24 +224,35 @@ class BSMaterialsCDB
     BSReflStream  cdbFile(fileName);
     readAllChunks(cdbFile);
   }
+  BSMaterialsCDB()
+  {
+    clear();
+  }
   BSMaterialsCDB(const unsigned char *fileData, size_t fileSize)
   {
+    clear();
     loadCDBFile(fileData, fileSize);
   }
   BSMaterialsCDB(const char *fileName)
   {
+    clear();
     loadCDBFile(fileName);
   }
   void loadJSONFile(const JSONReader& matFile, const char *materialPath);
   void loadJSONFile(const unsigned char *fileData, size_t fileSize,
                     const char *materialPath);
   void loadJSONFile(const char *fileName, const char *materialPath);
+  void clear();
   const CDBClassDef *getClassDef(std::uint32_t type) const;
-  const MaterialObject *getMaterial(const std::string& materialPath) const;
-  const std::map< BSResourceID, const MaterialObject * >& getMaterials() const
+  const MaterialObject *getMaterial(BSResourceID objectID) const
   {
-    return matFileObjectMap;
+    return findMatFileObject(objectID);
   }
+  const MaterialObject *getMaterial(const std::string& materialPath) const
+  {
+    return findMatFileObject(BSResourceID(materialPath));
+  }
+  void getMaterials(std::vector< const MaterialObject * >& materials) const;
   void getJSONMaterial(std::string& jsonBuf,
                        const std::string& materialPath) const;
 };

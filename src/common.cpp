@@ -1,5 +1,6 @@
 
 #include "common.hpp"
+#include "filebuf.hpp"
 
 const char * FO76UtilsError::defaultErrorMessage = "unknown error";
 
@@ -231,6 +232,64 @@ void printToString(std::string& s, const char *fmt, ...)
   (void) std::vsnprintf(&(s[n0]), size_t(n) + 1, fmt, ap);
   va_end(ap);
   s[n0 + size_t(n)] = '\0';
+}
+
+std::uint32_t hashFunctionUInt32(const void *p, size_t nBytes)
+{
+  std::uint64_t h = 0xFFFFFFFFU;
+  const unsigned char *q = reinterpret_cast< const unsigned char * >(p);
+  const unsigned char *endp = q + nBytes;
+  if (nBytes < 8)
+  {
+    std::uint64_t tmp = 0U;
+    switch (nBytes)
+    {
+      case 1:
+        tmp = *q;
+        break;
+      case 2:
+        tmp = FileBuffer::readUInt16Fast(q);
+        break;
+      case 3:
+        tmp = FileBuffer::readUInt16Fast(q) | (std::uint64_t(q[2]) << 16);
+        break;
+      case 4:
+        tmp = FileBuffer::readUInt32Fast(q);
+        break;
+      case 5:
+        tmp = FileBuffer::readUInt32Fast(q) | (std::uint64_t(q[4]) << 32);
+        break;
+      case 6:
+        tmp = FileBuffer::readUInt32Fast(q)
+              | (std::uint64_t(FileBuffer::readUInt16Fast(q + 4)) << 32);
+        break;
+      case 7:
+        tmp = FileBuffer::readUInt32Fast(q)
+              | (std::uint64_t(FileBuffer::readUInt32Fast(q + 3) >> 8) << 32);
+        break;
+      default:
+        return std::uint32_t(h);
+    }
+    hashFunctionUInt64(h, tmp);
+    return std::uint32_t(h);
+  }
+  for ( ; (q + 16) <= endp; q = q + 16)
+  {
+    hashFunctionUInt64(h, FileBuffer::readUInt64Fast(q));
+    hashFunctionUInt64(h, FileBuffer::readUInt64Fast(q + 8));
+  }
+  if ((q + 8) <= endp)
+  {
+    hashFunctionUInt64(h, FileBuffer::readUInt64Fast(q));
+    q = q + 8;
+  }
+  if (q < endp)
+  {
+    std::uint64_t tmp = FileBuffer::readUInt64Fast(endp - 8);
+    tmp = tmp >> (unsigned char) (size_t(q - (endp - 8)) << 3);
+    hashFunctionUInt64(h, tmp);
+  }
+  return std::uint32_t(h);
 }
 
 const std::uint32_t crc32Table_EDB88320[256] =

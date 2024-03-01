@@ -39,8 +39,8 @@ std::uint32_t BSMaterialsCDB::findJSONItemType(const std::string& s)
       BSReflStream::String_UInt32, BSReflStream::String_UInt64,
       BSReflStream::String_UInt8
     };
-    size_t  n0 = 0;
-    size_t  n2 = 13;
+    n0 = 0;
+    n2 = 13;
     while (true)
     {
       size_t  n1 = n0 + ((n2 - n0) >> 1);
@@ -202,41 +202,40 @@ void BSMaterialsCDB::loadJSONItem(
       const std::string&  elementTypeStr =
           static_cast< const JSONReader::JSONString * >(j->second)->value;
       std::uint32_t elementType = 0U;
-      bool    isMap = (itemType == BSReflStream::String_Map);
-      if (isMap)
-      {
-        if (elementTypeStr != "StdMapType::Pair")
-          return;
-        // TODO
-        return;
-      }
-      else
+      std::uint8_t  isMap = std::uint8_t(itemType == BSReflStream::String_Map);
+      if (!isMap)
       {
         elementType = findJSONItemType(elementTypeStr);
-        if (!elementType ||
-            (elementType > BSReflStream::String_Unknown &&
-             !getClassDef(elementType)))
+        if (!elementType || (elementType > BSReflStream::String_Unknown &&
+                             !getClassDef(elementType)))
         {
           return;
         }
       }
-      std::uint64_t listSize =
-          std::uint64_t(elementCnt) << (unsigned char) isMap;
+      else if (elementTypeStr != "StdMapType::Pair")
+      {
+        return;
+      }
+      std::uint64_t listSize = std::uint64_t(elementCnt) << isMap;
       std::uint32_t n = 0U;
       bool    appendingItems = false;
-      if (o && o->type == itemType && o->childCnt &&
-          o->children()[0] && o->children()[0]->type == elementType)
+      if (o && o->type == itemType && o->childCnt)
       {
         appendingItems =
-            (std::uint32_t(elementType - BSReflStream::String_Int8) > 11U);
+            (isMap ||
+             (o->children()[0]->type == elementType &&
+              std::uint32_t(elementType - BSReflStream::String_Int8) > 11U));
+        if (appendingItems)
+        {
+          if (!listSize) [[unlikely]]
+            return;
+          listSize = listSize + o->childCnt;
+        }
       }
-      if (appendingItems)
-        listSize = listSize + o->childCnt;
       if (appendingItems ||
           !(o && o->type == itemType && o->childCnt >= listSize))
       {
-        listSize =
-            std::min< std::uint64_t >(listSize, 0xFFFFU - std::uint32_t(isMap));
+        listSize = std::min< std::uint64_t >(listSize, 0xFFFFU - isMap);
         CDBObject *p = allocateObject(itemType, classDef, size_t(listSize));
         if (appendingItems)
         {
@@ -246,11 +245,52 @@ void BSMaterialsCDB::loadJSONItem(
         }
         o = p;
       }
-      o->childCnt = std::uint16_t(listSize);
+      o->childCnt = std::uint16_t(n);
+      CDBObject *key = nullptr;
       for (size_t m = 0; n < listSize; m++, n++)
       {
-        loadJSONItem(o->children()[n], collectionData->children[m], elementType,
-                     materialObject, objectMap);
+        CDBObject_Compound  *p = static_cast< CDBObject_Compound * >(o);
+        CDBObject *value = nullptr;
+        const JSONReader::JSONItem  *q = collectionData->children[m >> isMap];
+        if (isMap)
+        {
+          const JSONReader::JSONObject  *tmp = nullptr;
+          if (q->type == JSONReader::JSONItemType_Object)
+            tmp = static_cast< const JSONReader::JSONObject * >(q);
+          q = nullptr;
+          if (tmp)
+          {
+            j = tmp->children.find("Data");
+            if (j != tmp->children.end() &&
+                j->second && j->second->type == JSONReader::JSONItemType_Object)
+            {
+              tmp = static_cast< const JSONReader::JSONObject * >(j->second);
+              j = tmp->children.find(!(m & 1) ? "Key" : "Value");
+              if (j != tmp->children.end() && j->second)
+              {
+                q = j->second;
+                if (q->type == JSONReader::JSONItemType_Object)
+                  elementType = BSReflStream::String_Ref;
+                else if (q->type == JSONReader::JSONItemType_String)
+                  elementType = BSReflStream::String_String;
+                else if (q->type == JSONReader::JSONItemType_Number)
+                  elementType = BSReflStream::String_Float;
+                else if (q->type == JSONReader::JSONItemType_Boolean)
+                  elementType = BSReflStream::String_Bool;
+                else
+                  q = nullptr;
+              }
+            }
+          }
+        }
+        if (q) [[likely]]
+          loadJSONItem(value, q, elementType, materialObject, objectMap);
+        if (!isMap)
+          p->insertListItem(value, listSize);
+        else if (!(m & 1))
+          key = value;
+        else
+          p->insertMapItem(key, value, listSize);
       }
       return;
     }
@@ -277,7 +317,18 @@ void BSMaterialsCDB::loadJSONItem(
         }
       }
       if (fieldNum < 0 || !i->second)
+      {
+        if (classDef->isUser && !classDef->fieldCnt && fieldName == "null" &&
+            i->second && i->second->type == JSONReader::JSONItemType_String)
+        {
+          // work around ClassReference being defined with 0 fields
+          if (o->childCnt < 1)
+            o->childCnt = 1;
+          loadJSONItem(o->children()[0], i->second, BSReflStream::String_String,
+                       materialObject, objectMap);
+        }
         continue;
+      }
       std::uint32_t fieldType = classDef->fields[fieldNum].type;
       loadJSONItem(o->children()[fieldNum],
                    i->second, fieldType, materialObject, objectMap);
@@ -292,10 +343,8 @@ void BSMaterialsCDB::loadJSONItem(
       {
         const std::string&  s =
             static_cast< const JSONReader::JSONString * >(jsonItem)->value;
-        char    *t = reinterpret_cast< char * >(
-                         allocateSpace(s.length() + 1, sizeof(char)));
-        std::memcpy(t, s.c_str(), s.length() + 1);
-        static_cast< CDBObject_String * >(o)->value = t;
+        static_cast< CDBObject_String * >(o)->value =
+            storeString(s.c_str(), s.length());
       }
       else
       {
@@ -395,7 +444,7 @@ void BSMaterialsCDB::loadJSONItem(
             break;
           case BSReflStream::String_UInt64:
             static_cast< CDBObject_UInt64 * >(o)->value =
-                std::uint64_t(std::strtoll(itemValue.c_str(), &endp, 10));
+                std::uint64_t(std::strtoull(itemValue.c_str(), &endp, 10));
             break;
           case BSReflStream::String_Float:
             static_cast< CDBObject_Float * >(o)->value =
@@ -486,13 +535,7 @@ void BSMaterialsCDB::loadJSONFile(
       objectID.fromJSONString(
           static_cast< const JSONReader::JSONString * >(j->second)->value);
     }
-    const MaterialObject  *parentPtr = nullptr;
-    {
-      std::map< BSResourceID, const MaterialObject * >::const_iterator  k =
-          matFileObjectMap.find(parentID);
-      if (k != matFileObjectMap.end())
-        parentPtr = k->second;
-    }
+    const MaterialObject  *parentPtr = findMatFileObject(parentID);
     if (!parentPtr)
       continue;
     j = jsonObject->children.find("Components");
@@ -598,20 +641,20 @@ void BSMaterialsCDB::loadJSONFile(
     {
       linksSorted = true;
       const MaterialObject  **prv = &(o->children);
-      MaterialObject  *j = const_cast< MaterialObject * >(o->children);
-      while (j && j->next)
+      MaterialObject  *q = const_cast< MaterialObject * >(o->children);
+      while (q && q->next)
       {
-        MaterialObject  *next = const_cast< MaterialObject * >(j->next);
-        if (next->dbID < j->dbID)
+        MaterialObject  *next = const_cast< MaterialObject * >(q->next);
+        if (next->dbID < q->dbID)
         {
           *prv = next;
-          j->next = next->next;
-          next->next = j;
+          q->next = next->next;
+          next->next = q;
           linksSorted = false;
           break;
         }
-        prv = &(j->next);
-        j = next;
+        prv = &(q->next);
+        q = next;
       }
     }
     while (!linksSorted);
@@ -622,7 +665,7 @@ void BSMaterialsCDB::loadJSONFile(
            i = objectMap.begin(); i != objectMap.end(); i++)
   {
     if (i->second && !i->second->parent && i->first.ext == 0x0074616DU)
-      matFileObjectMap[i->first] = i->second;           // "mat\0"
+      storeMatFileObject(i->second);                    // "mat\0"
   }
 }
 

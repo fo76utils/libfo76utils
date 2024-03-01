@@ -193,6 +193,8 @@ inline void hashFunctionUInt64(std::uint64_t& h, const std::uint64_t& m)
 #endif
 }
 
+std::uint32_t hashFunctionUInt32(const void *p, size_t nBytes);
+
 extern const std::uint32_t crc32Table_EDB88320[256];
 #if !ENABLE_X86_64_SIMD
 extern const std::uint32_t crc32Table_82F63B78[256];
