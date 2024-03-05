@@ -173,6 +173,7 @@ CE2MaterialObject * CE2MaterialDB::findMaterialObject(
       }
       break;
   }
+  (void) materialObjectMap.emplace(p, o);
   // load components
   ComponentInfo componentInfo(*this, o);
   for (const BSMaterialsCDB::MaterialComponent *
@@ -180,7 +181,6 @@ CE2MaterialObject * CE2MaterialDB::findMaterialObject(
   {
     componentInfo.loadComponent(q);
   }
-  (void) materialObjectMap.emplace(p, o);
   return o;
 }
 
@@ -193,13 +193,50 @@ CE2MaterialDB::~CE2MaterialDB()
 {
 }
 
+static bool cdbFileNameFilterFunc(void *p, const std::string& s)
+{
+  (void) p;
+  return (s.ends_with(".cdb") && s.starts_with("materials/"));
+}
+
 void CE2MaterialDB::loadArchives(
     const BA2File& archive1, const BA2File *archive2)
 {
   materialDBMutex.lock();
   try
   {
-    // TODO
+    if (ba2File1)
+      clear();
+    ba2File1 = &archive1;
+    ba2File2 = archive2;
+    std::vector< std::string >  cdbPaths;
+    std::vector< unsigned char >  cdbBuf;
+    for (size_t i = 0; i < 2; i++)
+    {
+      const BA2File *ba2File = (i == 0 ? ba2File1 : ba2File2);
+      if (!ba2File)
+        continue;
+      ba2File->getFileList(cdbPaths, false, &cdbFileNameFilterFunc);
+      for (size_t j = 1; j < cdbPaths.size(); j++)
+      {
+        if (cdbPaths[j] == BSReflStream::getDefaultMaterialDBPath())
+        {
+          std::swap(cdbPaths[0], cdbPaths[j]);
+          break;
+        }
+      }
+      for (size_t j = 0; j < cdbPaths.size(); j++)
+      {
+        const unsigned char *cdbData = nullptr;
+        size_t  cdbSize = 0;
+        if (i == 0 && ba2File2 && ba2File2->findFile(cdbPaths[j]))
+          cdbSize = ba2File2->extractFile(cdbData, cdbBuf, cdbPaths[j]);
+        else if (!(i == 1 && ba2File1 && ba2File1->findFile(cdbPaths[j])))
+          cdbSize = ba2File->extractFile(cdbData, cdbBuf, cdbPaths[j]);
+        if (cdbSize > 0)
+          BSMaterialsCDB::loadCDBFile(cdbData, cdbSize);
+      }
+    }
   }
   catch (...)
   {
@@ -211,10 +248,42 @@ void CE2MaterialDB::loadArchives(
 
 const CE2Material * CE2MaterialDB::loadMaterial(const std::string& materialPath)
 {
+  if (materialPath.empty()) [[unlikely]]
+    return nullptr;
+  BSMaterialsCDB::BSResourceID  objectID(materialPath);
+  std::uint32_t h = 0xFFFFFFFFU;
+  hashFunctionCRC32C< std::uint64_t >(
+      h, (std::uint64_t(objectID.ext) << 32) | objectID.file);
+  hashFunctionCRC32C< std::uint32_t >(h, objectID.dir);
+  std::uint32_t m = objectHashMask;
+  h = h & m;
+  const CE2MaterialObject *o = nullptr;
   materialDBMutex.lock();
   try
   {
-    // TODO
+    o = objectNameMap[h];
+    while (o)
+    {
+      if (o->type == 1 && o->cdbObject->persistentID == objectID)
+        break;
+      h = (h + 1U) & m;
+      o = objectNameMap[h];
+    }
+    if (!o) [[unlikely]]
+    {
+      std::vector< unsigned char >  jsonBuf;
+      const unsigned char *jsonData = nullptr;
+      size_t  jsonSize = 0;
+      if (ba2File2 && ba2File2->findFile(materialPath))
+        jsonSize = ba2File2->extractFile(jsonData, jsonBuf, materialPath);
+      if (jsonSize < 1 && ba2File1 && ba2File1->findFile(materialPath))
+        jsonSize = ba2File1->extractFile(jsonData, jsonBuf, materialPath);
+      if (jsonSize > 0)
+        BSMaterialsCDB::loadJSONFile(jsonData, jsonSize, materialPath.c_str());
+      o = findMaterialObject(BSMaterialsCDB::getMaterial(materialPath));
+      if (!(o && o->type == 1)) [[unlikely]]
+        o = nullptr;
+    }
   }
   catch (...)
   {
@@ -222,7 +291,7 @@ const CE2Material * CE2MaterialDB::loadMaterial(const std::string& materialPath)
     throw;
   }
   materialDBMutex.unlock();
-  return nullptr;
+  return static_cast< const CE2Material * >(o);
 }
 
 void CE2MaterialDB::clear()

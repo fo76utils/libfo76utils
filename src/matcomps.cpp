@@ -110,10 +110,22 @@ bool CE2MaterialDB::ComponentInfo::readEnum(
       p->children()[fieldNum]->type == BSReflStream::String_String)
   {
     const char  *s = p->children()[fieldNum]->stringValue();
-    BSReflStream::Chunk tmpBuf;
-    tmpBuf.setData(reinterpret_cast< const unsigned char * >(s),
-                   std::strlen(s) + 1, 0);
-    return tmpBuf.readEnum(n, t);
+    size_t  len = std::strlen(s);
+    for (size_t i = 0; *t; i++)
+    {
+      size_t  len2 = (unsigned char) *t;
+      const char  *s2 = t + 1;
+      t = s2 + len2;
+      if (len2 != len)
+        continue;
+      for (size_t j = 0; len2 && s2[j] == s[j]; j++, len2--)
+        ;
+      if (!len2)
+      {
+        n = (unsigned char) i;
+        return true;
+      }
+    }
   }
   return false;
 }
@@ -266,7 +278,8 @@ void CE2MaterialDB::ComponentInfo::readAlphaBlenderSettings(
     m->setFlags(CE2Material::Flag_AlphaVertexColor, tmp);
   readEnum(m->alphaVertexColorChannel, p, 3,
            "\003Red\005Green\004Blue\005Alpha");
-  readUVStreamID(p, 4);
+  if (p && p->type > BSReflStream::String_Unknown && p->childCnt >= 5)
+    readUVStreamID(p->children()[4]);
   readFloat(m->alphaHeightBlendThreshold, p, 5, true);
   readFloat(m->alphaHeightBlendFactor, p, 6, true);
   readFloat(m->alphaPosition, p, 7, true);
@@ -440,10 +453,10 @@ void CE2MaterialDB::ComponentInfo::readTerrainTintSettingsComponent(
 //   BSComponentDB2::ID  ID
 
 void CE2MaterialDB::ComponentInfo::readUVStreamID(
-    const BSMaterialsCDB::CDBObject *p, size_t fieldNum)
+    const BSMaterialsCDB::CDBObject *p)
 {
   const CE2MaterialObject *tmp;
-  if (!readBSComponentDB2ID(tmp, p, fieldNum, 6))
+  if (!readBSComponentDB2ID(tmp, p, 6))
     return;
   const CE2Material::UVStream *uvStream =
       static_cast< const CE2Material::UVStream * >(tmp);
@@ -1003,7 +1016,12 @@ bool CE2MaterialDB::ComponentInfo::readSourceTextureWithReplacement(
     return false;
   }
   const BSMaterialsCDB::CDBObject *q = p->children()[fieldNum];
-  bool    r = readPath(texturePath, q, 0, "textures/", ".dds");
+  bool    r = false;
+  if (q->childCnt >= 1 && q->children()[0] &&
+      q->children()[0]->type == BSReflStream::String_BSMaterial_MRTextureFile)
+  {
+    r = readPath(texturePath, q->children()[0], 0, "textures/", ".dds");
+  }
   if (q->childCnt >= 2 && q->children()[1] &&
       q->children()[1]->type
       == BSReflStream::String_BSMaterial_TextureReplacement)
@@ -1061,7 +1079,8 @@ void CE2MaterialDB::ComponentInfo::readDetailBlenderSettings(
   }
   readSourceTextureWithReplacement(sp->texturePath, sp->textureReplacement,
                                    sp->textureReplacementEnabled, p, 1);
-  readUVStreamID(p, 2);
+  if (p && p->type > BSReflStream::String_Unknown && p->childCnt >= 3)
+    readUVStreamID(p->children()[2]);
 }
 
 // BSMaterial::LayerID
@@ -1074,7 +1093,7 @@ void CE2MaterialDB::ComponentInfo::readLayerID(
   if (!(o->type == 1 && i < CE2Material::maxLayers)) [[unlikely]]
     return;
   const CE2MaterialObject *tmp;
-  if (readBSComponentDB2ID(tmp, p, 0, 3))
+  if (readBSComponentDB2ID(tmp, p, 3))
   {
     CE2Material *m = static_cast< CE2Material * >(o);
     m->layers[i] = static_cast< const CE2Material::Layer * >(tmp);
@@ -1260,15 +1279,14 @@ void CE2MaterialDB::ComponentInfo::readFloat2DLerpController(
 
 bool CE2MaterialDB::ComponentInfo::readBSComponentDB2ID(
     const CE2MaterialObject*& linkedObject,
-    const BSMaterialsCDB::CDBObject *p, size_t fieldNum,
-    unsigned char typeRequired)
+    const BSMaterialsCDB::CDBObject *p, unsigned char typeRequired)
 {
-  if (p && p->type > BSReflStream::String_Unknown && fieldNum < p->childCnt &&
-      p->children()[fieldNum] &&
-      p->children()[fieldNum]->type == BSReflStream::String_BSComponentDB2_ID)
+  if (p && p->type > BSReflStream::String_Unknown && p->childCnt >= 1 &&
+      p->children()[0] &&
+      p->children()[0]->type == BSReflStream::String_BSComponentDB2_ID)
   {
     const CE2MaterialObject *tmp =
-        cdb.findMaterialObject(p->children()[fieldNum]->linkedObject());
+        cdb.findMaterialObject(p->children()[0]->linkedObject());
     if (typeRequired && tmp && tmp->type != typeRequired)
       tmp = nullptr;
     linkedObject = tmp;
@@ -1554,7 +1572,7 @@ void CE2MaterialDB::ComponentInfo::readTextureSetID(
   if (o->type != 4) [[unlikely]]
     return;
   const CE2MaterialObject *tmp;
-  if (readBSComponentDB2ID(tmp, p, 0, 5))
+  if (readBSComponentDB2ID(tmp, p, 5))
   {
     static_cast< CE2Material::Material * >(o)->textureSet =
         static_cast< const CE2Material::TextureSet * >(tmp);
@@ -1594,7 +1612,7 @@ void CE2MaterialDB::ComponentInfo::readTextureFile(
   CE2Material *m = static_cast< CE2Material * >(o);
   CE2Material::DecalSettings  *sp =
       const_cast< CE2Material::DecalSettings * >(m->decalSettings);
-  readPath(sp->surfaceHeightMap, p, 0);
+  readPath(sp->surfaceHeightMap, p, 0, "textures/", ".dds");
 }
 
 // BSMaterial::TranslucencySettings
@@ -1807,7 +1825,7 @@ void CE2MaterialDB::ComponentInfo::readMaterialID(
   if (o->type != 3) [[unlikely]]
     return;
   const CE2MaterialObject *tmp;
-  if (readBSComponentDB2ID(tmp, p, 0, 4))
+  if (readBSComponentDB2ID(tmp, p, 4))
   {
     static_cast< CE2Material::Layer * >(o)->material =
         static_cast< const CE2Material::Material * >(tmp);
@@ -2064,23 +2082,37 @@ void CE2MaterialDB::ComponentInfo::readControllerComponent(
 void CE2MaterialDB::ComponentInfo::readMRTextureFile(
     const BSMaterialsCDB::CDBObject *p)
 {
+  const std::string **txtPath;
+  std::uint32_t *txtMask;
   std::uint32_t i = componentData->key & 0xFFFFU;
   if (o->type == 5 && i < CE2Material::TextureSet::maxTexturePaths) [[likely]]
   {
-    CE2Material::TextureSet *txtSet =
-        static_cast< CE2Material::TextureSet * >(o);
-    if (readPath(txtSet->texturePaths[i], p, 0, "textures/", ".dds"))
-    {
-      if (txtSet->texturePaths[i]->empty())
-        txtSet->texturePathMask &= ~(1U << i);
-      else
-        txtSet->texturePathMask |= (1U << i);
-    }
+    txtPath = &(static_cast< CE2Material::TextureSet * >(o)->texturePaths[i]);
+    txtMask = &(static_cast< CE2Material::TextureSet * >(o)->texturePathMask);
   }
   else if (o->type == 2)
   {
-    readPath(static_cast< CE2Material::Blender * >(o)->texturePath, p, 0,
-             "textures/", ".dds");
+    txtPath = &(static_cast< CE2Material::Blender * >(o)->texturePath);
+    txtMask = &i;
+  }
+  else
+  {
+    return;
+  }
+  if (!(*txtPath)->empty()) [[unlikely]]
+  {
+    if (componentData->className
+        != BSReflStream::String_BSMaterial_MRTextureFile)
+    {
+      return;
+    }
+  }
+  if (readPath(*txtPath, p, 0, "textures/", ".dds"))
+  {
+    if ((*txtPath)->empty())
+      *txtMask &= ~(1U << i);
+    else
+      *txtMask |= (1U << i);
   }
 }
 
@@ -2103,7 +2135,7 @@ void CE2MaterialDB::ComponentInfo::readBlenderID(
   if (!(o->type == 1 && i < CE2Material::maxBlenders)) [[unlikely]]
     return;
   const CE2MaterialObject *tmp;
-  if (readBSComponentDB2ID(tmp, p, 0, 2))
+  if (readBSComponentDB2ID(tmp, p, 2))
   {
     static_cast< CE2Material * >(o)->blenders[i] =
         static_cast< const CE2Material::Blender * >(tmp);
@@ -2149,7 +2181,7 @@ void CE2MaterialDB::ComponentInfo::readLODMaterialID(
   if (!(o->type == 1 && i < CE2Material::maxLODMaterials)) [[unlikely]]
     return;
   const CE2MaterialObject *tmp;
-  if (readBSComponentDB2ID(tmp, p, 0, 1))
+  if (readBSComponentDB2ID(tmp, p, 1))
   {
     static_cast< CE2Material * >(o)->lodMaterials[i] =
         static_cast< const CE2Material * >(tmp);

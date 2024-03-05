@@ -473,8 +473,7 @@ class CE2MaterialDB : public BSMaterialsCDB
     void readFlipbookComponent(const BSMaterialsCDB::CDBObject *p);
     void readPhysicsMaterialType(const BSMaterialsCDB::CDBObject *p);
     void readTerrainTintSettingsComponent(const BSMaterialsCDB::CDBObject *p);
-    void readUVStreamID(const BSMaterialsCDB::CDBObject *p,
-                        size_t fieldNum = 0);
+    void readUVStreamID(const BSMaterialsCDB::CDBObject *p);
     void readDecalSettingsComponent(const BSMaterialsCDB::CDBObject *p);
     void readDirectory(const BSMaterialsCDB::CDBObject *p);
     void readWaterSettingsComponent(const BSMaterialsCDB::CDBObject *p);
@@ -517,7 +516,7 @@ class CE2MaterialDB : public BSMaterialsCDB
     void readFloat2DLerpController(const BSMaterialsCDB::CDBObject *p);
     bool readBSComponentDB2ID(const CE2MaterialObject*& linkedObject,
                               const BSMaterialsCDB::CDBObject *p,
-                              size_t fieldNum, unsigned char typeRequired = 0);
+                              unsigned char typeRequired = 0);
     void readTextureReplacement(const BSMaterialsCDB::CDBObject *p);
     void readBlendModeComponent(const BSMaterialsCDB::CDBObject *p);
     void readLayeredEdgeFalloffComponent(const BSMaterialsCDB::CDBObject *p);
