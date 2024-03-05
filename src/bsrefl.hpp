@@ -5,10 +5,6 @@
 #include "common.hpp"
 #include "filebuf.hpp"
 
-#ifndef ENABLE_CDB_DEBUG
-#  define ENABLE_CDB_DEBUG  0
-#endif
-
 class BSReflStream : public FileBuffer
 {
  public:
@@ -116,7 +112,10 @@ class BSReflStream : public FileBuffer
     String_BSMaterial_WaterFoamSettingsComponent = 223,
     String_BSMaterial_WaterGrimeSettingsComponent = 224,
     String_BSMaterial_WaterSettingsComponent = 225,
-    String_BSResource_ID = 228
+    String_BSResource_ID = 228,
+    String_XMFLOAT2 = 1089,
+    String_XMFLOAT3 = 1090,
+    String_XMFLOAT4 = 1091
   };
   class Chunk : public FileBuffer
   {
@@ -182,8 +181,7 @@ class BSReflStream : public FileBuffer
     return stringMap[strtOffs];
   }
   // returns chunk type (ChunkType_BETH, etc.), or 0 on end of file
-  inline unsigned int readChunk(Chunk& chunkBuf, size_t startPos = 0,
-                                bool enableDebugPrint = false);
+  inline unsigned int readChunk(Chunk& chunkBuf, size_t startPos = 0);
   static inline const char *getDefaultMaterialDBPath()
   {
     return "materials/materialsbeta.cdb";
@@ -206,9 +204,6 @@ inline bool BSReflStream::Chunk::getFieldNumber(
   n = readUInt16Fast();
   if (std::int16_t(n) <= std::int16_t(nMax)) [[likely]]
     return (std::int16_t(n) >= 0);
-#if ENABLE_CDB_DEBUG
-  std::printf("Warning: unrecognized DIFF field number, skipping data\n");
-#endif
   filePos = fileBufSize;
   return false;
 }
@@ -309,8 +304,7 @@ inline bool BSReflStream::Chunk::readString(std::string& stringBuf)
   return true;
 }
 
-inline unsigned int BSReflStream::readChunk(Chunk& chunkBuf, size_t startPos,
-                                            bool enableDebugPrint)
+inline unsigned int BSReflStream::readChunk(Chunk& chunkBuf, size_t startPos)
 {
   if (!chunksRemaining) [[unlikely]]
     return 0U;
@@ -321,25 +315,6 @@ inline unsigned int BSReflStream::readChunk(Chunk& chunkBuf, size_t startPos,
   unsigned int  chunkSize = readUInt32Fast();
   if ((filePos + std::uint64_t(chunkSize)) > fileBufSize)
     errorMessage("unexpected end of reflection stream");
-#if ENABLE_CDB_DEBUG
-  if (enableDebugPrint)
-  {
-    char    chunkTypeStr[8];
-    chunkTypeStr[0] = char(chunkType & 0x7FU);
-    chunkTypeStr[1] = char((chunkType >> 8) & 0x7FU);
-    chunkTypeStr[2] = char((chunkType >> 16) & 0x7FU);
-    chunkTypeStr[3] = char((chunkType >> 24) & 0x7FU);
-    chunkTypeStr[4] = '\0';
-    size_t  t = String_Unknown;
-    if (chunkSize >= 4U)
-      t = findString(FileBuffer::readUInt32Fast(fileBuf + filePos));
-    std::printf("%s (%s) at 0x%08X, size = %u bytes",
-                chunkTypeStr, stringTable[t],
-                (unsigned int) filePos - 8U, chunkSize);
-  }
-#else
-  (void) enableDebugPrint;
-#endif
   chunkBuf.setData(fileBuf + filePos, chunkSize, startPos);
   filePos = filePos + chunkSize;
   return chunkType;

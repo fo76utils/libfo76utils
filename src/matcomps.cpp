@@ -2,61 +2,154 @@
 #include "common.hpp"
 #include "material.hpp"
 
-inline bool CE2MaterialDB::ComponentInfo::readString()
+inline bool CE2MaterialDB::ComponentInfo::readBool(
+    bool& n, const BSMaterialsCDB::CDBObject *p, size_t fieldNum)
 {
-  return BSReflStream::Chunk::readString(stringBuf);
-}
-
-inline bool CE2MaterialDB::ComponentInfo::readAndStoreString(
-    const std::string*& s, int type)
-{
-  if ((filePos + 2ULL) > fileBufSize) [[unlikely]]
+  if (p && p->type > BSReflStream::String_Unknown && fieldNum < p->childCnt &&
+      p->children()[fieldNum] &&
+      p->children()[fieldNum]->type == BSReflStream::String_Bool)
   {
-    filePos = fileBufSize;
-    return false;
+    n = p->children()[fieldNum]->boolValue();
+    return true;
   }
-  unsigned int  len = readUInt16Fast();
-  if ((filePos + std::uint64_t(len)) > fileBufSize) [[unlikely]]
+  return false;
+}
+
+inline bool CE2MaterialDB::ComponentInfo::readUInt8(
+    unsigned char& n, const BSMaterialsCDB::CDBObject *p, size_t fieldNum)
+{
+  if (p && p->type > BSReflStream::String_Unknown && fieldNum < p->childCnt &&
+      p->children()[fieldNum] &&
+      p->children()[fieldNum]->type == BSReflStream::String_UInt8)
   {
-    filePos = fileBufSize;
-    return false;
+    n = (unsigned char) p->children()[fieldNum]->uintValue();
+    return true;
   }
-  s = cdb.readStringParam(stringBuf, *this, len, type);
-  return true;
+  return false;
 }
 
-unsigned int CE2MaterialDB::ComponentInfo::readChunk(
-    BSReflStream::Chunk& chunkBuf)
+inline bool CE2MaterialDB::ComponentInfo::readUInt16(
+    std::uint16_t& n, const BSMaterialsCDB::CDBObject *p, size_t fieldNum)
 {
-  unsigned int  chunkType = cdbBuf.readChunk(chunkBuf, 0, true);
-#if ENABLE_CDB_DEBUG
-  std::fputc('\n', stdout);
-#endif
-  return chunkType;
-}
-
-static inline bool parseLayerNumber(unsigned char& n, const std::string& s)
-{
-  if (s.length() == 16 && s.starts_with("MATERIAL_LAYER_"))
+  if (p && p->type > BSReflStream::String_Unknown && fieldNum < p->childCnt &&
+      p->children()[fieldNum] &&
+      p->children()[fieldNum]->type == BSReflStream::String_UInt16)
   {
-    unsigned char tmp = (unsigned char) (s[15] - '0');
-    if (tmp < CE2Material::maxLayers)
+    n = std::uint16_t(p->children()[fieldNum]->uintValue());
+    return true;
+  }
+  return false;
+}
+
+inline bool CE2MaterialDB::ComponentInfo::readUInt32(
+    std::uint32_t& n, const BSMaterialsCDB::CDBObject *p, size_t fieldNum)
+{
+  if (p && p->type > BSReflStream::String_Unknown && fieldNum < p->childCnt &&
+      p->children()[fieldNum] &&
+      p->children()[fieldNum]->type == BSReflStream::String_UInt32)
+  {
+    n = std::uint32_t(p->children()[fieldNum]->uintValue());
+    return true;
+  }
+  return false;
+}
+
+inline bool CE2MaterialDB::ComponentInfo::readFloat(
+    float& n, const BSMaterialsCDB::CDBObject *p, size_t fieldNum,
+    bool clampTo0To1)
+{
+  if (p && p->type > BSReflStream::String_Unknown && fieldNum < p->childCnt &&
+      p->children()[fieldNum] &&
+      p->children()[fieldNum]->type == BSReflStream::String_Float)
+  {
+    n = p->children()[fieldNum]->floatValue();
+    if (clampTo0To1)
+      n = std::min((n > 0.0f ? n : 0.0f), 1.0f);
+    return true;
+  }
+  return false;
+}
+
+inline bool CE2MaterialDB::ComponentInfo::readString(
+    const char*& s, const BSMaterialsCDB::CDBObject *p, size_t fieldNum)
+{
+  if (p && p->type > BSReflStream::String_Unknown && fieldNum < p->childCnt &&
+      p->children()[fieldNum] &&
+      p->children()[fieldNum]->type == BSReflStream::String_String)
+  {
+    s = p->children()[fieldNum]->stringValue();
+    return true;
+  }
+  return false;
+}
+
+bool CE2MaterialDB::ComponentInfo::readPath(
+    const std::string*& s, const BSMaterialsCDB::CDBObject *p, size_t fieldNum,
+    const char *prefix, const char *suffix)
+{
+  if (p && p->type > BSReflStream::String_Unknown && fieldNum < p->childCnt &&
+      p->children()[fieldNum] &&
+      p->children()[fieldNum]->type == BSReflStream::String_String)
+  {
+    const char  *t = p->children()[fieldNum]->stringValue();
+    FileBuffer  tmpBuf(reinterpret_cast< const unsigned char * >(t),
+                       std::strlen(t) + 1, 0);
+    tmpBuf.readPath(cdb.stringBuf, std::string::npos, prefix, suffix);
+    s = cdb.storeStdString(cdb.stringBuf);
+    return true;
+  }
+  return false;
+}
+
+bool CE2MaterialDB::ComponentInfo::readEnum(
+    unsigned char& n, const BSMaterialsCDB::CDBObject *p, size_t fieldNum,
+    const char *t)
+{
+  if (p && p->type > BSReflStream::String_Unknown && fieldNum < p->childCnt &&
+      p->children()[fieldNum] &&
+      p->children()[fieldNum]->type == BSReflStream::String_String)
+  {
+    const char  *s = p->children()[fieldNum]->stringValue();
+    BSReflStream::Chunk tmpBuf;
+    tmpBuf.setData(reinterpret_cast< const unsigned char * >(s),
+                   std::strlen(s) + 1, 0);
+    return tmpBuf.readEnum(n, t);
+  }
+  return false;
+}
+
+bool CE2MaterialDB::ComponentInfo::readLayerNumber(
+    unsigned char& n, const BSMaterialsCDB::CDBObject *p, size_t fieldNum)
+{
+  if (p && p->type > BSReflStream::String_Unknown && fieldNum < p->childCnt &&
+      p->children()[fieldNum] &&
+      p->children()[fieldNum]->type == BSReflStream::String_String)
+  {
+    const char  *s = p->children()[fieldNum]->stringValue();
+    if (std::strncmp(s, "MATERIAL_LAYER_", 15) == 0 &&
+        s[15] >= '0' && s[15] < char(CE2Material::maxLayers + '0') &&
+        s[16] == '\0')
     {
-      n = tmp;
+      n = (unsigned char) (s[15] - '0');
       return true;
     }
   }
   return false;
 }
 
-static inline bool parseBlenderNumber(unsigned char& n, const std::string& s)
+bool CE2MaterialDB::ComponentInfo::readBlenderNumber(
+    unsigned char& n, const BSMaterialsCDB::CDBObject *p, size_t fieldNum)
 {
-  if (s.length() == 13 && s.starts_with("BLEND_LAYER_"))
+  if (p && p->type > BSReflStream::String_Unknown && fieldNum < p->childCnt &&
+      p->children()[fieldNum] &&
+      p->children()[fieldNum]->type == BSReflStream::String_String)
   {
-    unsigned char tmp = (unsigned char) (s[12] - '0');
-    if (tmp < CE2Material::maxBlenders)
+    const char  *s = p->children()[fieldNum]->stringValue();
+    if (std::strncmp(s, "BLEND_LAYER_", 12) == 0 &&
+        s[12] >= '0' && s[12] < char(CE2Material::maxBlenders + '0') &&
+        s[13] == '\0')
     {
-      n = tmp;
+      n = (unsigned char) (s[12] - '0');
       return true;
     }
   }
@@ -89,172 +182,60 @@ static inline bool parseBlenderNumber(unsigned char& n, const std::string& s)
 //   Float  MinOffsetEmittance
 
 void CE2MaterialDB::ComponentInfo::readLayeredEmissivityComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  CE2Material *m = nullptr;
-  CE2Material::LayeredEmissiveSettings  *sp = nullptr;
-  if (p.o->type == 1) [[likely]]
+  if (o->type != 1) [[unlikely]]
+    return;
+  CE2Material *m = static_cast< CE2Material * >(o);
+  CE2Material::LayeredEmissiveSettings  *sp =
+      reinterpret_cast< CE2Material::LayeredEmissiveSettings * >(
+          cdb.allocateSpace(sizeof(CE2Material::LayeredEmissiveSettings),
+                            alignof(CE2Material::LayeredEmissiveSettings)));
+  sp->layer2Index = 1;                  // "MATERIAL_LAYER_1"
+  sp->layer3Index = 2;                  // "MATERIAL_LAYER_2"
+  sp->blender2Index = 1;                // "BLEND_LAYER_1"
+  sp->layer1Tint = 0xFFFFFFFFU;
+  sp->layer2Tint = 0xFFFFFFFFU;
+  sp->layer3Tint = 0xFFFFFFFFU;
+  sp->clipThreshold = 0.0f;
+  sp->luminousEmittance = 100.0f;
+  sp->exposureOffset = 0.0f;
+  sp->maxOffset = 1.0f;
+  sp->minOffset = 0.0f;
+  m->layeredEmissiveSettings = sp;
+  bool    tmp;
+  if (readBool(tmp, p, 0))
   {
-    m = static_cast< CE2Material * >(p.o);
-    sp = reinterpret_cast< CE2Material::LayeredEmissiveSettings * >(
-             p.cdb.allocateSpace(sizeof(CE2Material::LayeredEmissiveSettings),
-                                 m->layeredEmissiveSettings));
-    if (!m->layeredEmissiveSettings)
-    {
-      sp->isEnabled = false;
-      sp->layer1Index = 0;              // "MATERIAL_LAYER_0"
-      sp->layer1MaskIndex = 0;          // "None"
-      sp->layer2Active = false;
-      sp->layer2Index = 1;              // "MATERIAL_LAYER_1"
-      sp->layer2MaskIndex = 0;
-      sp->blender1Index = 0;            // "BLEND_LAYER_0"
-      sp->blender1Mode = 0;             // "Lerp"
-      sp->layer3Active = false;
-      sp->layer3Index = 2;              // "MATERIAL_LAYER_2"
-      sp->layer3MaskIndex = 0;
-      sp->blender2Index = 1;            // "BLEND_LAYER_1"
-      sp->blender2Mode = 0;
-      sp->adaptiveEmittance = false;
-      sp->enableAdaptiveLimits = false;
-      sp->layer1Tint = 0xFFFFFFFFU;
-      sp->layer2Tint = 0xFFFFFFFFU;
-      sp->layer3Tint = 0xFFFFFFFFU;
-      sp->clipThreshold = 0.0f;
-      sp->luminousEmittance = 100.0f;
-      sp->exposureOffset = 0.0f;
-      sp->maxOffset = 1.0f;
-      sp->minOffset = 0.0f;
-    }
-    m->layeredEmissiveSettings = sp;
+    m->setFlags(CE2Material::Flag_LayeredEmissivity, tmp);
+    sp->isEnabled = tmp;
   }
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 22U, isDiff); )
-  {
-    if ((1U << n) & 0x00120411U)        // 0, 4, 10, 17, 20: booleans
-    {
-      bool    tmp;
-      if (!p.readBool(tmp))
-        break;
-      if (!m)
-        continue;
-      switch (n)
-      {
-        case 0U:
-          m->setFlags(CE2Material::Flag_LayeredEmissivity, tmp);
-          sp->isEnabled = tmp;
-          break;
-        case 4U:
-          sp->layer2Active = tmp;
-          break;
-        case 10U:
-          sp->layer3Active = tmp;
-          break;
-        case 17U:
-          sp->adaptiveEmittance = tmp;
-          break;
-        case 20U:
-          sp->enableAdaptiveLimits = tmp;
-          break;
-      }
-    }
-    else if ((1U << n) & 0x006D0000U)   // 16, 18, 19, 21, 22: floats
-    {
-      float   tmp;
-      if (!p.readFloat(tmp))
-        break;
-      if (!sp)
-        continue;
-      switch (n)
-      {
-        case 16U:
-          sp->clipThreshold = tmp;
-          break;
-        case 18U:
-          sp->luminousEmittance = tmp;
-          break;
-        case 19U:
-          sp->exposureOffset = tmp;
-          break;
-        case 21U:
-          sp->maxOffset = tmp;
-          break;
-        case 22U:
-          sp->minOffset = tmp;
-          break;
-      }
-    }
-    else if ((1U << n) & 0x00001044U)   // 2, 6, 12: colors
-    {
-      if (!sp)
-      {
-        FloatVector4  tmp(0.0f);
-        readColorValue(tmp, p, isDiff);
-      }
-      else
-      {
-        if (n == 2U)
-          readColorValue(sp->layer1Tint, p, isDiff);
-        else if (n == 6U)
-          readColorValue(sp->layer2Tint, p, isDiff);
-        else
-          readColorValue(sp->layer3Tint, p, isDiff);
-      }
-    }
-    else if ((1U << n) & 0x00000822U)   // 1, 5, 11: layer numbers
-    {
-      if (!p.readString())
-        break;
-      unsigned char tmp = 0;
-      if (!(sp && parseLayerNumber(tmp, p.stringBuf)))
-        continue;
-      if (n == 1U)
-        sp->layer1Index = tmp;
-      else if (n == 5U)
-        sp->layer2Index = tmp;
-      else
-        sp->layer3Index = tmp;
-    }
-    else if ((1U << n) & 0x00002088U)   // 3, 7, 13: mask numbers
-    {
-      unsigned char tmp = 0xFF;
-      if (!p.readEnum(tmp, "\004None\010Blender1\010Blender2\010Blender3"))
-        break;
-      if (!(sp && tmp != 0xFF))
-        continue;
-      if (n == 3U)
-        sp->layer1MaskIndex = tmp;
-      else if (n == 7U)
-        sp->layer2MaskIndex = tmp;
-      else
-        sp->layer3MaskIndex = tmp;
-    }
-    else if ((1U << n) & 0x00004100U)   // 8, 14: blender numbers
-    {
-      if (!p.readString())
-        break;
-      unsigned char tmp = 0;
-      if (!(sp && parseBlenderNumber(tmp, p.stringBuf)))
-        continue;
-      if (n == 8U)
-        sp->blender1Index = tmp;
-      else
-        sp->blender2Index = tmp;
-    }
-    else                                // 9, 15: blender modes
-    {
-      unsigned char tmp = 0xFF;
-      if (!p.readEnum(tmp,
-                      "\004Lerp\010Additive\013Subtractive\016Multiplicative"))
-      {
-        break;
-      }
-      if (!(sp && tmp != 0xFF))
-        continue;
-      if (n == 9U)
-        sp->blender1Mode = tmp;
-      else
-        sp->blender2Mode = tmp;
-    }
-  }
+  readLayerNumber(sp->layer1Index, p, 1);
+  readColorValue(sp->layer1Tint, p, 2);
+  readEnum(sp->layer1MaskIndex, p, 3,
+           "\004None\010Blender1\010Blender2\010Blender3");
+  readBool(sp->layer2Active, p, 4);
+  readLayerNumber(sp->layer2Index, p, 5);
+  readColorValue(sp->layer2Tint, p, 6);
+  readEnum(sp->layer2MaskIndex, p, 7,
+           "\004None\010Blender1\010Blender2\010Blender3");
+  readBlenderNumber(sp->blender1Index, p, 8);
+  readEnum(sp->blender1Mode, p, 9,
+           "\004Lerp\010Additive\013Subtractive\016Multiplicative");
+  readBool(sp->layer3Active, p, 10);
+  readLayerNumber(sp->layer3Index, p, 11);
+  readColorValue(sp->layer3Tint, p, 12);
+  readEnum(sp->layer3MaskIndex, p, 13,
+           "\004None\010Blender1\010Blender2\010Blender3");
+  readBlenderNumber(sp->blender2Index, p, 14);
+  readEnum(sp->blender2Mode, p, 15,
+           "\004Lerp\010Additive\013Subtractive\016Multiplicative");
+  readFloat(sp->clipThreshold, p, 16);
+  readBool(sp->adaptiveEmittance, p, 17);
+  readFloat(sp->luminousEmittance, p, 18);
+  readFloat(sp->exposureOffset, p, 19);
+  readBool(sp->enableAdaptiveLimits, p, 20);
+  readFloat(sp->maxOffset, p, 21);
+  readFloat(sp->minOffset, p, 22);
 }
 
 // BSMaterial::AlphaBlenderSettings
@@ -269,65 +250,27 @@ void CE2MaterialDB::ComponentInfo::readLayeredEmissivityComponent(
 //   Float  Contrast
 
 void CE2MaterialDB::ComponentInfo::readAlphaBlenderSettings(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  CE2Material *m = nullptr;
-  if (p.o->type == 1) [[likely]]
-    m = static_cast< CE2Material * >(p.o);
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 8U, isDiff); )
-  {
-    if ((1U << n) & 0x00000006U)        // 1, 2: booleans
-    {
-      bool    tmp;
-      if (!p.readBool(tmp))
-        break;
-      if (!m)
-        continue;
-      if (n == 1U)
-        m->setFlags(CE2Material::Flag_AlphaDetailBlendMask, tmp);
-      else
-        m->setFlags(CE2Material::Flag_AlphaVertexColor, tmp);
-    }
-    else if ((1U << n) & 0x000001E0U)   // 5, 6, 7, 8: floats
-    {
-      float   tmp;
-      if (!p.readFloat0To1(tmp))
-        break;
-      if (!m)
-        continue;
-      if (n == 5U)
-        m->alphaHeightBlendThreshold = tmp;
-      else if (n == 6U)
-        m->alphaHeightBlendFactor = tmp;
-      else if (n == 7U)
-        m->alphaPosition = tmp;
-      else
-        m->alphaContrast = tmp;
-    }
-    else if (n == 0U)
-    {
-      unsigned char tmp = 0xFF;
-      if (!p.readEnum(tmp,
-                      "\006Linear\010Additive\020PositionContrast\004None"))
-      {
-        break;
-      }
-      if (m && tmp != 0xFF)
-        m->alphaBlendMode = tmp;
-    }
-    else if (n == 3U)
-    {
-      unsigned char tmp = 0xFF;
-      if (!p.readEnum(tmp, "\003Red\005Green\004Blue\005Alpha"))
-        break;
-      if (m && tmp != 0xFF)
-        m->alphaVertexColorChannel = tmp;
-    }
-    else                                // 4: UV stream ID
-    {
-      readUVStreamID(p, isDiff);
-    }
-  }
+  if (o->type != 1) [[unlikely]]
+    return;
+  if (!(p && p->type == BSReflStream::String_BSMaterial_AlphaBlenderSettings))
+    return;
+  CE2Material *m = static_cast< CE2Material * >(o);
+  readEnum(m->alphaBlendMode, p, 0,
+           "\006Linear\010Additive\020PositionContrast\004None");
+  bool    tmp;
+  if (readBool(tmp, p, 1))
+    m->setFlags(CE2Material::Flag_AlphaDetailBlendMask, tmp);
+  if (readBool(tmp, p, 2))
+    m->setFlags(CE2Material::Flag_AlphaVertexColor, tmp);
+  readEnum(m->alphaVertexColorChannel, p, 3,
+           "\003Red\005Green\004Blue\005Alpha");
+  readUVStreamID(p, 4);
+  readFloat(m->alphaHeightBlendThreshold, p, 5, true);
+  readFloat(m->alphaHeightBlendFactor, p, 6, true);
+  readFloat(m->alphaPosition, p, 7, true);
+  readFloat(m->alphaContrast, p, 8, true);
 }
 
 // BSFloatCurve
@@ -343,10 +286,9 @@ void CE2MaterialDB::ComponentInfo::readAlphaBlenderSettings(
 //   Bool  IsSampleInterpolating
 
 void CE2MaterialDB::ComponentInfo::readBSFloatCurve(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // BSMaterial::EmissiveSettingsComponent
@@ -354,49 +296,30 @@ void CE2MaterialDB::ComponentInfo::readBSFloatCurve(
 //   BSMaterial::EmittanceSettings  Settings
 
 void CE2MaterialDB::ComponentInfo::readEmissiveSettingsComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  CE2Material *m = nullptr;
-  CE2Material::EmissiveSettings *sp = nullptr;
-  if (p.o->type == 1) [[likely]]
+  if (o->type != 1) [[unlikely]]
+    return;
+  CE2Material *m = static_cast< CE2Material * >(o);
+  CE2Material::EmissiveSettings *sp =
+      reinterpret_cast< CE2Material::EmissiveSettings * >(
+          cdb.allocateSpace(sizeof(CE2Material::EmissiveSettings),
+                            alignof(CE2Material::EmissiveSettings)));
+  sp->clipThreshold = 0.0f;
+  sp->luminousEmittance = 432.0f;
+  sp->emissiveTint = FloatVector4(1.0f);
+  sp->exposureOffset = 0.0f;
+  sp->maxOffset = 9999.0f;
+  sp->minOffset = 0.0f;
+  m->emissiveSettings = sp;
+  bool    tmp;
+  if (readBool(tmp, p, 0))
   {
-    m = static_cast< CE2Material * >(p.o);
-    sp = reinterpret_cast< CE2Material::EmissiveSettings * >(
-             p.cdb.allocateSpace(sizeof(CE2Material::EmissiveSettings),
-                                 m->emissiveSettings));
-    if (!m->emissiveSettings)
-    {
-      sp->isEnabled = false;
-      sp->sourceLayer = 0;
-      sp->maskSourceBlender = 0;        // "None"
-      sp->adaptiveEmittance = false;
-      sp->enableAdaptiveLimits = false;
-      sp->clipThreshold = 0.0f;
-      sp->luminousEmittance = 432.0f;
-      sp->emissiveTint = FloatVector4(1.0f);
-      sp->exposureOffset = 0.0f;
-      sp->maxOffset = 9999.0f;
-      sp->minOffset = 0.0f;
-    }
-    m->emissiveSettings = sp;
+    m->setFlags(CE2Material::Flag_Emissive, tmp);
+    sp->isEnabled = tmp;
   }
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 1U, isDiff); )
-  {
-    if (n == 0U)
-    {
-      bool    tmp;
-      if (!p.readBool(tmp))
-        break;
-      if (!m)
-        continue;
-      m->setFlags(CE2Material::Flag_Emissive, tmp);
-      sp->isEnabled = tmp;
-    }
-    else
-    {
-      readEmittanceSettings(p, isDiff);
-    }
-  }
+  if (p && p->type > BSReflStream::String_Unknown && p->childCnt >= 2)
+    readEmittanceSettings(p->children()[1]);
 }
 
 // BSMaterial::WaterFoamSettingsComponent
@@ -428,10 +351,9 @@ void CE2MaterialDB::ComponentInfo::readEmissiveSettingsComponent(
 //   Bool  WaveFlipWaveDirection
 
 void CE2MaterialDB::ComponentInfo::readWaterFoamSettingsComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // BSMaterial::FlipbookComponent
@@ -442,93 +364,64 @@ void CE2MaterialDB::ComponentInfo::readWaterFoamSettingsComponent(
 //   Bool  Loops
 
 void CE2MaterialDB::ComponentInfo::readFlipbookComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  CE2Material::Material *m = nullptr;
-  if (p.o->type == 4) [[likely]]
-    m = static_cast< CE2Material::Material * >(p.o);
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 4U, isDiff); )
-  {
-    if (n == 0U || n == 4U)
-    {
-      bool    tmp;
-      if (!p.readBool(tmp))
-        break;
-      if (!m)
-        continue;
-      if (n == 0U)
-        m->flipbookFlags = (m->flipbookFlags & 2) | (unsigned char) tmp;
-      else
-        m->flipbookFlags = (m->flipbookFlags & 1) | ((unsigned char) tmp << 1);
-    }
-    else if (n <= 2U)
-    {
-      std::uint32_t tmp;
-      if (!p.readUInt32(tmp))
-        break;
-      if (!m)
-        continue;
-      tmp = std::min< std::uint32_t >(tmp, 255U);
-      if (n == 1U)
-        m->flipbookColumns = (unsigned char) tmp;
-      else
-        m->flipbookRows = (unsigned char) tmp;
-    }
-    else
-    {
-      float   tmp;
-      if (!p.readFloat(tmp))
-        break;
-      if (m)
-        m->flipbookFPS = tmp;
-    }
-  }
+  if (o->type != 4) [[unlikely]]
+    return;
+  CE2Material::Material *m = static_cast< CE2Material::Material * >(o);
+  bool    tmp;
+  if (readBool(tmp, p, 0))
+    m->flipbookFlags = (m->flipbookFlags & 2) | (unsigned char) tmp;
+  std::uint32_t tmp2;
+  if (readUInt32(tmp2, p, 1))
+    m->flipbookColumns = (unsigned char) std::min< std::uint32_t >(tmp2, 255U);
+  if (readUInt32(tmp2, p, 2))
+    m->flipbookRows = (unsigned char) std::min< std::uint32_t >(tmp2, 255U);
+  readFloat(m->flipbookFPS, p, 3);
+  if (readBool(tmp, p, 4))
+    m->flipbookFlags = (m->flipbookFlags & 1) | ((unsigned char) tmp << 1);
 }
 
 // BSMaterial::PhysicsMaterialType
 //   UInt32  Value
 
 void CE2MaterialDB::ComponentInfo::readPhysicsMaterialType(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
+  if (!(p && p->type == BSReflStream::String_BSMaterial_PhysicsMaterialType))
+    return;
+  if (o->type != 1) [[unlikely]]
+    return;
+  std::uint32_t tmp;
+  if (!readUInt32(tmp, p, 0))
+    return;
+  CE2Material *m = static_cast< CE2Material * >(o);
+  switch (tmp)
   {
-    std::uint32_t tmp;
-    if (!p.readUInt32(tmp))
+    case 0x064003D4U:           // "metal"
+      m->physicsMaterialType = 6;
       break;
-    if (p.o->type == 1 &&
-        p.componentType
-        == BSReflStream::String_BSMaterial_CollisionComponent) [[likely]]
-    {
-      CE2Material *m = static_cast< CE2Material * >(p.o);
-      switch (tmp)
-      {
-        case 0x064003D4U:               // "metal"
-          m->physicsMaterialType = 6;
-          break;
-        case 0x1DD9C611U:               // "wood"
-          m->physicsMaterialType = 7;
-          break;
-        case 0x4BDC3571U:               // "materialphyicedebrislarge"
-          m->physicsMaterialType = 5;
-          break;
-        case 0x6B81B7B0U:               // "mat"
-          m->physicsMaterialType = 2;
-          break;
-        case 0x7A0EB611U:               // "materialmat"
-          m->physicsMaterialType = 4;
-          break;
-        case 0xAD5ACB92U:               // "materialgroundtilevinyl"
-          m->physicsMaterialType = 3;
-          break;
-        case 0xF0170989U:               // "carpet"
-          m->physicsMaterialType = 1;
-          break;
-        default:
-          m->physicsMaterialType = 0;
-          break;
-      }
-    }
+    case 0x1DD9C611U:           // "wood"
+      m->physicsMaterialType = 7;
+      break;
+    case 0x4BDC3571U:           // "materialphyicedebrislarge"
+      m->physicsMaterialType = 5;
+      break;
+    case 0x6B81B7B0U:           // "mat"
+      m->physicsMaterialType = 2;
+      break;
+    case 0x7A0EB611U:           // "materialmat"
+      m->physicsMaterialType = 4;
+      break;
+    case 0xAD5ACB92U:           // "materialgroundtilevinyl"
+      m->physicsMaterialType = 3;
+      break;
+    case 0xF0170989U:           // "carpet"
+      m->physicsMaterialType = 1;
+      break;
+    default:
+      m->physicsMaterialType = 0;
+      break;
   }
 }
 
@@ -538,48 +431,42 @@ void CE2MaterialDB::ComponentInfo::readPhysicsMaterialType(
 //   Float  TerrainBlendGradientFactor
 
 void CE2MaterialDB::ComponentInfo::readTerrainTintSettingsComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // BSMaterial::UVStreamID
 //   BSComponentDB2::ID  ID
 
 void CE2MaterialDB::ComponentInfo::readUVStreamID(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p, size_t fieldNum)
 {
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
+  const CE2MaterialObject *tmp;
+  if (!readBSComponentDB2ID(tmp, p, fieldNum, 6))
+    return;
+  const CE2Material::UVStream *uvStream =
+      static_cast< const CE2Material::UVStream * >(tmp);
+  switch (componentData->className)
   {
-    const CE2Material::UVStream *uvStream =
-        static_cast< const CE2Material::UVStream * >(
-            readBSComponentDB2ID(p, isDiff, 6));
-    if (p.componentType
-        == BSReflStream::String_BSMaterial_UVStreamID) [[likely]]
-    {
-      if (p.o->type == 2)
-        static_cast< CE2Material::Blender * >(p.o)->uvStream = uvStream;
-      else if (p.o->type == 3)
-        static_cast< CE2Material::Layer * >(p.o)->uvStream = uvStream;
-    }
-    else if (p.componentType
-             == BSReflStream::String_BSMaterial_AlphaSettingsComponent)
-    {
-      if (p.o->type == 1)
-        static_cast< CE2Material * >(p.o)->alphaUVStream = uvStream;
-    }
-    else if (p.componentType
-             == BSReflStream::String_BSMaterial_DetailBlenderSettingsComponent)
-    {
-      if (p.o->type == 1)
+    case BSReflStream::String_BSMaterial_UVStreamID:
+      if (o->type == 2)
+        static_cast< CE2Material::Blender * >(o)->uvStream = uvStream;
+      else if (o->type == 3)
+        static_cast< CE2Material::Layer * >(o)->uvStream = uvStream;
+      break;
+    case BSReflStream::String_BSMaterial_AlphaSettingsComponent:
+      if (o->type == 1)
+        static_cast< CE2Material * >(o)->alphaUVStream = uvStream;
+      break;
+    case BSReflStream::String_BSMaterial_DetailBlenderSettingsComponent:
+      if (o->type == 1)
       {
-        CE2Material::DetailBlenderSettings  *sp =
-            const_cast< CE2Material::DetailBlenderSettings * >(
-                static_cast< CE2Material * >(p.o)->detailBlenderSettings);
-        sp->uvStream = uvStream;
+        const_cast< CE2Material::DetailBlenderSettings * >(
+            static_cast< CE2Material * >(o)->detailBlenderSettings)->uvStream =
+                uvStream;
       }
-    }
+      break;
   }
 }
 
@@ -594,92 +481,38 @@ void CE2MaterialDB::ComponentInfo::readUVStreamID(
 //   Bool  AnimatedDecalIgnoresTAA
 
 void CE2MaterialDB::ComponentInfo::readDecalSettingsComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  CE2Material *m = nullptr;
-  CE2Material::DecalSettings  *sp = nullptr;
-  if (p.o->type == 1) [[likely]]
+  if (o->type != 1) [[unlikely]]
+    return;
+  CE2Material *m = static_cast< CE2Material * >(o);
+  CE2Material::DecalSettings  *sp =
+      reinterpret_cast< CE2Material::DecalSettings * >(
+          cdb.allocateSpace(sizeof(CE2Material::DecalSettings),
+                            alignof(CE2Material::DecalSettings)));
+  sp->decalAlpha = 1.0f;
+  sp->writeMask = 0x0737U;
+  sp->maxParallaxSteps = 72;
+  sp->surfaceHeightMap = &(*(cdb.storedStdStrings.cbegin()));
+  sp->parallaxOcclusionScale = 1.0f;
+  sp->useGBufferNormals = true;
+  m->decalSettings = sp;
+  bool    tmp;
+  if (readBool(tmp, p, 0))
   {
-    m = static_cast< CE2Material * >(p.o);
-    sp = reinterpret_cast< CE2Material::DecalSettings * >(
-             p.cdb.allocateSpace(sizeof(CE2Material::DecalSettings),
-                                 m->decalSettings));
-    if (!m->decalSettings)
-    {
-      sp->isDecal = false;
-      sp->isPlanet = false;
-      sp->blendMode = 0;                // "None"
-      sp->animatedDecalIgnoresTAA = false;
-      sp->decalAlpha = 1.0f;
-      sp->writeMask = 0x0737U;
-      sp->isProjected = false;
-      sp->useParallaxMapping = false;
-      sp->parallaxOcclusionShadows = false;
-      sp->maxParallaxSteps = 72;
-      sp->surfaceHeightMap = p.cdb.stringBuffers.front().data();
-      sp->parallaxOcclusionScale = 1.0f;
-      sp->renderLayer = 0;              // "Top"
-      sp->useGBufferNormals = true;
-    }
-    m->decalSettings = sp;
+    m->setFlags(CE2Material::Flag_IsDecal, tmp);
+    if (tmp)
+      m->setFlags(CE2Material::Flag_AlphaBlending, true);
+    sp->isDecal = tmp;
   }
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 7U, isDiff); )
-  {
-    if ((1U << n) & 0x00000099U)        // 0, 3, 4, 7: booleans
-    {
-      bool    tmp;
-      if (!p.readBool(tmp))
-        break;
-      if (!m)
-        continue;
-      switch (n)
-      {
-        case 0U:
-          m->setFlags(CE2Material::Flag_IsDecal, tmp);
-          if (tmp)
-            m->setFlags(CE2Material::Flag_AlphaBlending, true);
-          sp->isDecal = tmp;
-          break;
-        case 3U:
-          sp->isPlanet = tmp;
-          break;
-        case 4U:
-          sp->isProjected = tmp;
-          break;
-        case 7U:
-          sp->animatedDecalIgnoresTAA = tmp;
-          break;
-      }
-    }
-    else if (n == 1U)
-    {
-      float   tmp;
-      if (!p.readFloat(tmp))
-        break;
-      if (sp)
-        sp->decalAlpha = tmp;
-    }
-    else if (n == 2U)
-    {
-      std::uint32_t tmp;
-      if (!p.readUInt32(tmp))
-        break;
-      if (sp)
-        sp->writeMask = tmp;
-    }
-    else if (n == 5U)
-    {
-      readProjectedDecalSettings(p, isDiff);
-    }
-    else
-    {
-      unsigned char tmp = 0xFF;
-      if (!p.readEnum(tmp, "\004None\010Additive"))
-        break;
-      if (sp && tmp != 0xFF)
-        sp->blendMode = tmp;
-    }
-  }
+  readFloat(sp->decalAlpha, p, 1);
+  readUInt32(sp->writeMask, p, 2);
+  readBool(sp->isPlanet, p, 3);
+  readBool(sp->isProjected, p, 4);
+  if (p && p->type > BSReflStream::String_Unknown && p->childCnt >= 6)
+    readProjectedDecalSettings(p->children()[5]);
+  readEnum(sp->blendMode, p, 6, "\004None\010Additive");
+  readBool(sp->animatedDecalIgnoresTAA, p, 7);
 }
 
 // BSBind::Directory
@@ -688,10 +521,9 @@ void CE2MaterialDB::ComponentInfo::readDecalSettingsComponent(
 //   UInt64  SourceDirectoryHash
 
 void CE2MaterialDB::ComponentInfo::readDirectory(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // BSMaterial::WaterSettingsComponent
@@ -719,104 +551,49 @@ void CE2MaterialDB::ComponentInfo::readDirectory(
 //   Bool  PlacedWater
 
 void CE2MaterialDB::ComponentInfo::readWaterSettingsComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  CE2Material *m = nullptr;
-  CE2Material::WaterSettings  *sp = nullptr;
-  if (p.o->type == 1) [[likely]]
-  {
-    m = static_cast< CE2Material * >(p.o);
-    sp = reinterpret_cast< CE2Material::WaterSettings * >(
-             p.cdb.allocateSpace(sizeof(CE2Material::WaterSettings),
-                                 m->waterSettings));
-    if (!m->waterSettings)
-    {
-      m->setFlags(CE2Material::Flag_IsWater | CE2Material::Flag_AlphaBlending,
-                  true);
-      // FIXME: find correct default water settings
-      sp->waterEdgeFalloff = 0.0f;
-      sp->waterWetnessMaxDepth = 0.0f;
-      sp->waterEdgeNormalFalloff = 0.0f;
-      sp->waterDepthBlur = 0.0f;
-      sp->reflectance = FloatVector4(0.0f, 0.0f, 0.0f, 0.0f);
-      sp->phytoplanktonReflectance = FloatVector4(0.0f, 0.0f, 0.0f, 0.0f);
-      sp->sedimentReflectance = FloatVector4(0.0f, 0.0f, 0.0f, 0.0f);
-      sp->yellowMatterReflectance = FloatVector4(0.0f, 0.0f, 0.0f, 0.0f);
-      sp->lowLOD = false;
-      sp->placedWater = false;
-    }
-    m->waterSettings = sp;
-  }
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 21U, isDiff); )
-  {
-    if (n <= 19U)
-    {
-      float   tmp;
-      if (!p.readFloat(tmp))
-        break;
-      if (!sp)
-        continue;
-      switch (n)
-      {
-        case 0U:
-          sp->waterEdgeFalloff = tmp;
-          break;
-        case 1U:
-          sp->waterWetnessMaxDepth = tmp;
-          break;
-        case 2U:
-          sp->waterEdgeNormalFalloff = tmp;
-          break;
-        case 3U:
-          sp->waterDepthBlur = tmp;
-          break;
-        case 4U:
-          sp->reflectance[3] = tmp;
-          break;
-        case 5U:
-        case 6U:
-        case 7U:
-          sp->phytoplanktonReflectance[n - 5U] = tmp;
-          break;
-        case 8U:
-        case 9U:
-        case 10U:
-          sp->sedimentReflectance[n - 8U] = tmp;
-          break;
-        case 11U:
-        case 12U:
-        case 13U:
-          sp->yellowMatterReflectance[n - 11U] = tmp;
-          break;
-        case 14U:
-          sp->phytoplanktonReflectance[3] = tmp;
-          break;
-        case 15U:
-          sp->sedimentReflectance[3] = tmp;
-          break;
-        case 16U:
-          sp->yellowMatterReflectance[3] = tmp;
-          break;
-        case 17U:
-        case 18U:
-        case 19U:
-          sp->reflectance[n - 17U] = tmp;
-          break;
-      }
-    }
-    else
-    {
-      bool    tmp;
-      if (!p.readBool(tmp))
-        break;
-      if (!sp)
-        continue;
-      if (n == 20U)
-        sp->lowLOD = tmp;
-      else
-        sp->placedWater = tmp;
-    }
-  }
+  if (o->type != 1) [[unlikely]]
+    return;
+  CE2Material *m = static_cast< CE2Material * >(o);
+  CE2Material::WaterSettings  *sp =
+      reinterpret_cast< CE2Material::WaterSettings * >(
+          cdb.allocateSpace(sizeof(CE2Material::WaterSettings),
+                            alignof(CE2Material::WaterSettings)));
+  m->setFlags(CE2Material::Flag_IsWater | CE2Material::Flag_AlphaBlending,
+              true);
+  // FIXME: find correct default water settings
+  sp->waterEdgeFalloff = 0.0f;
+  sp->waterWetnessMaxDepth = 0.0f;
+  sp->waterEdgeNormalFalloff = 0.0f;
+  sp->waterDepthBlur = 0.0f;
+  sp->reflectance = FloatVector4(0.0f, 0.0f, 0.0f, 0.0f);
+  sp->phytoplanktonReflectance = FloatVector4(0.0f, 0.0f, 0.0f, 0.0f);
+  sp->sedimentReflectance = FloatVector4(0.0f, 0.0f, 0.0f, 0.0f);
+  sp->yellowMatterReflectance = FloatVector4(0.0f, 0.0f, 0.0f, 0.0f);
+  m->waterSettings = sp;
+  readFloat(sp->waterEdgeFalloff, p, 0);
+  readFloat(sp->waterWetnessMaxDepth, p, 1);
+  readFloat(sp->waterEdgeNormalFalloff, p, 2);
+  readFloat(sp->waterDepthBlur, p, 3);
+  readFloat(sp->reflectance[3], p, 4);
+  readFloat(sp->phytoplanktonReflectance[0], p, 5);
+  readFloat(sp->phytoplanktonReflectance[1], p, 6);
+  readFloat(sp->phytoplanktonReflectance[2], p, 7);
+  readFloat(sp->sedimentReflectance[0], p, 8);
+  readFloat(sp->sedimentReflectance[1], p, 9);
+  readFloat(sp->sedimentReflectance[2], p, 10);
+  readFloat(sp->yellowMatterReflectance[0], p, 11);
+  readFloat(sp->yellowMatterReflectance[1], p, 12);
+  readFloat(sp->yellowMatterReflectance[2], p, 13);
+  readFloat(sp->phytoplanktonReflectance[3], p, 14);
+  readFloat(sp->sedimentReflectance[3], p, 15);
+  readFloat(sp->yellowMatterReflectance[3], p, 16);
+  readFloat(sp->reflectance[0], p, 17);
+  readFloat(sp->reflectance[1], p, 18);
+  readFloat(sp->reflectance[2], p, 19);
+  readBool(sp->lowLOD, p, 20);
+  readBool(sp->placedWater, p, 21);
 }
 
 // BSFloatCurve::Control
@@ -824,10 +601,9 @@ void CE2MaterialDB::ComponentInfo::readWaterSettingsComponent(
 //   Float  Value
 
 void CE2MaterialDB::ComponentInfo::readControl(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // BSBind::ComponentProperty
@@ -838,10 +614,9 @@ void CE2MaterialDB::ComponentInfo::readControl(
 //   String  PathStr
 
 void CE2MaterialDB::ComponentInfo::readComponentProperty(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // XMFLOAT4
@@ -851,15 +626,17 @@ void CE2MaterialDB::ComponentInfo::readComponentProperty(
 //   Float  w
 
 bool CE2MaterialDB::ComponentInfo::readXMFLOAT4(
-    FloatVector4& v, ComponentInfo& p, bool isDiff)
+    FloatVector4& v, const BSMaterialsCDB::CDBObject *p, size_t fieldNum)
 {
-  bool    r = false;
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 3U, isDiff); )
-  {
-    if (!p.readFloat(v[n]))
-      break;
-    r = true;
-  }
+  if (!(p && p->type > BSReflStream::String_Unknown && fieldNum < p->childCnt))
+    return false;
+  const BSMaterialsCDB::CDBObject *q = p->children()[fieldNum];
+  if (!(q && q->type == BSReflStream::String_XMFLOAT4 && q->childCnt == 4))
+    return false;
+  bool    r = readFloat(v[0], q, 0);
+  r = r | readFloat(v[1], q, 1);
+  r = r | readFloat(v[2], q, 2);
+  r = r | readFloat(v[3], q, 3);
   return r;
 }
 
@@ -899,148 +676,98 @@ bool CE2MaterialDB::ComponentInfo::readXMFLOAT4(
 //   UInt16  DepthBiasInUlp
 
 void CE2MaterialDB::ComponentInfo::readEffectSettingsComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  CE2Material *m = nullptr;
-  CE2Material::EffectSettings *sp = nullptr;
-  if (p.o->type == 1) [[likely]]
-  {
-    m = static_cast< CE2Material * >(p.o);
-    sp = reinterpret_cast< CE2Material::EffectSettings * >(
-             p.cdb.allocateSpace(sizeof(CE2Material::EffectSettings),
-                                 m->effectSettings));
-    if (!m->effectSettings)
-    {
-      m->setFlags(CE2Material::Flag_IsEffect | CE2Material::Flag_AlphaBlending,
-                  true);
-      sp->flags = CE2Material::EffectFlag_ZTest;
-      sp->blendMode = 0;                // "AlphaBlend"
-      sp->falloffStartAngle = 0.0f;
-      sp->falloffStopAngle = 0.0f;
-      sp->falloffStartOpacity = 0.0f;
-      sp->falloffStopOpacity = 0.0f;
-      sp->alphaThreshold = 0.5f;
-      sp->softFalloffDepth = 2.0f;
-      sp->frostingBgndBlend = 0.98f;
-      sp->frostingBlurBias = 0.0f;
-      sp->materialAlpha = 1.0f;
-      sp->backlightScale = 0.0f;
-      sp->backlightSharpness = 8.0f;
-      sp->backlightTransparency = 0.0f;
-      sp->backlightTintColor = FloatVector4(1.0f);
-      sp->depthBias = 0;
-    }
-    m->effectSettings = sp;
-  }
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 32U, isDiff); )
-  {
-    if (n == 32U) [[unlikely]]
-    {
-      std::uint16_t tmp;
-      if (!p.readUInt16(tmp))
-        break;
-      if (sp)
-        sp->depthBias = tmp;
-    }
-    else if ((1U << n) & 0xE163F6C3U)   // boolean flags
-    {
-      bool    tmp;
-      if (!p.readBool(tmp))
-        break;
-      if (sp)
-      {
-        if (!tmp)
-          sp->flags &= ~(1U << n);
-        else
-          sp->flags |= (1U << n);
-      }
-    }
-    else if ((1U << n) & 0x0E1C093CU)   // floats
-    {
-      float   tmp;
-      if (!p.readFloat(tmp))
-        break;
-      if (!sp)
-        continue;
-      switch (n)
-      {
-        case 2U:
-          sp->falloffStartAngle = tmp;
-          break;
-        case 3U:
-          sp->falloffStopAngle = tmp;
-          break;
-        case 4U:
-          sp->falloffStartOpacity = tmp;
-          break;
-        case 5U:
-          sp->falloffStopOpacity = tmp;
-          break;
-        case 8U:
-          sp->alphaThreshold = tmp;
-          break;
-        case 11U:
-          sp->softFalloffDepth = tmp;
-          break;
-        case 18U:
-          sp->frostingBgndBlend = tmp;
-          break;
-        case 19U:
-          sp->frostingBlurBias = tmp;
-          break;
-        case 20U:
-          sp->materialAlpha = tmp;
-          break;
-        case 25U:
-          sp->backlightScale = tmp;
-          break;
-        case 26U:
-          sp->backlightSharpness = tmp;
-          break;
-        case 27U:
-          sp->backlightTransparency = tmp;
-          break;
-      }
-    }
-    else if (n == 23U)
-    {
-      unsigned char tmp = 0xFF;
-      if (!p.readEnum(tmp, "\012AlphaBlend\010Additive\022SourceSoftAdditive"
-                           "\010Multiply\027DestinationSoftAdditive"
-                           "\037DestinationInvertedSoftAdditive\013TakeSmaller"
-                           "\004None"))
-      {
-        break;
-      }
-      if (sp && tmp != 0xFF)
-        sp->blendMode = tmp;
-    }
-    else
-    {
-      if (!sp)
-      {
-        FloatVector4  c(0.0f);
-        readColorValue(c, p, isDiff);
-      }
-      else
-      {
-        readColorValue(sp->backlightTintColor, p, isDiff);
-      }
-    }
-  }
+  if (o->type != 1) [[unlikely]]
+    return;
+  CE2Material *m = static_cast< CE2Material * >(o);
+  CE2Material::EffectSettings *sp =
+      reinterpret_cast< CE2Material::EffectSettings * >(
+          cdb.allocateSpace(sizeof(CE2Material::EffectSettings),
+                            alignof(CE2Material::EffectSettings)));
+  m->setFlags(CE2Material::Flag_IsEffect | CE2Material::Flag_AlphaBlending,
+              true);
+  sp->flags = CE2Material::EffectFlag_ZTest;
+  sp->falloffStartAngle = 0.0f;
+  sp->falloffStopAngle = 0.0f;
+  sp->falloffStartOpacity = 0.0f;
+  sp->falloffStopOpacity = 0.0f;
+  sp->alphaThreshold = 0.5f;
+  sp->softFalloffDepth = 2.0f;
+  sp->frostingBgndBlend = 0.98f;
+  sp->frostingBlurBias = 0.0f;
+  sp->materialAlpha = 1.0f;
+  sp->backlightScale = 0.0f;
+  sp->backlightSharpness = 8.0f;
+  sp->backlightTransparency = 0.0f;
+  sp->backlightTintColor = FloatVector4(1.0f);
+  m->effectSettings = sp;
+  bool    tmp;
+  if (readBool(tmp, p, 0))
+    sp->setFlags(CE2Material::EffectFlag_UseFalloff, tmp);
+  if (readBool(tmp, p, 1))
+    sp->setFlags(CE2Material::EffectFlag_UseRGBFalloff, tmp);
+  readFloat(sp->falloffStartAngle, p, 2);
+  readFloat(sp->falloffStopAngle, p, 3);
+  readFloat(sp->falloffStartOpacity, p, 4);
+  readFloat(sp->falloffStopOpacity, p, 5);
+  if (readBool(tmp, p, 6))
+    sp->setFlags(CE2Material::EffectFlag_VertexColorBlend, tmp);
+  if (readBool(tmp, p, 7))
+    sp->setFlags(CE2Material::EffectFlag_IsAlphaTested, tmp);
+  readFloat(sp->alphaThreshold, p, 8);
+  if (readBool(tmp, p, 9))
+    sp->setFlags(CE2Material::EffectFlag_NoHalfResOpt, tmp);
+  if (readBool(tmp, p, 10))
+    sp->setFlags(CE2Material::EffectFlag_SoftEffect, tmp);
+  readFloat(sp->softFalloffDepth, p, 11);
+  if (readBool(tmp, p, 12))
+    sp->setFlags(CE2Material::EffectFlag_EmissiveOnly, tmp);
+  if (readBool(tmp, p, 13))
+    sp->setFlags(CE2Material::EffectFlag_EmissiveOnlyAuto, tmp);
+  if (readBool(tmp, p, 14))
+    sp->setFlags(CE2Material::EffectFlag_DirShadows, tmp);
+  if (readBool(tmp, p, 15))
+    sp->setFlags(CE2Material::EffectFlag_NonDirShadows, tmp);
+  if (readBool(tmp, p, 16))
+    sp->setFlags(CE2Material::EffectFlag_IsGlass, tmp);
+  if (readBool(tmp, p, 17))
+    sp->setFlags(CE2Material::EffectFlag_Frosting, tmp);
+  readFloat(sp->frostingBgndBlend, p, 18);
+  readFloat(sp->frostingBlurBias, p, 19);
+  readFloat(sp->materialAlpha, p, 20);
+  if (readBool(tmp, p, 21))
+    sp->setFlags(CE2Material::EffectFlag_ZTest, tmp);
+  if (readBool(tmp, p, 22))
+    sp->setFlags(CE2Material::EffectFlag_ZWrite, tmp);
+  readEnum(sp->blendMode, p, 23,
+           "\012AlphaBlend\010Additive\022SourceSoftAdditive"
+           "\010Multiply\027DestinationSoftAdditive"
+           "\037DestinationInvertedSoftAdditive\013TakeSmaller\004None");
+  if (readBool(tmp, p, 24))
+    sp->setFlags(CE2Material::EffectFlag_BacklightEnable, tmp);
+  readFloat(sp->backlightScale, p, 25);
+  readFloat(sp->backlightSharpness, p, 26);
+  readFloat(sp->backlightTransparency, p, 27);
+  readColorValue(sp->backlightTintColor, p, 28);
+  if (readBool(tmp, p, 29))
+    sp->setFlags(CE2Material::EffectFlag_MVFixup, tmp);
+  if (readBool(tmp, p, 30))
+    sp->setFlags(CE2Material::EffectFlag_MVFixupEdgesOnly, tmp);
+  if (readBool(tmp, p, 31))
+    sp->setFlags(CE2Material::EffectFlag_RenderBeforeOIT, tmp);
+  std::uint16_t tmp2;
+  if (readUInt16(tmp2, p, 32))
+    sp->depthBias = tmp2;
 }
 
 // BSComponentDB::CTName
 //   String  Name
 
 void CE2MaterialDB::ComponentInfo::readCTName(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
-  {
-    if (!p.readAndStoreString(p.o->name, 0))
-      break;
-  }
+  readString(o->name, p, 0);
 }
 
 // BSMaterial::GlobalLayerDataComponent
@@ -1059,147 +786,79 @@ void CE2MaterialDB::ComponentInfo::readCTName(
 //   BSMaterial::GlobalLayerNoiseSettings  GlobalLayerNoiseData
 
 void CE2MaterialDB::ComponentInfo::readGlobalLayerDataComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  CE2Material *m = nullptr;
-  CE2Material::GlobalLayerData  *sp = nullptr;
-  if (p.o->type == 1) [[likely]]
-  {
-    m = static_cast< CE2Material * >(p.o);
-    sp = reinterpret_cast< CE2Material::GlobalLayerData * >(
-             p.cdb.allocateSpace(sizeof(CE2Material::GlobalLayerData),
-                                 m->globalLayerData));
-    if (!m->globalLayerData)
-    {
-      sp->texcoordScaleXY = 1.0f;
-      sp->texcoordScaleYZ = 1.0f;
-      sp->texcoordScaleXZ = 1.0f;
-      sp->usesDirectionality = true;
-      sp->blendNormalsAdditively = true;
-      sp->useNoiseMaskTexture = false;
-      sp->noiseMaskTxtReplacementEnabled = false;
-      sp->albedoTintColor = FloatVector4(1.0f);
-      sp->sourceDirection = FloatVector4(0.0f, 0.0f, 1.0f, 1.0f);
-      sp->directionalityScale = 1.0f;
-      sp->directionalitySaturation = 1.0f;
-      sp->blendPosition = 0.5f;
-      sp->blendContrast = 0.5f;
-      sp->materialMaskIntensityScale = 1.0f;
-      sp->noiseMaskTextureReplacement = 0xFFFFFFFFU;
-      sp->noiseMaskTexture = p.cdb.stringBuffers.front().data();
-      sp->texcoordScaleAndBias = FloatVector4(1.0f, 1.0f, 0.0f, 0.0f);
-      sp->worldspaceScaleFactor = 0.0f;
-      sp->hurstExponent = 0.5f;
-      sp->baseFrequency = 0.0f;
-      sp->frequencyMultiplier = 1.0f;
-      sp->maskIntensityMin = 0.0f;
-      sp->maskIntensityMax = 1.0f;
-    }
-    m->globalLayerData = sp;
-    m->setFlags(CE2Material::Flag_GlobalLayerData, true);
-  }
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 12U, isDiff); )
-  {
-    if ((1U << n) & 0x00000DC7U)        // 0, 1, 2, 6, 7, 8, 10, 11: floats
-    {
-      float   tmp;
-      if (!p.readFloat(tmp))
-        break;
-      if (!sp)
-        continue;
-      switch (n)
-      {
-        case 0U:
-          sp->texcoordScaleXY = tmp;
-          break;
-        case 1U:
-          sp->texcoordScaleYZ = tmp;
-          break;
-        case 2U:
-          sp->texcoordScaleXZ = tmp;
-          break;
-        case 6U:
-          sp->sourceDirection[3] = tmp;
-          break;
-        case 7U:
-          sp->directionalityScale = tmp;
-          break;
-        case 8U:
-          sp->directionalitySaturation = tmp;
-          break;
-        case 10U:
-          sp->blendPosition = tmp;
-          break;
-        case 11U:
-          sp->blendContrast = tmp;
-          break;
-      }
-    }
-    else if ((1U << n) & 0x00000210U)   // 4, 9: booleans
-    {
-      bool    tmp;
-      if (!p.readBool(tmp))
-        break;
-      if (!sp)
-        continue;
-      if (n == 4U)
-        sp->usesDirectionality = tmp;
-      else
-        sp->blendNormalsAdditively = tmp;
-    }
-    else if (n == 3U)
-    {
-      FloatVector4  tmp(0.0f);
-      if (sp) [[likely]]
-        readColorValue(sp->albedoTintColor, p, isDiff);
-      else
-        readColorValue(tmp, p, isDiff);
-    }
-    else if (n == 5U)
-    {
-      FloatVector4  tmp(0.0f);
-      if (sp) [[likely]]
-        readXMFLOAT3(sp->sourceDirection, p, isDiff);
-      else
-        readXMFLOAT3(tmp, p, isDiff);
-    }
-    else
-    {
-      readGlobalLayerNoiseSettings(p, isDiff);
-    }
-  }
+  if (o->type != 1) [[unlikely]]
+    return;
+  CE2Material *m = static_cast< CE2Material * >(o);
+  CE2Material::GlobalLayerData  *sp =
+      reinterpret_cast< CE2Material::GlobalLayerData * >(
+          cdb.allocateSpace(sizeof(CE2Material::GlobalLayerData),
+                            alignof(CE2Material::GlobalLayerData)));
+  sp->texcoordScaleXY = 1.0f;
+  sp->texcoordScaleYZ = 1.0f;
+  sp->texcoordScaleXZ = 1.0f;
+  sp->usesDirectionality = true;
+  sp->blendNormalsAdditively = true;
+  sp->albedoTintColor = FloatVector4(1.0f);
+  sp->sourceDirection = FloatVector4(0.0f, 0.0f, 1.0f, 1.0f);
+  sp->directionalityScale = 1.0f;
+  sp->directionalitySaturation = 1.0f;
+  sp->blendPosition = 0.5f;
+  sp->blendContrast = 0.5f;
+  sp->materialMaskIntensityScale = 1.0f;
+  sp->noiseMaskTextureReplacement = 0xFFFFFFFFU;
+  sp->noiseMaskTexture = &(*(cdb.storedStdStrings.cbegin()));
+  sp->texcoordScaleAndBias = FloatVector4(1.0f, 1.0f, 0.0f, 0.0f);
+  sp->worldspaceScaleFactor = 0.0f;
+  sp->hurstExponent = 0.5f;
+  sp->baseFrequency = 0.0f;
+  sp->frequencyMultiplier = 1.0f;
+  sp->maskIntensityMin = 0.0f;
+  sp->maskIntensityMax = 1.0f;
+  m->globalLayerData = sp;
+  m->setFlags(CE2Material::Flag_GlobalLayerData, true);
+  readFloat(sp->texcoordScaleXY, p, 0);
+  readFloat(sp->texcoordScaleYZ, p, 1);
+  readFloat(sp->texcoordScaleXZ, p, 2);
+  readColorValue(sp->albedoTintColor, p, 3);
+  readBool(sp->usesDirectionality, p, 4);
+  readXMFLOAT3(sp->sourceDirection, p, 5);
+  readFloat(sp->sourceDirection[3], p, 6);
+  readFloat(sp->directionalityScale, p, 7);
+  readFloat(sp->directionalitySaturation, p, 8);
+  readBool(sp->blendNormalsAdditively, p, 9);
+  readFloat(sp->blendPosition, p, 10);
+  readFloat(sp->blendContrast, p, 11);
+  if (p && p->type > BSReflStream::String_Unknown && p->childCnt >= 13)
+    readGlobalLayerNoiseSettings(p->children()[12]);
 }
 
 // BSMaterial::Offset
 //   XMFLOAT2  Value
 
 void CE2MaterialDB::ComponentInfo::readOffset(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  FloatVector4  tmp(0.0f);
-  FloatVector4  *c = &tmp;
-  if (p.o->type == 6 &&
-      p.componentType == BSReflStream::String_BSMaterial_Offset) [[likely]]
+  if (o->type == 6 &&
+      componentData->className
+      == BSReflStream::String_BSMaterial_Offset) [[likely]]
   {
-    c = &(static_cast< CE2Material::UVStream * >(p.o)->scaleAndOffset);
+    readXMFLOAT2H(static_cast< CE2Material::UVStream * >(o)->scaleAndOffset,
+                  p, 0);
   }
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
-    readXMFLOAT2H(*c, p, isDiff);
 }
 
 // BSMaterial::TextureAddressModeComponent
 //   String  Value
 
 void CE2MaterialDB::ComponentInfo::readTextureAddressModeComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
+  if (o->type == 6) [[likely]]
   {
-    unsigned char tmp = 0xFF;
-    if (!p.readEnum(tmp, "\004Wrap\005Clamp\006Mirror\006Border"))
-      break;
-    if (p.o->type == 6 && tmp != 0xFF)
-      static_cast< CE2Material::UVStream * >(p.o)->textureAddressMode = tmp;
+    readEnum(static_cast< CE2Material::UVStream * >(o)->textureAddressMode,
+             p, 0, "\004Wrap\005Clamp\006Mirror\006Border");
   }
 }
 
@@ -1208,10 +867,9 @@ void CE2MaterialDB::ComponentInfo::readTextureAddressModeComponent(
 //   Bool  Loop
 
 void CE2MaterialDB::ComponentInfo::readFloatCurveController(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // BSMaterialBinding::MaterialPropertyNode
@@ -1220,10 +878,9 @@ void CE2MaterialDB::ComponentInfo::readFloatCurveController(
 //   UInt16  LayerIndex
 
 void CE2MaterialDB::ComponentInfo::readMaterialPropertyNode(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // BSMaterial::ProjectedDecalSettings
@@ -1236,83 +893,39 @@ void CE2MaterialDB::ComponentInfo::readMaterialPropertyNode(
 //   Bool  UseGBufferNormals
 
 void CE2MaterialDB::ComponentInfo::readProjectedDecalSettings(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  CE2Material::DecalSettings  *sp = nullptr;
-  if (p.o->type == 1) [[likely]]
-  {
-    CE2Material *m = static_cast< CE2Material * >(p.o);
-    sp = const_cast< CE2Material::DecalSettings * >(m->decalSettings);
-  }
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 6U, isDiff); )
-  {
-    if ((1U << n) & 0x00000049U)        // 0, 3, 6: booleans
-    {
-      bool    tmp;
-      if (!p.readBool(tmp))
-        break;
-      if (!sp)
-        continue;
-      if (n == 0U)
-        sp->useParallaxMapping = tmp;
-      else if (n == 3U)
-        sp->parallaxOcclusionShadows = tmp;
-      else
-        sp->useGBufferNormals = tmp;
-    }
-    else if (n == 1U)
-    {
-      readTextureFile(p, isDiff);
-    }
-    else if (n == 2U)
-    {
-      float   tmp;
-      if (!p.readFloat(tmp))
-        break;
-      if (sp)
-        sp->parallaxOcclusionScale = tmp;
-    }
-    else if (n == 4U)
-    {
-      unsigned char tmp;
-      if (!p.readUInt8(tmp))
-        break;
-      if (sp)
-        sp->maxParallaxSteps = tmp;
-    }
-    else
-    {
-      unsigned char tmp = 0xFF;
-      if (!p.readEnum(tmp, "\003Top\006Middle"))
-        break;
-      if (sp && tmp != 0xFF)
-        sp->renderLayer = tmp;
-    }
-  }
+  if (!(p && p->type == BSReflStream::String_BSMaterial_ProjectedDecalSettings))
+    return;
+  if (o->type != 1) [[unlikely]]
+    return;
+  CE2Material *m = static_cast< CE2Material * >(o);
+  CE2Material::DecalSettings  *sp =
+      const_cast< CE2Material::DecalSettings * >(m->decalSettings);
+  readBool(sp->useParallaxMapping, p, 0);
+  if (p && p->type > BSReflStream::String_Unknown && p->childCnt >= 2)
+    readTextureFile(p->children()[1]);
+  readFloat(sp->parallaxOcclusionScale, p, 2);
+  readBool(sp->parallaxOcclusionShadows, p, 3);
+  readUInt8(sp->maxParallaxSteps, p, 4);
+  readEnum(sp->renderLayer, p, 5, "\003Top\006Middle");
+  readBool(sp->useGBufferNormals, p, 6);
 }
 
 // BSMaterial::ParamBool
 //   Bool  Value
 
 void CE2MaterialDB::ComponentInfo::readParamBool(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
-  {
-    bool    tmp;
-    if (!p.readBool(tmp))
-      break;
-    unsigned int  i = p.componentIndex;
-    if (p.o->type == 2 && i < CE2Material::Blender::maxBoolParams)
-    {
-      static_cast< CE2Material::Blender * >(p.o)->boolParams[i] = tmp;
-    }
-    else if (p.o->type == 1 && i == 0U)
-    {
-      static_cast< CE2Material * >(p.o)->setFlags(CE2Material::Flag_TwoSided,
-                                                  tmp);
-    }
-  }
+  bool    tmp;
+  if (!readBool(tmp, p, 0))
+    return;
+  std::uint32_t i = componentData->key & 0xFFFFU;
+  if (o->type == 2 && i < CE2Material::Blender::maxBoolParams)
+    static_cast< CE2Material::Blender * >(o)->boolParams[i] = tmp;
+  else if (o->type == 1 && i == 0U)
+    static_cast< CE2Material * >(o)->setFlags(CE2Material::Flag_TwoSided, tmp);
 }
 
 // BSBind::Float3DCurveController
@@ -1321,57 +934,56 @@ void CE2MaterialDB::ComponentInfo::readParamBool(
 //   String  Mask
 
 void CE2MaterialDB::ComponentInfo::readFloat3DCurveController(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 bool CE2MaterialDB::ComponentInfo::readColorValue(
-    FloatVector4& c, ComponentInfo& p, bool isDiff)
+    FloatVector4& c, const BSMaterialsCDB::CDBObject *p, size_t fieldNum)
 {
-  bool    r = false;
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
-    r = r | readXMFLOAT4(c, p, isDiff);
-  if (r) [[likely]]
-    c.maxValues(FloatVector4(0.0f)).minValues(FloatVector4(1.0f));
-  return r;
+  if (p && p->type > BSReflStream::String_Unknown && fieldNum < p->childCnt &&
+      p->children()[fieldNum] &&
+      p->children()[fieldNum]->type == BSReflStream::String_BSMaterial_Color)
+  {
+    if (readXMFLOAT4(c, p->children()[fieldNum], 0))
+    {
+      c.maxValues(FloatVector4(0.0f)).minValues(FloatVector4(1.0f));
+      return true;
+    }
+  }
+  return false;
 }
 
 bool CE2MaterialDB::ComponentInfo::readColorValue(
-    std::uint32_t& c, ComponentInfo& p, bool isDiff)
+    std::uint32_t& c, const BSMaterialsCDB::CDBObject *p, size_t fieldNum)
 {
-  FloatVector4  tmp(&c);
-  tmp *= (1.0f / 255.0f);
-  bool    r = false;
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
-    r = r | readXMFLOAT4(tmp, p, isDiff);
-  if (r) [[likely]]
-    c = std::uint32_t(tmp * 255.0f);
-  return r;
+  if (p && p->type > BSReflStream::String_Unknown && fieldNum < p->childCnt &&
+      p->children()[fieldNum] &&
+      p->children()[fieldNum]->type == BSReflStream::String_BSMaterial_Color)
+  {
+    FloatVector4  tmp(&c);
+    tmp *= (1.0f / 255.0f);
+    if (readXMFLOAT4(tmp, p->children()[fieldNum], 0))
+    {
+      c = std::uint32_t(tmp * 255.0f);
+      return true;
+    }
+  }
+  return false;
 }
 
 // BSMaterial::Color
 //   XMFLOAT4  Value
 
 void CE2MaterialDB::ComponentInfo::readColor(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  CE2Material::Material *m = nullptr;
-  if (p.o->type == 4) [[likely]]
-    m = static_cast< CE2Material::Material * >(p.o);
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
-  {
-    if (!m)
-    {
-      FloatVector4  c(0.0f);
-      readXMFLOAT4(c, p, isDiff);
-    }
-    else if (readXMFLOAT4(m->color, p, isDiff))
-    {
-      m->color.maxValues(FloatVector4(0.0f)).minValues(FloatVector4(1.0f));
-    }
-  }
+  if (o->type != 4) [[unlikely]]
+    return;
+  CE2Material::Material *m = static_cast< CE2Material::Material * >(o);
+  if (readXMFLOAT4(m->color, p, 0))
+    m->color.maxValues(FloatVector4(0.0f)).minValues(FloatVector4(1.0f));
 }
 
 // BSMaterial::SourceTextureWithReplacement
@@ -1380,48 +992,27 @@ void CE2MaterialDB::ComponentInfo::readColor(
 
 bool CE2MaterialDB::ComponentInfo::readSourceTextureWithReplacement(
     const std::string*& texturePath, std::uint32_t& textureReplacement,
-    bool& textureReplacementEnabled, ComponentInfo& p, bool isDiff)
+    bool& textureReplacementEnabled,
+    const BSMaterialsCDB::CDBObject *p, size_t fieldNum)
 {
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 1U, isDiff); )
+  if (!(p && p->type > BSReflStream::String_Unknown && fieldNum < p->childCnt &&
+        p->children()[fieldNum] &&
+        p->children()[fieldNum]->type
+        == BSReflStream::String_BSMaterial_SourceTextureWithReplacement))
   {
-    if (n == 0U)
-    {
-      for (unsigned int n2 = 0U - 1U; p.getFieldNumber(n2, 0U, isDiff); )
-      {
-        if (!p.readAndStoreString(texturePath, 1))
-          return false;
-      }
-    }
-    else
-    {
-      for (unsigned int n2 = 0U - 1U; p.getFieldNumber(n2, 1U, isDiff); )
-      {
-        if (n2 == 0U)
-        {
-          if (!p.readBool(textureReplacementEnabled))
-            return false;
-        }
-        else
-        {
-          readColorValue(textureReplacement, p, isDiff);
-        }
-      }
-    }
+    return false;
   }
-  return true;
-}
-
-// BSComponentDB2::DBFileIndex::EdgeInfo
-//   BSComponentDB2::ID  SourceID
-//   BSComponentDB2::ID  TargetID
-//   UInt16  Index
-//   UInt16  Type
-
-void CE2MaterialDB::ComponentInfo::readEdgeInfo(
-    ComponentInfo& p, bool isDiff)
-{
-  (void) p;
-  (void) isDiff;
+  const BSMaterialsCDB::CDBObject *q = p->children()[fieldNum];
+  bool    r = readPath(texturePath, q, 0, "textures/", ".dds");
+  if (q->childCnt >= 2 && q->children()[1] &&
+      q->children()[1]->type
+      == BSReflStream::String_BSMaterial_TextureReplacement)
+  {
+    q = q->children()[1];
+    r = r | readBool(textureReplacementEnabled, q, 0);
+    r = r | readColorValue(textureReplacement, q, 1);
+  }
+  return r;
 }
 
 // BSMaterial::FlowSettingsComponent
@@ -1441,10 +1032,9 @@ void CE2MaterialDB::ComponentInfo::readEdgeInfo(
 //   Bool  ApplyFlowOnEmissivity
 
 void CE2MaterialDB::ComponentInfo::readFlowSettingsComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // BSMaterial::DetailBlenderSettings
@@ -1453,65 +1043,45 @@ void CE2MaterialDB::ComponentInfo::readFlowSettingsComponent(
 //   BSMaterial::UVStreamID  DetailBlendMaskUVStream
 
 void CE2MaterialDB::ComponentInfo::readDetailBlenderSettings(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  CE2Material *m = nullptr;
-  CE2Material::DetailBlenderSettings  *sp = nullptr;
-  if (p.o->type == 1) [[likely]]
+  if (!(p && p->type == BSReflStream::String_BSMaterial_DetailBlenderSettings))
+    return;
+  if (o->type != 1) [[unlikely]]
+    return;
+  CE2Material *m = static_cast< CE2Material * >(o);
+  CE2Material::DetailBlenderSettings  *sp =
+      const_cast< CE2Material::DetailBlenderSettings * >(
+          m->detailBlenderSettings);
+  bool    tmp;
+  if (readBool(tmp, p, 0))
   {
-    m = static_cast< CE2Material * >(p.o);
-    sp = const_cast< CE2Material::DetailBlenderSettings * >(
-             m->detailBlenderSettings);
+    m->setFlags(CE2Material::Flag_UseDetailBlender, tmp);
+    sp->isEnabled = tmp;
   }
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 2U, isDiff); )
-  {
-    if (n == 0U)
-    {
-      bool    tmp;
-      if (!p.readBool(tmp))
-        break;
-      if (!m)
-        continue;
-      m->setFlags(CE2Material::Flag_UseDetailBlender, tmp);
-      sp->isEnabled = tmp;
-    }
-    else if (n == 1U)
-    {
-      CE2Material::DetailBlenderSettings  tmp;
-      CE2Material::DetailBlenderSettings  *spTmp = (!sp ? &tmp : sp);
-      if (!readSourceTextureWithReplacement(
-               spTmp->texturePath, spTmp->textureReplacement,
-               spTmp->textureReplacementEnabled, p, isDiff))
-      {
-        break;
-      }
-    }
-    else
-    {
-      readUVStreamID(p, isDiff);
-    }
-  }
+  readSourceTextureWithReplacement(sp->texturePath, sp->textureReplacement,
+                                   sp->textureReplacementEnabled, p, 1);
+  readUVStreamID(p, 2);
 }
 
 // BSMaterial::LayerID
 //   BSComponentDB2::ID  ID
 
 void CE2MaterialDB::ComponentInfo::readLayerID(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
+  std::uint32_t i = componentData->key & 0xFFFFU;
+  if (!(o->type == 1 && i < CE2Material::maxLayers)) [[unlikely]]
+    return;
+  const CE2MaterialObject *tmp;
+  if (readBSComponentDB2ID(tmp, p, 0, 3))
   {
-    const CE2MaterialObject *o = readBSComponentDB2ID(p, isDiff, 3);
-    if (p.o->type == 1 && p.componentIndex < CE2Material::maxLayers)
-    {
-      CE2Material *m = static_cast< CE2Material * >(p.o);
-      m->layers[p.componentIndex] =
-          static_cast< const CE2Material::Layer * >(o);
-      if (!o)
-        m->layerMask &= ~(1U << p.componentIndex);
-      else
-        m->layerMask |= (1U << p.componentIndex);
-    }
+    CE2Material *m = static_cast< CE2Material * >(o);
+    m->layers[i] = static_cast< const CE2Material::Layer * >(tmp);
+    if (!tmp)
+      m->layerMask &= ~(1U << i);
+    else
+      m->layerMask |= (1U << i);
   }
 }
 
@@ -1520,48 +1090,32 @@ void CE2MaterialDB::ComponentInfo::readLayerID(
 //   Ref  Controller
 
 void CE2MaterialDB::ComponentInfo::readMapping(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // ClassReference
 
 void CE2MaterialDB::ComponentInfo::readClassReference(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
-}
-
-// BSComponentDB2::DBFileIndex::ComponentInfo
-//   BSComponentDB2::ID  ObjectID
-//   UInt16  Index
-//   UInt16  Type
-
-void CE2MaterialDB::ComponentInfo::readComponentInfo(
-    ComponentInfo& p, bool isDiff)
-{
-  (void) p;
-  (void) isDiff;
 }
 
 // BSMaterial::Scale
 //   XMFLOAT2  Value
 
 void CE2MaterialDB::ComponentInfo::readScale(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  FloatVector4  tmp(0.0f);
-  FloatVector4  *c = &tmp;
-  if (p.o->type == 6 &&
-      p.componentType == BSReflStream::String_BSMaterial_Scale) [[likely]]
+  if (o->type == 6 &&
+      componentData->className
+      == BSReflStream::String_BSMaterial_Scale) [[likely]]
   {
-    c = &(static_cast< CE2Material::UVStream * >(p.o)->scaleAndOffset);
+    readXMFLOAT2L(static_cast< CE2Material::UVStream * >(o)->scaleAndOffset,
+                  p, 0);
   }
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
-    readXMFLOAT2L(*c, p, isDiff);
 }
 
 // BSMaterial::WaterGrimeSettingsComponent
@@ -1580,32 +1134,18 @@ void CE2MaterialDB::ComponentInfo::readScale(
 //   Float  NormalOverride
 
 void CE2MaterialDB::ComponentInfo::readWaterGrimeSettingsComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // BSMaterial::UVStreamParamBool
 //   Bool  Value
 
 void CE2MaterialDB::ComponentInfo::readUVStreamParamBool(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
-}
-
-// BSComponentDB2::DBFileIndex::ComponentTypeInfo
-//   ClassReference  Class
-//   UInt16  Version
-//   Bool  IsEmpty
-
-void CE2MaterialDB::ComponentInfo::readComponentTypeInfo(
-    ComponentInfo& p, bool isDiff)
-{
-  (void) p;
-  (void) isDiff;
 }
 
 // BSBind::Multiplex
@@ -1613,10 +1153,9 @@ void CE2MaterialDB::ComponentInfo::readComponentTypeInfo(
 //   Map  Nodes
 
 void CE2MaterialDB::ComponentInfo::readMultiplex(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // BSMaterial::OpacityComponent
@@ -1632,106 +1171,36 @@ void CE2MaterialDB::ComponentInfo::readMultiplex(
 //   Float  SpecularOpacityOverride
 
 void CE2MaterialDB::ComponentInfo::readOpacityComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  CE2Material *m = nullptr;
-  if (p.o->type == 1) [[likely]]
-  {
-    m = static_cast< CE2Material * >(p.o);
-    m->setFlags(CE2Material::Flag_HasOpacityComponent, true);
-  }
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 9U, isDiff); )
-  {
-    if ((1U << n) & 0x00000022U)        // booleans
-    {
-      bool    tmp;
-      if (!p.readBool(tmp))
-        break;
-      if (!m)
-        continue;
-      if (n == 1U)
-        m->setFlags(CE2Material::Flag_OpacityLayer2Active, tmp);
-      else
-        m->setFlags(CE2Material::Flag_OpacityLayer3Active, tmp);
-    }
-    else if ((1U << n) & 0x000000CDU)   // layer and blender index strings
-    {
-      if (!p.readString())
-        break;
-      unsigned char tmp = 0xFF;
-      if ((1U << n) & 0x00000045U)
-        parseLayerNumber(tmp, p.stringBuf);
-      else
-        parseBlenderNumber(tmp, p.stringBuf);
-      if (!(m && tmp != 0xFF))
-        continue;
-      switch (n)
-      {
-        case 0U:
-          m->opacityLayer1 = tmp;
-          break;
-        case 2U:
-          m->opacityLayer2 = tmp;
-          break;
-        case 3U:
-          m->opacityBlender1 = tmp;
-          break;
-        case 6U:
-          m->opacityLayer3 = tmp;
-          break;
-        case 7U:
-          m->opacityBlender2 = tmp;
-          break;
-      }
-    }
-    else if ((1U << n) & 0x00000110U)   // blender modes
-    {
-      unsigned char tmp = 0xFF;
-      if (!p.readEnum(tmp,
-                      "\004Lerp\010Additive\013Subtractive\016Multiplicative"))
-      {
-        break;
-      }
-      if (!(m && tmp != 0xFF))
-        continue;
-      if (n == 4U)
-        m->opacityBlender1Mode = tmp;
-      else
-        m->opacityBlender2Mode = tmp;
-    }
-    else
-    {
-      float   tmp;
-      if (!p.readFloat(tmp))
-        break;
-      if (m)
-        m->specularOpacityOverride = tmp;
-    }
-  }
+  if (o->type != 1) [[unlikely]]
+    return;
+  CE2Material *m = static_cast< CE2Material * >(o);
+  m->setFlags(CE2Material::Flag_HasOpacityComponent, true);
+  readLayerNumber(m->opacityLayer1, p, 0);
+  bool    tmp;
+  if (readBool(tmp, p, 1))
+    m->setFlags(CE2Material::Flag_OpacityLayer2Active, tmp);
+  readLayerNumber(m->opacityLayer2, p, 2);
+  readBlenderNumber(m->opacityBlender1, p, 3);
+  readEnum(m->opacityBlender1Mode, p, 4,
+           "\004Lerp\010Additive\013Subtractive\016Multiplicative");
+  if (readBool(tmp, p, 5))
+    m->setFlags(CE2Material::Flag_OpacityLayer3Active, tmp);
+  readLayerNumber(m->opacityLayer3, p, 6);
+  readBlenderNumber(m->opacityBlender2, p, 7);
+  readEnum(m->opacityBlender2Mode, p, 8,
+           "\004Lerp\010Additive\013Subtractive\016Multiplicative");
+  readFloat(m->specularOpacityOverride, p, 9);
 }
 
 // BSMaterial::BlendParamFloat
 //   Float  Value
 
 void CE2MaterialDB::ComponentInfo::readBlendParamFloat(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
-}
-
-// BSComponentDB2::DBFileIndex
-//   Map  ComponentTypes
-//   List  Objects
-//   List  Components
-//   List  Edges
-//   Bool  Optimized
-
-void CE2MaterialDB::ComponentInfo::readDBFileIndex(
-    ComponentInfo& p, bool isDiff)
-{
-  (void) p;
-  (void) isDiff;
 }
 
 // BSMaterial::ColorRemapSettingsComponent
@@ -1746,10 +1215,9 @@ void CE2MaterialDB::ComponentInfo::readDBFileIndex(
 //   BSMaterial::Color  EmissiveTint
 
 void CE2MaterialDB::ComponentInfo::readColorRemapSettingsComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // BSMaterial::EyeSettingsComponent
@@ -1768,21 +1236,9 @@ void CE2MaterialDB::ComponentInfo::readColorRemapSettingsComponent(
 //   Float  LightingPower
 
 void CE2MaterialDB::ComponentInfo::readEyeSettingsComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
-}
-
-// BSMaterial::Internal::CompiledDB::FilePair
-//   BSResource::ID  First
-//   BSResource::ID  Second
-
-void CE2MaterialDB::ComponentInfo::readFilePair(
-    ComponentInfo& p, bool isDiff)
-{
-  (void) p;
-  (void) isDiff;
 }
 
 // BSBind::Float2DLerpController
@@ -1794,54 +1250,31 @@ void CE2MaterialDB::ComponentInfo::readFilePair(
 //   String  Mask
 
 void CE2MaterialDB::ComponentInfo::readFloat2DLerpController(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // BSComponentDB2::ID
 //   UInt32  Value
 
-const CE2MaterialObject * CE2MaterialDB::ComponentInfo::readBSComponentDB2ID(
-    ComponentInfo& p, bool isDiff, unsigned char typeRequired)
+bool CE2MaterialDB::ComponentInfo::readBSComponentDB2ID(
+    const CE2MaterialObject*& linkedObject,
+    const BSMaterialsCDB::CDBObject *p, size_t fieldNum,
+    unsigned char typeRequired)
 {
-  const CE2MaterialObject *o = nullptr;
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
+  if (p && p->type > BSReflStream::String_Unknown && fieldNum < p->childCnt &&
+      p->children()[fieldNum] &&
+      p->children()[fieldNum]->type == BSReflStream::String_BSComponentDB2_ID)
   {
-    std::uint32_t objectID;
-    if (!p.readUInt32(objectID))
-      break;
-    if (!(objectID && objectID < p.objectTable.size() &&
-          p.objectTable[objectID]))
-    {
-#if ENABLE_CDB_DEBUG
-      if (objectID)
-      {
-        std::printf("Warning: invalid object ID 0x%08X in material database\n",
-                    (unsigned int) objectID);
-      }
-#endif
-    }
-    else
-    {
-      o = p.objectTable[objectID];
-      if (typeRequired) [[likely]]
-      {
-        if ((o->type ^ typeRequired) & 0xFF) [[unlikely]]
-        {
-#if ENABLE_CDB_DEBUG
-          std::printf("Warning: linked object 0x%08X is of type %d, "
-                      "expected %d\n",
-                      (unsigned int) objectID,
-                      int(o->type & 0xFF), int(typeRequired));
-#endif
-          o = nullptr;
-        }
-      }
-    }
+    const CE2MaterialObject *tmp =
+        cdb.findMaterialObject(p->children()[fieldNum]->linkedObject());
+    if (typeRequired && tmp && tmp->type != typeRequired)
+      tmp = nullptr;
+    linkedObject = tmp;
+    return true;
   }
-  return o;
+  return false;
 }
 
 // BSMaterial::TextureReplacement
@@ -1849,46 +1282,28 @@ const CE2MaterialObject * CE2MaterialDB::ComponentInfo::readBSComponentDB2ID(
 //   BSMaterial::Color  Color
 
 void CE2MaterialDB::ComponentInfo::readTextureReplacement(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  CE2Material::Blender  *blender = nullptr;
-  CE2Material::TextureSet *txtSet = nullptr;
-  if (p.o->type == 5 &&
-      p.componentIndex < CE2Material::TextureSet::maxTexturePaths) [[likely]]
+  std::uint32_t i = componentData->key & 0xFFFFU;
+  if (o->type == 5 && i < CE2Material::TextureSet::maxTexturePaths) [[likely]]
   {
-    txtSet = static_cast< CE2Material::TextureSet * >(p.o);
-  }
-  else if (p.o->type == 2)
-  {
-    blender = static_cast< CE2Material::Blender * >(p.o);
-  }
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 1U, isDiff); )
-  {
-    if (n == 0U)
+    CE2Material::TextureSet *txtSet =
+        static_cast< CE2Material::TextureSet * >(o);
+    bool    isEnabled;
+    if (readBool(isEnabled, p, 0))
     {
-      bool    isEnabled;
-      if (!p.readBool(isEnabled))
-        break;
-      if (txtSet) [[likely]]
-      {
-        if (!isEnabled)
-          txtSet->textureReplacementMask &= ~(1U << p.componentIndex);
-        else
-          txtSet->textureReplacementMask |= (1U << p.componentIndex);
-      }
-      else if (blender)
-      {
-        blender->textureReplacementEnabled = isEnabled;
-      }
-      continue;
+      if (!isEnabled)
+        txtSet->textureReplacementMask &= ~(1U << i);
+      else
+        txtSet->textureReplacementMask |= (1U << i);
     }
-    FloatVector4  c(0.0f);
-    if (txtSet)
-      readColorValue(txtSet->textureReplacements[p.componentIndex], p, isDiff);
-    else if (blender)
-      readColorValue(blender->textureReplacement, p, isDiff);
-    else
-      readColorValue(c, p, isDiff);
+    readColorValue(txtSet->textureReplacements[i], p, 1);
+  }
+  else if (o->type == 2)
+  {
+    CE2Material::Blender  *blender = static_cast< CE2Material::Blender * >(o);
+    readBool(blender->textureReplacementEnabled, p, 0);
+    readColorValue(blender->textureReplacement, p, 1);
   }
 }
 
@@ -1896,18 +1311,13 @@ void CE2MaterialDB::ComponentInfo::readTextureReplacement(
 //   String  Value
 
 void CE2MaterialDB::ComponentInfo::readBlendModeComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
+  if (o->type == 2)
   {
-    unsigned char tmp = 0xFF;
-    if (!p.readEnum(tmp, "\006Linear\010Additive\020PositionContrast\004None"
-                         "\020CharacterCombine\004Skin"))
-    {
-      break;
-    }
-    if (p.o->type == 2 && tmp != 0xFF)
-      static_cast< CE2Material::Blender * >(p.o)->blendMode = tmp;
+    readEnum(static_cast< CE2Material::Blender * >(o)->blendMode, p, 0,
+             "\006Linear\010Additive\020PositionContrast\004None"
+             "\020CharacterCombine\004Skin");
   }
 }
 
@@ -1920,85 +1330,58 @@ void CE2MaterialDB::ComponentInfo::readBlendModeComponent(
 //   Bool  UseRGBFallOff
 
 void CE2MaterialDB::ComponentInfo::readLayeredEdgeFalloffComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  CE2Material *m = nullptr;
-  CE2Material::LayeredEdgeFalloff *sp = nullptr;
-  if (p.o->type == 1) [[likely]]
+  if (o->type != 1) [[unlikely]]
+    return;
+  CE2Material *m = static_cast< CE2Material * >(o);
+  CE2Material::LayeredEdgeFalloff *sp =
+      reinterpret_cast< CE2Material::LayeredEdgeFalloff * >(
+          cdb.allocateSpace(sizeof(CE2Material::LayeredEdgeFalloff),
+                            alignof(CE2Material::LayeredEdgeFalloff)));
+  sp->falloffStartAngles[0] = 0.0f;
+  sp->falloffStartAngles[1] = 0.0f;
+  sp->falloffStartAngles[2] = 0.0f;
+  sp->falloffStopAngles[0] = 0.0f;
+  sp->falloffStopAngles[1] = 0.0f;
+  sp->falloffStopAngles[2] = 0.0f;
+  sp->falloffStartOpacities[0] = 0.0f;
+  sp->falloffStartOpacities[1] = 0.0f;
+  sp->falloffStartOpacities[2] = 0.0f;
+  sp->falloffStopOpacities[0] = 0.0f;
+  sp->falloffStopOpacities[1] = 0.0f;
+  sp->falloffStopOpacities[2] = 0.0f;
+  m->layeredEdgeFalloff = sp;
+  m->setFlags(CE2Material::Flag_LayeredEdgeFalloff, true);
+  for (size_t i = 0; i < 4; i++)
   {
-    m = static_cast< CE2Material * >(p.o);
-    sp = reinterpret_cast< CE2Material::LayeredEdgeFalloff * >(
-             p.cdb.allocateSpace(sizeof(CE2Material::LayeredEdgeFalloff),
-                                 m->layeredEdgeFalloff));
-    if (!m->layeredEdgeFalloff)
+    if (!(p && p->type > BSReflStream::String_Unknown && i < p->childCnt &&
+          p->children()[i] &&
+          p->children()[i]->type == BSReflStream::String_List))
     {
-      sp->falloffStartAngles[0] = 0.0f;
-      sp->falloffStartAngles[1] = 0.0f;
-      sp->falloffStartAngles[2] = 0.0f;
-      sp->falloffStopAngles[0] = 0.0f;
-      sp->falloffStopAngles[1] = 0.0f;
-      sp->falloffStopAngles[2] = 0.0f;
-      sp->falloffStartOpacities[0] = 0.0f;
-      sp->falloffStartOpacities[1] = 0.0f;
-      sp->falloffStartOpacities[2] = 0.0f;
-      sp->falloffStopOpacities[0] = 0.0f;
-      sp->falloffStopOpacities[1] = 0.0f;
-      sp->falloffStopOpacities[2] = 0.0f;
-      sp->activeLayersMask = 0;
-      sp->useRGBFalloff = false;
+      continue;
     }
-    m->layeredEdgeFalloff = sp;
-    m->setFlags(CE2Material::Flag_LayeredEdgeFalloff, true);
-  }
-  BSReflStream::Chunk listBuf;
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 5U, isDiff); )
-  {
-    if (n <= 3U)
+    const BSMaterialsCDB::CDBObject *q = p->children()[i];
+    float   *tmp = &(sp->falloffStartAngles[0]);
+    if (i == 1)
+      tmp = &(sp->falloffStopAngles[0]);
+    else if (i == 2)
+      tmp = &(sp->falloffStartOpacities[0]);
+    else if (i == 3)
+      tmp = &(sp->falloffStopOpacities[0]);
+    for (size_t j = 0; j < 3; j++)
     {
-      if (p.readChunk(listBuf) != BSReflStream::ChunkType_LIST)
+      if (j < q->childCnt && q->children()[j] &&
+          q->children()[j]->type == BSReflStream::String_Float)
       {
-        errorMessage("unexpected chunk type for "
-                     "BSMaterial::LayeredEdgeFalloffComponent");
+        tmp[j] = q->children()[j]->floatValue();
       }
-      if (listBuf.size() < 8 || !sp ||
-          p.cdbBuf.findString(listBuf.readUInt32Fast())
-          != BSReflStream::String_Float)
-      {
-        continue;
-      }
-      unsigned int  listSize = listBuf.readUInt32Fast();
-      for (unsigned int i = 0U; i < listSize && i < 3U; i++)
-      {
-        float   tmp;
-        if (!listBuf.readFloat(tmp))
-          break;
-        if (n == 0U)
-          sp->falloffStartAngles[i] = tmp;
-        else if (n == 1U)
-          sp->falloffStopAngles[i] = tmp;
-        else if (n == 2U)
-          sp->falloffStartOpacities[i] = tmp;
-        else
-          sp->falloffStopOpacities[i] = tmp;
-      }
-    }
-    else if (n == 4U)
-    {
-      unsigned char tmp;
-      if (!p.readUInt8(tmp))
-        break;
-      if (sp)
-        sp->activeLayersMask = tmp & 7;
-    }
-    else
-    {
-      bool    tmp;
-      if (!p.readBool(tmp))
-        break;
-      if (sp)
-        sp->useRGBFalloff = tmp;
     }
   }
+  unsigned char tmp;
+  if (readUInt8(tmp, p, 4))
+    sp->activeLayersMask = tmp & 7;
+  readBool(sp->useRGBFalloff, p, 5);
 }
 
 // BSMaterial::VegetationSettingsComponent
@@ -2011,88 +1394,46 @@ void CE2MaterialDB::ComponentInfo::readLayeredEdgeFalloffComponent(
 //   Float  DEPRECATEDTerrainBlendGradientFactor
 
 void CE2MaterialDB::ComponentInfo::readVegetationSettingsComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  CE2Material *m = nullptr;
-  CE2Material::VegetationSettings *sp = nullptr;
-  if (p.o->type == 1) [[likely]]
+  if (o->type != 1) [[unlikely]]
+    return;
+  CE2Material *m = static_cast< CE2Material * >(o);
+  CE2Material::VegetationSettings *sp =
+      reinterpret_cast< CE2Material::VegetationSettings * >(
+          cdb.allocateSpace(sizeof(CE2Material::VegetationSettings),
+                            alignof(CE2Material::VegetationSettings)));
+  sp->leafFrequency = 0.0f;
+  sp->leafAmplitude = 0.0f;
+  sp->branchFlexibility = 0.0f;
+  sp->trunkFlexibility = 0.0f;
+  sp->terrainBlendStrength = 0.0f;
+  sp->terrainBlendGradientFactor = 0.0f;
+  m->vegetationSettings = sp;
+  bool    tmp;
+  if (readBool(tmp, p, 0))
   {
-    m = static_cast< CE2Material * >(p.o);
-    sp = reinterpret_cast< CE2Material::VegetationSettings * >(
-             p.cdb.allocateSpace(sizeof(CE2Material::VegetationSettings),
-                                 m->vegetationSettings));
-    if (!m->vegetationSettings)
-    {
-      sp->isEnabled = false;
-      sp->leafFrequency = 0.0f;
-      sp->leafAmplitude = 0.0f;
-      sp->branchFlexibility = 0.0f;
-      sp->trunkFlexibility = 0.0f;
-      sp->terrainBlendStrength = 0.0f;
-      sp->terrainBlendGradientFactor = 0.0f;
-    }
-    m->vegetationSettings = sp;
+    m->setFlags(CE2Material::Flag_IsVegetation, tmp);
+    sp->isEnabled = tmp;
   }
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 6U, isDiff); )
-  {
-    if (n == 0U)
-    {
-      bool    tmp;
-      if (!p.readBool(tmp))
-        break;
-      if (!m)
-        continue;
-      m->setFlags(CE2Material::Flag_IsVegetation, tmp);
-      sp->isEnabled = tmp;
-    }
-    else
-    {
-      float   tmp;
-      if (!p.readFloat(tmp))
-        break;
-      if (!sp)
-        continue;
-      switch (n)
-      {
-        case 1U:
-          sp->leafFrequency = tmp;
-          break;
-        case 2U:
-          sp->leafAmplitude = tmp;
-          break;
-        case 3U:
-          sp->branchFlexibility = tmp;
-          break;
-        case 4U:
-          sp->trunkFlexibility = tmp;
-          break;
-        case 5U:
-          sp->terrainBlendStrength = tmp;
-          break;
-        case 6U:
-          sp->terrainBlendGradientFactor = tmp;
-          break;
-      }
-    }
-  }
+  readFloat(sp->leafFrequency, p, 1);
+  readFloat(sp->leafAmplitude, p, 2);
+  readFloat(sp->branchFlexibility, p, 3);
+  readFloat(sp->trunkFlexibility, p, 4);
+  readFloat(sp->terrainBlendStrength, p, 5);
+  readFloat(sp->terrainBlendGradientFactor, p, 6);
 }
 
 // BSMaterial::TextureResolutionSetting
 //   String  ResolutionHint
 
 void CE2MaterialDB::ComponentInfo::readTextureResolutionSetting(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
+  if (o->type == 5) [[likely]]
   {
-    unsigned char tmp = 0xFF;
-    if (!p.readEnum(tmp, "\006Tiling\011UniqueMap"
-                         "\017DetailMapTiling\020HighResUniqueMap"))
-    {
-      break;
-    }
-    if (p.o->type == 5 && tmp != 0xFF)
-      static_cast< CE2Material::TextureSet * >(p.o)->resolutionHint = tmp;
+    readEnum(static_cast< CE2Material::TextureSet * >(o)->resolutionHint, p, 0,
+             "\006Tiling\011UniqueMap\017DetailMapTiling\020HighResUniqueMap");
   }
 }
 
@@ -2100,20 +1441,18 @@ void CE2MaterialDB::ComponentInfo::readTextureResolutionSetting(
 //   List  Path
 
 void CE2MaterialDB::ComponentInfo::readAddress(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // BSBind::DirectoryComponent
 //   Ref  upDir
 
 void CE2MaterialDB::ComponentInfo::readDirectoryComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // BSMaterialBinding::MaterialUVStreamPropertyNode
@@ -2122,28 +1461,22 @@ void CE2MaterialDB::ComponentInfo::readDirectoryComponent(
 //   String  BindingType
 
 void CE2MaterialDB::ComponentInfo::readMaterialUVStreamPropertyNode(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // BSMaterial::ShaderRouteComponent
 //   String  Route
 
 void CE2MaterialDB::ComponentInfo::readShaderRouteComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
+  if (o->type == 1) [[likely]]
   {
-    unsigned char tmp = 7;
-    if (!p.readEnum(tmp, "\010Deferred\006Effect\015PlanetaryRing"
-                         "\025PrecomputedScattering\005Water"))
-    {
-      break;
-    }
-    if (p.o->type == 1)
-      static_cast< CE2Material * >(p.o)->shaderRoute = tmp;
+    readEnum(static_cast< CE2Material * >(o)->shaderRoute, p, 0,
+             "\010Deferred\006Effect\015PlanetaryRing"
+             "\025PrecomputedScattering\005Water");
   }
 }
 
@@ -2155,25 +1488,21 @@ void CE2MaterialDB::ComponentInfo::readShaderRouteComponent(
 //   String  Easing
 
 void CE2MaterialDB::ComponentInfo::readFloatLerpController(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // BSMaterial::ColorChannelTypeComponent
 //   String  Value
 
 void CE2MaterialDB::ComponentInfo::readColorChannelTypeComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
+  if (o->type == 2)
   {
-    unsigned char tmp = 0xFF;
-    if (!p.readEnum(tmp, "\003Red\005Green\004Blue\005Alpha"))
-      break;
-    if (p.o->type == 2 && tmp != 0xFF)
-      static_cast< CE2Material::Blender * >(p.o)->colorChannel = tmp;
+    readEnum(static_cast< CE2Material::Blender * >(o)->colorChannel, p, 0,
+             "\003Red\005Green\004Blue\005Alpha");
   }
 }
 
@@ -2185,45 +1514,20 @@ void CE2MaterialDB::ComponentInfo::readColorChannelTypeComponent(
 //   Bool  UseDitheredTransparency
 
 void CE2MaterialDB::ComponentInfo::readAlphaSettingsComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  CE2Material *m = nullptr;
-  if (p.o->type == 1) [[likely]]
-    m = static_cast< CE2Material * >(p.o);
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 4U, isDiff); )
-  {
-    if ((1U << n) & 0x00000011U)        // 0, 4: booleans
-    {
-      bool    tmp;
-      if (!p.readBool(tmp))
-        break;
-      if (!m)
-        continue;
-      if (!n)
-        m->setFlags(CE2Material::Flag_HasOpacity, tmp);
-      else
-        m->setFlags(CE2Material::Flag_DitheredTransparency, tmp);
-    }
-    else if (n == 1U)
-    {
-      float   tmp;
-      if (!p.readFloat0To1(tmp))
-        break;
-      if (m)
-        m->alphaThreshold = tmp;
-    }
-    else if (n == 2U)
-    {
-      if (!p.readString())
-        break;
-      if (m)
-        parseLayerNumber(m->alphaSourceLayer, p.stringBuf);
-    }
-    else
-    {
-      readAlphaBlenderSettings(p, isDiff);
-    }
-  }
+  if (o->type != 1) [[unlikely]]
+    return;
+  CE2Material *m = static_cast< CE2Material * >(o);
+  bool    tmp;
+  if (readBool(tmp, p, 0))
+    m->setFlags(CE2Material::Flag_HasOpacity, tmp);
+  readFloat(m->alphaThreshold, p, 1, true);
+  readLayerNumber(m->alphaSourceLayer, p, 2);
+  if (p && p->type > BSReflStream::String_Unknown && p->childCnt >= 4)
+    readAlphaBlenderSettings(p->children()[3]);
+  if (readBool(tmp, p, 4))
+    m->setFlags(CE2Material::Flag_DitheredTransparency, tmp);
 }
 
 // BSMaterial::LevelOfDetailSettings
@@ -2236,26 +1540,24 @@ void CE2MaterialDB::ComponentInfo::readAlphaSettingsComponent(
 //   Float  Bias
 
 void CE2MaterialDB::ComponentInfo::readLevelOfDetailSettings(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // BSMaterial::TextureSetID
 //   BSComponentDB2::ID  ID
 
 void CE2MaterialDB::ComponentInfo::readTextureSetID(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
+  if (o->type != 4) [[unlikely]]
+    return;
+  const CE2MaterialObject *tmp;
+  if (readBSComponentDB2ID(tmp, p, 0, 5))
   {
-    const CE2MaterialObject *o = readBSComponentDB2ID(p, isDiff, 5);
-    if (p.o->type == 4)
-    {
-      static_cast< CE2Material::Material * >(p.o)->textureSet =
-          static_cast< const CE2Material::TextureSet * >(o);
-    }
+    static_cast< CE2Material::Material * >(o)->textureSet =
+        static_cast< const CE2Material::TextureSet * >(tmp);
   }
 }
 
@@ -2265,39 +1567,34 @@ void CE2MaterialDB::ComponentInfo::readTextureSetID(
 //   String  Mask
 
 void CE2MaterialDB::ComponentInfo::readFloat2DCurveController(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // BSMaterial::TextureFile
 //   String  FileName
 
 void CE2MaterialDB::ComponentInfo::readTextureFile(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  if (p.componentType == BSReflStream::String_BSMaterial_TextureFile) [[likely]]
+  if (componentData->className
+      == BSReflStream::String_BSMaterial_TextureFile) [[likely]]
   {
-    readMRTextureFile(p, isDiff);
+    readMRTextureFile(p);
     return;
   }
-  if (p.componentType != BSReflStream::String_BSMaterial_DecalSettingsComponent)
+  if (componentData->className
+      != BSReflStream::String_BSMaterial_DecalSettingsComponent)
+  {
     return;
-  CE2Material::DecalSettings  *sp = nullptr;
-  if (p.o->type == 1) [[likely]]
-  {
-    CE2Material *m = static_cast< CE2Material * >(p.o);
-    sp = const_cast< CE2Material::DecalSettings * >(m->decalSettings);
   }
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
-  {
-    const std::string *tmp;
-    if (!p.readAndStoreString(tmp, 1))
-      break;
-    if (sp)
-      sp->surfaceHeightMap = tmp;
-  }
+  if (o->type != 1) [[unlikely]]
+    return;
+  CE2Material *m = static_cast< CE2Material * >(o);
+  CE2Material::DecalSettings  *sp =
+      const_cast< CE2Material::DecalSettings * >(m->decalSettings);
+  readPath(sp->surfaceHeightMap, p, 0);
 }
 
 // BSMaterial::TranslucencySettings
@@ -2313,68 +1610,26 @@ void CE2MaterialDB::ComponentInfo::readTextureFile(
 //   String  TransmittanceSourceLayer
 
 void CE2MaterialDB::ComponentInfo::readTranslucencySettings(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  CE2Material::TranslucencySettings *sp = nullptr;
-  if (p.o->type == 1) [[likely]]
-  {
-    CE2Material *m = static_cast< CE2Material * >(p.o);
-    sp = const_cast< CE2Material::TranslucencySettings * >(
-             m->translucencySettings);
-  }
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 9U, isDiff); )
-  {
-    if (n <= 2U)                        // 0, 1, 2: booleans
-    {
-      bool    tmp;
-      if (!p.readBool(tmp))
-        break;
-      if (!sp)
-        continue;
-      if (n == 0U)
-        sp->isThin = tmp;
-      else if (n == 1U)
-        sp->flipBackFaceNormalsInVS = tmp;
-      else
-        sp->useSSS = tmp;
-    }
-    else if (n <= 8U)                   // 3, 4, 5, 6, 7, 8: floats
-    {
-      float   tmp;
-      if (!p.readFloat(tmp))
-        break;
-      if (!sp)
-        continue;
-      switch (n)
-      {
-        case 3U:
-          sp->sssWidth = tmp;
-          break;
-        case 4U:
-          sp->sssStrength = tmp;
-          break;
-        case 5U:
-          sp->transmissiveScale = tmp;
-          break;
-        case 6U:
-          sp->transmittanceWidth = tmp;
-          break;
-        case 7U:
-          sp->specLobe0RoughnessScale = tmp;
-          break;
-        case 8U:
-          sp->specLobe1RoughnessScale = tmp;
-          break;
-      }
-    }
-    else
-    {
-      if (!p.readString())
-        break;
-      if (sp)
-        parseLayerNumber(sp->sourceLayer, p.stringBuf);
-    }
-  }
+  if (!(p && p->type == BSReflStream::String_BSMaterial_TranslucencySettings))
+    return;
+  if (o->type != 1) [[unlikely]]
+    return;
+  CE2Material *m = static_cast< CE2Material * >(o);
+  CE2Material::TranslucencySettings *sp =
+      const_cast< CE2Material::TranslucencySettings * >(
+          m->translucencySettings);
+  readBool(sp->isThin, p, 0);
+  readBool(sp->flipBackFaceNormalsInVS, p, 1);
+  readBool(sp->useSSS, p, 2);
+  readFloat(sp->sssWidth, p, 3);
+  readFloat(sp->sssStrength, p, 4);
+  readFloat(sp->transmissiveScale, p, 5);
+  readFloat(sp->transmittanceWidth, p, 6);
+  readFloat(sp->specLobe0RoughnessScale, p, 7);
+  readFloat(sp->specLobe1RoughnessScale, p, 8);
+  readLayerNumber(sp->sourceLayer, p, 9);
 }
 
 // BSMaterial::MouthSettingsComponent
@@ -2383,10 +1638,9 @@ void CE2MaterialDB::ComponentInfo::readTranslucencySettings(
 //   String  AOVertexColorChannel
 
 void CE2MaterialDB::ComponentInfo::readMouthSettingsComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // BSMaterial::DistortionComponent
@@ -2401,53 +1655,30 @@ void CE2MaterialDB::ComponentInfo::readMouthSettingsComponent(
 //   Float  BlurStrength
 
 void CE2MaterialDB::ComponentInfo::readDistortionComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // BSMaterial::DetailBlenderSettingsComponent
 //   BSMaterial::DetailBlenderSettings  DetailBlenderSettings
 
 void CE2MaterialDB::ComponentInfo::readDetailBlenderSettingsComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  CE2Material *m = nullptr;
-  CE2Material::DetailBlenderSettings  *sp = nullptr;
-  if (p.o->type == 1) [[likely]]
-  {
-    m = static_cast< CE2Material * >(p.o);
-    sp = reinterpret_cast< CE2Material::DetailBlenderSettings * >(
-             p.cdb.allocateSpace(sizeof(CE2Material::DetailBlenderSettings),
-                                 m->detailBlenderSettings));
-    if (!m->detailBlenderSettings)
-    {
-      sp->isEnabled = false;
-      sp->textureReplacementEnabled = false;
-      sp->textureReplacement = 0xFFFFFFFFU;
-      sp->texturePath = p.cdb.stringBuffers.front().data();
-      sp->uvStream = nullptr;
-    }
-    m->detailBlenderSettings = sp;
-  }
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
-  {
-    readDetailBlenderSettings(p, isDiff);
-  }
-}
-
-// BSComponentDB2::DBFileIndex::ObjectInfo
-//   BSResource::ID  PersistentID
-//   BSComponentDB2::ID  DBID
-//   BSComponentDB2::ID  Parent
-//   Bool  HasData
-
-void CE2MaterialDB::ComponentInfo::readObjectInfo(
-    ComponentInfo& p, bool isDiff)
-{
-  (void) p;
-  (void) isDiff;
+  if (o->type != 1) [[unlikely]]
+    return;
+  CE2Material *m = static_cast< CE2Material * >(o);
+  CE2Material::DetailBlenderSettings  *sp =
+      reinterpret_cast< CE2Material::DetailBlenderSettings * >(
+          cdb.allocateSpace(sizeof(CE2Material::DetailBlenderSettings),
+                            alignof(CE2Material::DetailBlenderSettings)));
+  sp->textureReplacement = 0xFFFFFFFFU;
+  sp->texturePath = &(*(cdb.storedStdStrings.cbegin()));
+  sp->uvStream = nullptr;
+  m->detailBlenderSettings = sp;
+  if (p && p->type > BSReflStream::String_Unknown && p->childCnt >= 1)
+    readDetailBlenderSettings(p->children()[0]);
 }
 
 // BSMaterial::StarmapBodyEffectComponent
@@ -2455,28 +1686,27 @@ void CE2MaterialDB::ComponentInfo::readObjectInfo(
 //   String  Type
 
 void CE2MaterialDB::ComponentInfo::readStarmapBodyEffectComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // BSMaterial::MaterialParamFloat
 //   Float  Value
 
 void CE2MaterialDB::ComponentInfo::readMaterialParamFloat(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
+  std::uint32_t i = componentData->key & 0xFFFFU;
+  if (o->type == 2 && i < CE2Material::Blender::maxFloatParams)
   {
-    float   tmp;
-    if (!p.readFloat0To1(tmp))
-      break;
-    unsigned int  i = p.componentIndex;
-    if (p.o->type == 2 && i < CE2Material::Blender::maxFloatParams)
-      static_cast< CE2Material::Blender * >(p.o)->floatParams[i] = tmp;
-    else if (p.o->type == 5)
-      static_cast< CE2Material::TextureSet * >(p.o)->floatParam = tmp;
+    readFloat(static_cast< CE2Material::Blender * >(o)->floatParams[i],
+              p, 0, true);
+  }
+  else if (o->type == 5)
+  {
+    readFloat(static_cast< CE2Material::TextureSet * >(o)->floatParam,
+              p, 0, true);
   }
 }
 
@@ -2485,10 +1715,9 @@ void CE2MaterialDB::ComponentInfo::readMaterialParamFloat(
 //   BSFloatCurve  YCurve
 
 void CE2MaterialDB::ComponentInfo::readBSFloat2DCurve(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // BSFloat3DCurve
@@ -2497,10 +1726,9 @@ void CE2MaterialDB::ComponentInfo::readBSFloat2DCurve(
 //   BSFloatCurve  ZCurve
 
 void CE2MaterialDB::ComponentInfo::readBSFloat3DCurve(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // BSMaterial::TranslucencySettingsComponent
@@ -2508,50 +1736,30 @@ void CE2MaterialDB::ComponentInfo::readBSFloat3DCurve(
 //   BSMaterial::TranslucencySettings  Settings
 
 void CE2MaterialDB::ComponentInfo::readTranslucencySettingsComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  CE2Material *m = nullptr;
-  CE2Material::TranslucencySettings *sp = nullptr;
-  if (p.o->type == 1) [[likely]]
+  if (o->type != 1) [[unlikely]]
+    return;
+  CE2Material *m = static_cast< CE2Material * >(o);
+  CE2Material::TranslucencySettings *sp =
+      reinterpret_cast< CE2Material::TranslucencySettings * >(
+          cdb.allocateSpace(sizeof(CE2Material::TranslucencySettings),
+                            alignof(CE2Material::TranslucencySettings)));
+  sp->sssWidth = 0.2f;
+  sp->sssStrength = 0.2f;
+  sp->transmissiveScale = 1.0f;
+  sp->transmittanceWidth = 0.03f;
+  sp->specLobe0RoughnessScale = 0.55f;
+  sp->specLobe1RoughnessScale = 1.2f;
+  m->translucencySettings = sp;
+  bool    tmp;
+  if (readBool(tmp, p, 0))
   {
-    m = static_cast< CE2Material * >(p.o);
-    sp = reinterpret_cast< CE2Material::TranslucencySettings * >(
-             p.cdb.allocateSpace(sizeof(CE2Material::TranslucencySettings),
-                                 m->translucencySettings));
-    if (!m->translucencySettings)
-    {
-      sp->isEnabled = false;
-      sp->isThin = false;
-      sp->flipBackFaceNormalsInVS = false;
-      sp->useSSS = false;
-      sp->sssWidth = 0.2f;
-      sp->sssStrength = 0.2f;
-      sp->transmissiveScale = 1.0f;
-      sp->transmittanceWidth = 0.03f;
-      sp->specLobe0RoughnessScale = 0.55f;
-      sp->specLobe1RoughnessScale = 1.2f;
-      sp->sourceLayer = 0;              // "MATERIAL_LAYER_0"
-    }
-    m->translucencySettings = sp;
+    m->setFlags(CE2Material::Flag_Translucency, tmp);
+    sp->isEnabled = tmp;
   }
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 1U, isDiff); )
-  {
-    if (n == 0U)
-    {
-      bool    tmp;
-      if (!p.readBool(tmp))
-        break;
-      if (m)
-      {
-        m->setFlags(CE2Material::Flag_Translucency, tmp);
-        sp->isEnabled = tmp;
-      }
-    }
-    else
-    {
-      readTranslucencySettings(p, isDiff);
-    }
-  }
+  if (p && p->type > BSReflStream::String_Unknown && p->childCnt >= 2)
+    readTranslucencySettings(p->children()[1]);
 }
 
 // BSMaterial::GlobalLayerNoiseSettings
@@ -2567,101 +1775,42 @@ void CE2MaterialDB::ComponentInfo::readTranslucencySettingsComponent(
 //   Float  MaskIntensityMax
 
 void CE2MaterialDB::ComponentInfo::readGlobalLayerNoiseSettings(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  CE2Material::GlobalLayerData  *sp = nullptr;
-  if (p.o->type == 1) [[likely]]
-  {
-    CE2Material *m = static_cast< CE2Material * >(p.o);
-    sp = const_cast< CE2Material::GlobalLayerData * >(m->globalLayerData);
-  }
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 9U, isDiff); )
-  {
-    if ((1U << n) & 0x000003F1U)        // 0, 4, 5, 6, 7, 8, 9: floats
-    {
-      float   tmp;
-      if (!p.readFloat(tmp))
-        break;
-      if (!sp)
-        continue;
-      switch (n)
-      {
-        case 0U:
-          sp->materialMaskIntensityScale = tmp;
-          break;
-        case 4U:
-          sp->worldspaceScaleFactor = tmp;
-          break;
-        case 5U:
-          sp->hurstExponent = tmp;
-          break;
-        case 6U:
-          sp->baseFrequency = tmp;
-          break;
-        case 7U:
-          sp->frequencyMultiplier = tmp;
-          break;
-        case 8U:
-          sp->maskIntensityMin = tmp;
-          break;
-        case 9U:
-          sp->maskIntensityMax = tmp;
-          break;
-      }
-    }
-    else if (n == 1U)
-    {
-      bool    tmp;
-      if (!p.readBool(tmp))
-        break;
-      if (sp)
-        sp->useNoiseMaskTexture = tmp;
-    }
-    else if (n == 2U)
-    {
-      if (sp) [[likely]]
-      {
-        if (!readSourceTextureWithReplacement(
-                 sp->noiseMaskTexture, sp->noiseMaskTextureReplacement,
-                 sp->noiseMaskTxtReplacementEnabled, p, isDiff))
-        {
-          break;
-        }
-      }
-      else
-      {
-        const std::string *tmp1 = nullptr;
-        std::uint32_t tmp2 = 0U;
-        bool    tmp3 = false;
-        if (!readSourceTextureWithReplacement(tmp1, tmp2, tmp3, p, isDiff))
-          break;
-      }
-    }
-    else
-    {
-      FloatVector4  tmp(0.0f);
-      if (sp) [[likely]]
-        readXMFLOAT4(sp->texcoordScaleAndBias, p, isDiff);
-      else
-        readXMFLOAT4(tmp, p, isDiff);
-    }
-  }
+  if (!p || p->type != BSReflStream::String_BSMaterial_GlobalLayerNoiseSettings)
+    return;
+  if (o->type != 1) [[unlikely]]
+    return;
+  CE2Material *m = static_cast< CE2Material * >(o);
+  CE2Material::GlobalLayerData  *sp =
+      const_cast< CE2Material::GlobalLayerData * >(m->globalLayerData);
+  readFloat(sp->materialMaskIntensityScale, p, 0);
+  readBool(sp->useNoiseMaskTexture, p, 1);
+  readSourceTextureWithReplacement(sp->noiseMaskTexture,
+                                   sp->noiseMaskTextureReplacement,
+                                   sp->noiseMaskTxtReplacementEnabled, p, 2);
+  readXMFLOAT4(sp->texcoordScaleAndBias, p, 3);
+  readFloat(sp->worldspaceScaleFactor, p, 4);
+  readFloat(sp->hurstExponent, p, 5);
+  readFloat(sp->baseFrequency, p, 6);
+  readFloat(sp->frequencyMultiplier, p, 7);
+  readFloat(sp->maskIntensityMin, p, 8);
+  readFloat(sp->maskIntensityMax, p, 9);
 }
 
 // BSMaterial::MaterialID
 //   BSComponentDB2::ID  ID
 
 void CE2MaterialDB::ComponentInfo::readMaterialID(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
+  if (o->type != 3) [[unlikely]]
+    return;
+  const CE2MaterialObject *tmp;
+  if (readBSComponentDB2ID(tmp, p, 0, 4))
   {
-    const CE2MaterialObject *o = readBSComponentDB2ID(p, isDiff, 4);
-    if (p.o->type == 3)
-    {
-      static_cast< CE2Material::Layer * >(p.o)->material =
-          static_cast< const CE2Material::Material * >(o);
-    }
+    static_cast< CE2Material::Layer * >(o)->material =
+        static_cast< const CE2Material::Material * >(tmp);
   }
 }
 
@@ -2670,38 +1819,37 @@ void CE2MaterialDB::ComponentInfo::readMaterialID(
 //   Float  y
 
 bool CE2MaterialDB::ComponentInfo::readXMFLOAT2L(
-    FloatVector4& v, ComponentInfo& p, bool isDiff)
+    FloatVector4& v, const BSMaterialsCDB::CDBObject *p, size_t fieldNum)
 {
-  bool    r = false;
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 1U, isDiff); )
-  {
-    if (!p.readFloat(v[n]))
-      break;
-    r = true;
-  }
+  if (!(p && p->type > BSReflStream::String_Unknown && fieldNum < p->childCnt))
+    return false;
+  const BSMaterialsCDB::CDBObject *q = p->children()[fieldNum];
+  if (!(q && q->type == BSReflStream::String_XMFLOAT2 && q->childCnt == 2))
+    return false;
+  bool    r = readFloat(v[0], q, 0);
+  r = r | readFloat(v[1], q, 1);
   return r;
 }
 
 bool CE2MaterialDB::ComponentInfo::readXMFLOAT2H(
-    FloatVector4& v, ComponentInfo& p, bool isDiff)
+    FloatVector4& v, const BSMaterialsCDB::CDBObject *p, size_t fieldNum)
 {
-  bool    r = false;
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 1U, isDiff); )
-  {
-    if (!p.readFloat(v[n + 2U]))
-      break;
-    r = true;
-  }
+  if (!(p && p->type > BSReflStream::String_Unknown && fieldNum < p->childCnt))
+    return false;
+  const BSMaterialsCDB::CDBObject *q = p->children()[fieldNum];
+  if (!(q && q->type == BSReflStream::String_XMFLOAT2 && q->childCnt == 2))
+    return false;
+  bool    r = readFloat(v[2], q, 0);
+  r = r | readFloat(v[3], q, 1);
   return r;
 }
 
 // BSBind::TimerController
 
 void CE2MaterialDB::ComponentInfo::readTimerController(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // BSBind::Controllers
@@ -2709,10 +1857,9 @@ void CE2MaterialDB::ComponentInfo::readTimerController(
 //   Bool  UseRandomOffset
 
 void CE2MaterialDB::ComponentInfo::readControllers(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // BSMaterial::EmittanceSettings
@@ -2728,106 +1875,56 @@ void CE2MaterialDB::ComponentInfo::readControllers(
 //   Float  MinOffsetEmittance
 
 void CE2MaterialDB::ComponentInfo::readEmittanceSettings(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  CE2Material::EmissiveSettings *sp = nullptr;
-  if (p.o->type == 1) [[likely]]
-  {
-    CE2Material *m = static_cast< CE2Material * >(p.o);
-    sp = const_cast< CE2Material::EmissiveSettings * >(m->emissiveSettings);
-  }
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 9U, isDiff); )
-  {
-    if ((1U << n) & 0x00000368U)        // 3, 5, 6, 8, 9: floats
-    {
-      float   tmp;
-      if (!p.readFloat(tmp))
-        break;
-      if (!sp)
-        continue;
-      if (n == 3U)
-        sp->clipThreshold = tmp;
-      else if (n == 5U)
-        sp->luminousEmittance = tmp;
-      else if (n == 6U)
-        sp->exposureOffset = tmp;
-      else if (n == 8U)
-        sp->maxOffset = tmp;
-      else
-        sp->minOffset = tmp;
-    }
-    else if ((1U << n) & 0x00000090U)   // 4, 7: booleans
-    {
-      bool    tmp;
-      if (!p.readBool(tmp))
-        break;
-      if (!sp)
-        continue;
-      if (n == 4U)
-        sp->adaptiveEmittance = tmp;
-      else
-        sp->enableAdaptiveLimits = tmp;
-    }
-    else if (n == 0U)
-    {
-      if (!p.readString())
-        break;
-      if (sp)
-        parseLayerNumber(sp->sourceLayer, p.stringBuf);
-    }
-    else if (n == 1U)
-    {
-      if (!sp)
-      {
-        FloatVector4  c(0.0f);
-        readColorValue(c, p, isDiff);
-      }
-      else
-      {
-        readColorValue(sp->emissiveTint, p, isDiff);
-      }
-    }
-    else
-    {
-      unsigned char tmp = 0xFF;
-      if (!p.readEnum(tmp, "\004None\010Blender1\010Blender2\010Blender3"))
-        break;
-      if (sp && tmp != 0xFF)
-        sp->maskSourceBlender = tmp;
-    }
-  }
+  if (!(p && p->type == BSReflStream::String_BSMaterial_EmittanceSettings))
+    return;
+  if (o->type != 1) [[unlikely]]
+    return;
+  CE2Material *m = static_cast< CE2Material * >(o);
+  CE2Material::EmissiveSettings *sp =
+      const_cast< CE2Material::EmissiveSettings * >(m->emissiveSettings);
+  readLayerNumber(sp->sourceLayer, p, 0);
+  readColorValue(sp->emissiveTint, p, 1);
+  readEnum(sp->maskSourceBlender, p, 2,
+           "\004None\010Blender1\010Blender2\010Blender3");
+  readFloat(sp->clipThreshold, p, 3);
+  readBool(sp->adaptiveEmittance, p, 4);
+  readFloat(sp->luminousEmittance, p, 5);
+  readFloat(sp->exposureOffset, p, 6);
+  readBool(sp->enableAdaptiveLimits, p, 7);
+  readFloat(sp->maxOffset, p, 8);
+  readFloat(sp->minOffset, p, 9);
 }
 
 // BSMaterial::ShaderModelComponent
 //   String  FileName
 
 void CE2MaterialDB::ComponentInfo::readShaderModelComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
+  if (o->type != 1) [[unlikely]]
+    return;
+  const char  *s;
+  if (!readString(s, p, 0))
+    return;
+  CE2Material *m = static_cast< CE2Material * >(o);
+  size_t  n0 = 0;
+  size_t  n2 = sizeof(CE2Material::shaderModelNames) / sizeof(char *);
+  while ((n2 - n0) >= 2)
   {
-    if (!p.readString())
-      break;
-    if (p.o->type != 1)
-      continue;
-    CE2Material *m = static_cast< CE2Material * >(p.o);
-    size_t  n0 = 0;
-    size_t  n2 = sizeof(CE2Material::shaderModelNames) / sizeof(char *);
-    while ((n2 - n0) >= 2)
-    {
-      size_t  n1 = (n0 + n2) >> 1;
-      if (p.stringBuf.compare(CE2Material::shaderModelNames[n1]) < 0)
-        n2 = n1;
-      else
-        n0 = n1;
-    }
-    unsigned char tmp = 55;             // "Unknown"
-    if (p.stringBuf == CE2Material::shaderModelNames[n0])
-      tmp = (unsigned char) n0;
-    m->shaderModel = tmp;
-    m->setFlags(CE2Material::Flag_TwoSided,
-                bool((1ULL << tmp) & 0xF060000000000000ULL));
+    size_t  n1 = (n0 + n2) >> 1;
+    if (std::strcmp(s, CE2Material::shaderModelNames[n1]) < 0)
+      n2 = n1;
+    else
+      n0 = n1;
   }
+  unsigned char tmp = 55;       // "Unknown"
+  if (std::strcmp(s, CE2Material::shaderModelNames[n0]) == 0)
+    tmp = (unsigned char) n0;
+  m->shaderModel = tmp;
+  m->setFlags(CE2Material::Flag_TwoSided,
+              bool((1ULL << tmp) & 0xF060000000000000ULL));
 }
 
 // BSResource::ID
@@ -2836,10 +1933,9 @@ void CE2MaterialDB::ComponentInfo::readShaderModelComponent(
 //   UInt32  Ext
 
 void CE2MaterialDB::ComponentInfo::readBSResourceID(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // XMFLOAT3
@@ -2848,15 +1944,16 @@ void CE2MaterialDB::ComponentInfo::readBSResourceID(
 //   Float  z
 
 bool CE2MaterialDB::ComponentInfo::readXMFLOAT3(
-    FloatVector4& v, ComponentInfo& p, bool isDiff)
+    FloatVector4& v, const BSMaterialsCDB::CDBObject *p, size_t fieldNum)
 {
-  bool    r = false;
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 2U, isDiff); )
-  {
-    if (!p.readFloat(v[n]))
-      break;
-    r = true;
-  }
+  if (!(p && p->type > BSReflStream::String_Unknown && fieldNum < p->childCnt))
+    return false;
+  const BSMaterialsCDB::CDBObject *q = p->children()[fieldNum];
+  if (!(q && q->type == BSReflStream::String_XMFLOAT3 && q->childCnt == 3))
+    return false;
+  bool    r = readFloat(v[0], q, 0);
+  r = r | readFloat(v[1], q, 1);
+  r = r | readFloat(v[2], q, 2);
   return r;
 }
 
@@ -2864,36 +1961,28 @@ bool CE2MaterialDB::ComponentInfo::readXMFLOAT3(
 //   String  Value
 
 void CE2MaterialDB::ComponentInfo::readMaterialOverrideColorTypeComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
-  {
-    unsigned char tmp = 0xFF;
-    if (!p.readEnum(tmp, "\010Multiply\004Lerp"))
-      break;
-    if (p.o->type == 4 && tmp != 0xFF)
-      static_cast< CE2Material::Material * >(p.o)->colorMode = tmp;
-  }
+  if (o->type != 4) [[unlikely]]
+    return;
+  readEnum(static_cast< CE2Material::Material * >(o)->colorMode, p, 0,
+           "\010Multiply\004Lerp");
 }
 
 // BSMaterial::Channel
 //   String  Value
 
 void CE2MaterialDB::ComponentInfo::readChannel(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
+  if (!(o->type == 6 &&
+        componentData->className
+        == BSReflStream::String_BSMaterial_Channel)) [[unlikely]]
   {
-    unsigned char tmp = 0xFF;
-    if (!p.readEnum(tmp, "\004Zero\003One\003Two\005Three"))
-      break;
-    if (p.o->type == 6 &&
-        p.componentType == BSReflStream::String_BSMaterial_Channel &&
-        tmp != 0xFF)
-    {
-      static_cast< CE2Material::UVStream * >(p.o)->channel = tmp;
-    }
+    return;
   }
+  readEnum(static_cast< CE2Material::UVStream * >(o)->channel, p, 0,
+           "\004Zero\003One\003Two\005Three");
 }
 
 // BSBind::ColorCurveController
@@ -2902,23 +1991,9 @@ void CE2MaterialDB::ComponentInfo::readChannel(
 //   String  Mask
 
 void CE2MaterialDB::ComponentInfo::readColorCurveController(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
-}
-
-// BSMaterial::Internal::CompiledDB
-//   String  BuildVersion
-//   Map  HashMap
-//   List  Collisions
-//   List  Circular
-
-void CE2MaterialDB::ComponentInfo::readCompiledDB(
-    ComponentInfo& p, bool isDiff)
-{
-  (void) p;
-  (void) isDiff;
 }
 
 // BSMaterial::HairSettingsComponent
@@ -2953,15 +2028,13 @@ void CE2MaterialDB::ComponentInfo::readCompiledDB(
 //   String  AOVertexColorChannel
 
 void CE2MaterialDB::ComponentInfo::readHairSettingsComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  (void) isDiff;
-  CE2Material *m = nullptr;
-  if (p.o->type == 1) [[likely]]
-  {
-    m = static_cast< CE2Material * >(p.o);
-    m->setFlags(CE2Material::Flag_IsHair, true);
-  }
+  (void) p;
+  if (o->type != 1) [[unlikely]]
+    return;
+  CE2Material *m = static_cast< CE2Material * >(o);
+  m->setFlags(CE2Material::Flag_IsHair, true);
 }
 
 // BSColorCurve
@@ -2971,49 +2044,43 @@ void CE2MaterialDB::ComponentInfo::readHairSettingsComponent(
 //   BSFloatCurve  AlphaChannel
 
 void CE2MaterialDB::ComponentInfo::readBSColorCurve(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // BSBind::ControllerComponent
 //   Ref  upControllers
 
 void CE2MaterialDB::ComponentInfo::readControllerComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // BSMaterial::MRTextureFile
 //   String  FileName
 
 void CE2MaterialDB::ComponentInfo::readMRTextureFile(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
+  std::uint32_t i = componentData->key & 0xFFFFU;
+  if (o->type == 5 && i < CE2Material::TextureSet::maxTexturePaths) [[likely]]
   {
-    const std::string *txtPath;
-    if (!p.readAndStoreString(txtPath, 1))
-      break;
-    unsigned int  i = p.componentIndex;
-    if (p.o->type == 5 &&
-        i < CE2Material::TextureSet::maxTexturePaths) [[likely]]
+    CE2Material::TextureSet *txtSet =
+        static_cast< CE2Material::TextureSet * >(o);
+    if (readPath(txtSet->texturePaths[i], p, 0, "textures/", ".dds"))
     {
-      CE2Material::TextureSet *txtSet =
-          static_cast< CE2Material::TextureSet * >(p.o);
-      txtSet->texturePaths[i] = txtPath;
-      if (txtPath->empty())
+      if (txtSet->texturePaths[i]->empty())
         txtSet->texturePathMask &= ~(1U << i);
       else
         txtSet->texturePathMask |= (1U << i);
     }
-    else if (p.o->type == 2)
-    {
-      static_cast< CE2Material::Blender * >(p.o)->texturePath = txtPath;
-    }
+  }
+  else if (o->type == 2)
+  {
+    readPath(static_cast< CE2Material::Blender * >(o)->texturePath, p, 0,
+             "textures/", ".dds");
   }
 }
 
@@ -3021,26 +2088,25 @@ void CE2MaterialDB::ComponentInfo::readMRTextureFile(
 //   String  Value
 
 void CE2MaterialDB::ComponentInfo::readTextureSetKindComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
   (void) p;
-  (void) isDiff;
 }
 
 // BSMaterial::BlenderID
 //   BSComponentDB2::ID  ID
 
 void CE2MaterialDB::ComponentInfo::readBlenderID(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
+  std::uint32_t i = componentData->key & 0xFFFFU;
+  if (!(o->type == 1 && i < CE2Material::maxBlenders)) [[unlikely]]
+    return;
+  const CE2MaterialObject *tmp;
+  if (readBSComponentDB2ID(tmp, p, 0, 2))
   {
-    const CE2MaterialObject *o = readBSComponentDB2ID(p, isDiff, 2);
-    if (p.o->type == 1 && p.componentIndex < CE2Material::maxBlenders)
-    {
-      static_cast< CE2Material * >(p.o)->blenders[p.componentIndex] =
-          static_cast< const CE2Material::Blender * >(o);
-    }
+    static_cast< CE2Material * >(o)->blenders[i] =
+        static_cast< const CE2Material::Blender * >(tmp);
   }
 }
 
@@ -3048,10 +2114,10 @@ void CE2MaterialDB::ComponentInfo::readBlenderID(
 //   BSMaterial::PhysicsMaterialType  MaterialTypeOverride
 
 void CE2MaterialDB::ComponentInfo::readCollisionComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
-    readPhysicsMaterialType(p, isDiff);
+  if (p && p->type > BSReflStream::String_Unknown && p->childCnt >= 1)
+    readPhysicsMaterialType(p->children()[0]);
 }
 
 // BSMaterial::TerrainSettingsComponent
@@ -3064,31 +2130,29 @@ void CE2MaterialDB::ComponentInfo::readCollisionComponent(
 //   Float  DisplacementMidpoint
 
 void CE2MaterialDB::ComponentInfo::readTerrainSettingsComponent(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  (void) isDiff;
-  CE2Material *m = nullptr;
-  if (p.o->type == 1) [[likely]]
-  {
-    m = static_cast< CE2Material * >(p.o);
-    m->setFlags(CE2Material::Flag_IsTerrain, true);
-  }
+  (void) p;
+  if (o->type != 1) [[unlikely]]
+    return;
+  CE2Material *m = static_cast< CE2Material * >(o);
+  m->setFlags(CE2Material::Flag_IsTerrain, true);
 }
 
 // BSMaterial::LODMaterialID
 //   BSComponentDB2::ID  ID
 
 void CE2MaterialDB::ComponentInfo::readLODMaterialID(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
+  std::uint32_t i = componentData->key & 0xFFFFU;
+  if (!(o->type == 1 && i < CE2Material::maxLODMaterials)) [[unlikely]]
+    return;
+  const CE2MaterialObject *tmp;
+  if (readBSComponentDB2ID(tmp, p, 0, 1))
   {
-    const CE2MaterialObject *o = readBSComponentDB2ID(p, isDiff, 1);
-    if (p.o->type == 1 && p.componentIndex < CE2Material::maxLODMaterials)
-    {
-      static_cast< CE2Material * >(p.o)->lodMaterials[p.componentIndex] =
-          static_cast< const CE2Material * >(o);
-    }
+    static_cast< CE2Material * >(o)->lodMaterials[i] =
+        static_cast< const CE2Material * >(tmp);
   }
 }
 
@@ -3096,154 +2160,187 @@ void CE2MaterialDB::ComponentInfo::readLODMaterialID(
 //   Bool  DisableMipBiasHint
 
 void CE2MaterialDB::ComponentInfo::readMipBiasSetting(
-    ComponentInfo& p, bool isDiff)
+    const BSMaterialsCDB::CDBObject *p)
 {
-  for (unsigned int n = 0U - 1U; p.getFieldNumber(n, 0U, isDiff); )
+  if (o->type == 5) [[likely]]
   {
-    bool    tmp;
-    if (!p.readBool(tmp))
-      break;
-    if (p.o->type == 5)
-      static_cast< CE2Material::TextureSet * >(p.o)->disableMipBiasHint = tmp;
+    readBool(static_cast< CE2Material::TextureSet * >(o)->disableMipBiasHint,
+             p, 0);
   }
 }
 
-const CE2MaterialDB::ComponentInfo::ReadFunctionType
-    CE2MaterialDB::ComponentInfo::readFunctionTable[128] =
+void CE2MaterialDB::ComponentInfo::loadComponent(
+    const BSMaterialsCDB::MaterialComponent *p)
 {
-  // indexed by string ID
-  // (returned by BSReflStream::getClassName(strtOffs)) - 128
-  (ReadFunctionType) 0,         // "BSBind::ColorLerpController"
-  (ReadFunctionType) 0,         // "BSBind::ComponentProperty"
-  &readControllerComponent,     // "BSBind::ControllerComponent"
-  (ReadFunctionType) 0,         // "BSBind::Controllers"
-  (ReadFunctionType) 0,         // "BSBind::Controllers::Mapping"
-  (ReadFunctionType) 0,         // "BSBind::Directory"
-  &readDirectoryComponent,      // "BSBind::DirectoryComponent"
-  (ReadFunctionType) 0,         // "BSBind::Float2DCurveController"
-  (ReadFunctionType) 0,         // "BSBind::Float2DLerpController"
-  (ReadFunctionType) 0,         // "BSBind::Float3DCurveController"
-  (ReadFunctionType) 0,         // "BSBind::Float3DLerpController"
-  (ReadFunctionType) 0,         // "BSBind::FloatCurveController"
-  (ReadFunctionType) 0,         // "BSBind::FloatLerpController"
-  (ReadFunctionType) 0,         // "BSBind::Multiplex"
-  (ReadFunctionType) 0,         // "BSBind::Snapshot"
-  (ReadFunctionType) 0,         // "BSBind::Snapshot::Entry"
-  (ReadFunctionType) 0,         // "BSBind::TimerController"
-  (ReadFunctionType) 0,         // "BSBlendable::ColorValue"
-  (ReadFunctionType) 0,         // "BSBlendable::FloatValue"
-  (ReadFunctionType) 0,         // "BSColorCurve"
-  (ReadFunctionType) 0,         // "BSComponentDB2::DBFileIndex"
-  (ReadFunctionType) 0,         // "BSComponentDB2::DBFileIndex::ComponentInfo"
-  (ReadFunctionType) 0,     // "BSComponentDB2::DBFileIndex::ComponentTypeInfo"
-  (ReadFunctionType) 0,         // "BSComponentDB2::DBFileIndex::EdgeInfo"
-  (ReadFunctionType) 0,         // "BSComponentDB2::DBFileIndex::ObjectInfo"
-  (ReadFunctionType) 0,         // "BSComponentDB2::ID"
-  &readCTName,                  // "BSComponentDB::CTName"
-  (ReadFunctionType) 0,         // "BSFloat2DCurve"
-  (ReadFunctionType) 0,         // "BSFloat3DCurve"
-  (ReadFunctionType) 0,         // "BSFloatCurve"
-  (ReadFunctionType) 0,         // "BSFloatCurve::Control"
-  (ReadFunctionType) 0,         // "BSGalaxy::BGSSunPresetForm"
-  (ReadFunctionType) 0,     // "BSGalaxy::BGSSunPresetForm::DawnDuskSettings"
-  (ReadFunctionType) 0,         // "BSGalaxy::BGSSunPresetForm::NightSettings"
-  (ReadFunctionType) 0,         // "BSHoudini::HoudiniAssetData"
-  (ReadFunctionType) 0,         // "BSHoudini::HoudiniAssetData::Parameter"
-  (ReadFunctionType) 0,         // "BSMaterial::AlphaBlenderSettings"
-  &readAlphaSettingsComponent,  // "BSMaterial::AlphaSettingsComponent"
-  &readBlendModeComponent,      // "BSMaterial::BlendModeComponent"
-  &readBlendParamFloat,         // "BSMaterial::BlendParamFloat"
-  &readBlenderID,               // "BSMaterial::BlenderID"
-  &readChannel,                 // "BSMaterial::Channel"
-  &readCollisionComponent,      // "BSMaterial::CollisionComponent"
-  &readColor,                   // "BSMaterial::Color"
-  &readColorChannelTypeComponent,   // "BSMaterial::ColorChannelTypeComponent"
-  &readColorRemapSettingsComponent, // "BSMaterial::ColorRemapSettingsComponent"
-  &readDecalSettingsComponent,  // "BSMaterial::DecalSettingsComponent"
-  (ReadFunctionType) 0,         // "BSMaterial::DetailBlenderSettings"
-  // "BSMaterial::DetailBlenderSettingsComponent"
-  &readDetailBlenderSettingsComponent,
-  &readDistortionComponent,     // "BSMaterial::DistortionComponent"
-  &readEffectSettingsComponent, // "BSMaterial::EffectSettingsComponent"
-  &readEmissiveSettingsComponent,   // "BSMaterial::EmissiveSettingsComponent"
-  (ReadFunctionType) 0,         // "BSMaterial::EmittanceSettings"
-  &readEyeSettingsComponent,    // "BSMaterial::EyeSettingsComponent"
-  &readFlipbookComponent,       // "BSMaterial::FlipbookComponent"
-  &readFlowSettingsComponent,   // "BSMaterial::FlowSettingsComponent"
-  &readGlobalLayerDataComponent,    // "BSMaterial::GlobalLayerDataComponent"
-  (ReadFunctionType) 0,         // "BSMaterial::GlobalLayerNoiseSettings"
-  &readHairSettingsComponent,   // "BSMaterial::HairSettingsComponent"
-  (ReadFunctionType) 0,         // "BSMaterial::Internal::CompiledDB"
-  (ReadFunctionType) 0,         // "BSMaterial::Internal::CompiledDB::FilePair"
-  &readLODMaterialID,           // "BSMaterial::LODMaterialID"
-  &readLayerID,                 // "BSMaterial::LayerID"
-  &readLayeredEdgeFalloffComponent, // "BSMaterial::LayeredEdgeFalloffComponent"
-  &readLayeredEmissivityComponent,  // "BSMaterial::LayeredEmissivityComponent"
-  &readLevelOfDetailSettings,   // "BSMaterial::LevelOfDetailSettings"
-  &readMRTextureFile,           // "BSMaterial::MRTextureFile"
-  &readMaterialID,              // "BSMaterial::MaterialID"
-  // "BSMaterial::MaterialOverrideColorTypeComponent"
-  &readMaterialOverrideColorTypeComponent,
-  &readMaterialParamFloat,      // "BSMaterial::MaterialParamFloat"
-  &readMipBiasSetting,          // "BSMaterial::MipBiasSetting"
-  &readMouthSettingsComponent,  // "BSMaterial::MouthSettingsComponent"
-  &readOffset,                  // "BSMaterial::Offset"
-  &readOpacityComponent,        // "BSMaterial::OpacityComponent"
-  &readParamBool,               // "BSMaterial::ParamBool"
-  (ReadFunctionType) 0,         // "BSMaterial::PhysicsMaterialType"
-  (ReadFunctionType) 0,         // "BSMaterial::ProjectedDecalSettings"
-  &readScale,                   // "BSMaterial::Scale"
-  &readShaderModelComponent,    // "BSMaterial::ShaderModelComponent"
-  &readShaderRouteComponent,    // "BSMaterial::ShaderRouteComponent"
-  (ReadFunctionType) 0,         // "BSMaterial::SourceTextureWithReplacement"
-  &readStarmapBodyEffectComponent,  // "BSMaterial::StarmapBodyEffectComponent"
-  &readTerrainSettingsComponent,    // "BSMaterial::TerrainSettingsComponent"
-  // "BSMaterial::TerrainTintSettingsComponent"
-  &readTerrainTintSettingsComponent,
-  &readTextureAddressModeComponent, // "BSMaterial::TextureAddressModeComponent"
-  &readTextureFile,             // "BSMaterial::TextureFile"
-  &readTextureReplacement,      // "BSMaterial::TextureReplacement"
-  &readTextureResolutionSetting,    // "BSMaterial::TextureResolutionSetting"
-  &readTextureSetID,            // "BSMaterial::TextureSetID"
-  &readTextureSetKindComponent, // "BSMaterial::TextureSetKindComponent"
-  (ReadFunctionType) 0,         // "BSMaterial::TranslucencySettings"
-  // "BSMaterial::TranslucencySettingsComponent"
-  &readTranslucencySettingsComponent,
-  &readUVStreamID,              // "BSMaterial::UVStreamID"
-  &readUVStreamParamBool,       // "BSMaterial::UVStreamParamBool"
-  &readVegetationSettingsComponent, // "BSMaterial::VegetationSettingsComponent"
-  &readWaterFoamSettingsComponent,  // "BSMaterial::WaterFoamSettingsComponent"
-  &readWaterGrimeSettingsComponent, // "BSMaterial::WaterGrimeSettingsComponent"
-  &readWaterSettingsComponent,  // "BSMaterial::WaterSettingsComponent"
-  (ReadFunctionType) 0,         // "BSMaterialBinding::MaterialPropertyNode"
-  (ReadFunctionType) 0,     // "BSMaterialBinding::MaterialUVStreamPropertyNode"
-  (ReadFunctionType) 0,         // "BSResource::ID"
-  (ReadFunctionType) 0,         // "BSSequence::AnimationEvent"
-  (ReadFunctionType) 0,         // "BSSequence::AnimationTrack"
-  (ReadFunctionType) 0,         // "BSSequence::CameraShakeEvent"
-  (ReadFunctionType) 0,         // "BSSequence::CameraShakeStrengthTrack"
-  (ReadFunctionType) 0,         // "BSSequence::CameraShakeTrack"
-  (ReadFunctionType) 0,         // "BSSequence::ColorCurveEvent"
-  (ReadFunctionType) 0,         // "BSSequence::ColorLerpEvent"
-  (ReadFunctionType) 0,         // "BSSequence::ColorTriggerEvent"
-  (ReadFunctionType) 0,         // "BSSequence::CullEvent"
-  (ReadFunctionType) 0,         // "BSSequence::DissolveEvent"
-  (ReadFunctionType) 0,         // "BSSequence::DissolveFrequencyScaleTrack"
-  (ReadFunctionType) 0,         // "BSSequence::DissolveOffsetTrack"
-  (ReadFunctionType) 0,         // "BSSequence::DissolveTrack"
-  (ReadFunctionType) 0,         // "BSSequence::ExplosionObjectSpawn"
-  (ReadFunctionType) 0,         // "BSSequence::Float2LerpEvent"
-  (ReadFunctionType) 0,         // "BSSequence::Float2TriggerEvent"
-  (ReadFunctionType) 0,         // "BSSequence::FloatCurveEvent"
-  (ReadFunctionType) 0,         // "BSSequence::FloatLerpEvent"
-  (ReadFunctionType) 0,         // "BSSequence::FloatNoiseEvent"
-  (ReadFunctionType) 0,         // "BSSequence::FloatTriggerEvent"
-  (ReadFunctionType) 0,         // "BSSequence::ImageSpaceLifetimeEvent"
-  (ReadFunctionType) 0,         // "BSSequence::ImageSpaceStrengthTrack"
-  (ReadFunctionType) 0,         // "BSSequence::ImageSpaceTrack"
-  (ReadFunctionType) 0,         // "BSSequence::ImpactEffectEvent"
-  (ReadFunctionType) 0,         // "BSSequence::ImpactEffectTrack"
-  (ReadFunctionType) 0,         // "BSSequence::LightColorTrack"
-  (ReadFunctionType) 0          // "BSSequence::LightEffectReferenceTrack"
-};
+  componentData = p;
+  const BSMaterialsCDB::CDBObject *q = p->o;
+  switch (p->className)
+  {
+    case BSReflStream::String_BSBind_ControllerComponent:
+      readControllerComponent(q);
+      break;
+    case BSReflStream::String_BSBind_DirectoryComponent:
+      readDirectoryComponent(q);
+      break;
+    case BSReflStream::String_BSComponentDB_CTName:
+      readCTName(q);
+      break;
+    case BSReflStream::String_BSMaterial_AlphaSettingsComponent:
+      readAlphaSettingsComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_BlendModeComponent:
+      readBlendModeComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_BlendParamFloat:
+      readBlendParamFloat(q);
+      break;
+    case BSReflStream::String_BSMaterial_BlenderID:
+      readBlenderID(q);
+      break;
+    case BSReflStream::String_BSMaterial_Channel:
+      readChannel(q);
+      break;
+    case BSReflStream::String_BSMaterial_CollisionComponent:
+      readCollisionComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_Color:
+      readColor(q);
+      break;
+    case BSReflStream::String_BSMaterial_ColorChannelTypeComponent:
+      readColorChannelTypeComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_ColorRemapSettingsComponent:
+      readColorRemapSettingsComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_DecalSettingsComponent:
+      readDecalSettingsComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_DetailBlenderSettingsComponent:
+      readDetailBlenderSettingsComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_DistortionComponent:
+      readDistortionComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_EffectSettingsComponent:
+      readEffectSettingsComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_EmissiveSettingsComponent:
+      readEmissiveSettingsComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_EyeSettingsComponent:
+      readEyeSettingsComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_FlipbookComponent:
+      readFlipbookComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_FlowSettingsComponent:
+      readFlowSettingsComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_GlobalLayerDataComponent:
+      readGlobalLayerDataComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_HairSettingsComponent:
+      readHairSettingsComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_LODMaterialID:
+      readLODMaterialID(q);
+      break;
+    case BSReflStream::String_BSMaterial_LayerID:
+      readLayerID(q);
+      break;
+    case BSReflStream::String_BSMaterial_LayeredEdgeFalloffComponent:
+      readLayeredEdgeFalloffComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_LayeredEmissivityComponent:
+      readLayeredEmissivityComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_LevelOfDetailSettings:
+      readLevelOfDetailSettings(q);
+      break;
+    case BSReflStream::String_BSMaterial_MRTextureFile:
+      readMRTextureFile(q);
+      break;
+    case BSReflStream::String_BSMaterial_MaterialID:
+      readMaterialID(q);
+      break;
+    case BSReflStream::String_BSMaterial_MaterialOverrideColorTypeComponent:
+      readMaterialOverrideColorTypeComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_MaterialParamFloat:
+      readMaterialParamFloat(q);
+      break;
+    case BSReflStream::String_BSMaterial_MipBiasSetting:
+      readMipBiasSetting(q);
+      break;
+    case BSReflStream::String_BSMaterial_MouthSettingsComponent:
+      readMouthSettingsComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_Offset:
+      readOffset(q);
+      break;
+    case BSReflStream::String_BSMaterial_OpacityComponent:
+      readOpacityComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_ParamBool:
+      readParamBool(q);
+      break;
+    case BSReflStream::String_BSMaterial_Scale:
+      readScale(q);
+      break;
+    case BSReflStream::String_BSMaterial_ShaderModelComponent:
+      readShaderModelComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_ShaderRouteComponent:
+      readShaderRouteComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_StarmapBodyEffectComponent:
+      readStarmapBodyEffectComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_TerrainSettingsComponent:
+      readTerrainSettingsComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_TerrainTintSettingsComponent:
+      readTerrainTintSettingsComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_TextureAddressModeComponent:
+      readTextureAddressModeComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_TextureFile:
+      readTextureFile(q);
+      break;
+    case BSReflStream::String_BSMaterial_TextureReplacement:
+      readTextureReplacement(q);
+      break;
+    case BSReflStream::String_BSMaterial_TextureResolutionSetting:
+      readTextureResolutionSetting(q);
+      break;
+    case BSReflStream::String_BSMaterial_TextureSetID:
+      readTextureSetID(q);
+      break;
+    case BSReflStream::String_BSMaterial_TextureSetKindComponent:
+      readTextureSetKindComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_TranslucencySettingsComponent:
+      readTranslucencySettingsComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_UVStreamID:
+      readUVStreamID(q);
+      break;
+    case BSReflStream::String_BSMaterial_UVStreamParamBool:
+      readUVStreamParamBool(q);
+      break;
+    case BSReflStream::String_BSMaterial_VegetationSettingsComponent:
+      readVegetationSettingsComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_WaterFoamSettingsComponent:
+      readWaterFoamSettingsComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_WaterGrimeSettingsComponent:
+      readWaterGrimeSettingsComponent(q);
+      break;
+    case BSReflStream::String_BSMaterial_WaterSettingsComponent:
+      readWaterSettingsComponent(q);
+      break;
+  }
+}
 

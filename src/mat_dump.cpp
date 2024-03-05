@@ -224,10 +224,12 @@ void printToStringBuf(std::string& buf, size_t indentCnt, const char *fmt, ...)
 void CE2MaterialObject::printObjectInfo(
     std::string& buf, size_t indentCnt) const
 {
-  printToStringBuf(buf, 0, "\"%s\":\n", name->c_str());
+  printToStringBuf(buf, 0, "\"%s\":\n", name);
   indentCnt = indentCnt + indentTabSize;
-  if (e == 0x0074616DU)                 // "mat\0"
+  if (cdbObject && cdbObject->persistentID.ext == 0x0074616DU)  // "mat\0"
   {
+    std::uint64_t h = std::uint64_t(cdbObject->persistentID.dir) << 32;
+    h = h | cdbObject->persistentID.file;
     printToStringBuf(buf, indentCnt,
                      "Hash: 0x%016llX\n", (unsigned long long) h);
   }
@@ -238,7 +240,7 @@ void CE2MaterialObject::printObjectInfo(
     if (t >= 0 && t <= 6)
       parentType = objectTypeStrings[t];
     printToStringBuf(buf, indentCnt,
-                     "Parent: %s \"%s\"\n", parentType, parent->name->c_str());
+                     "Parent: %s \"%s\"\n", parentType, parent->name);
   }
 }
 

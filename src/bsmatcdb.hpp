@@ -143,6 +143,11 @@ class BSMaterialsCDB
     const MaterialObject  *parent;
     const MaterialObject  *children;
     const MaterialObject  *next;
+    inline bool isJSON() const
+    {
+      // returns true if this object was loaded from a JSON format .mat file
+      return (dbID >= 0x01000000U);
+    }
     inline const MaterialObject *getNextChildObject() const
     {
       const MaterialObject  *i = children;

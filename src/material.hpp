@@ -6,8 +6,10 @@
 #include "fp32vec4.hpp"
 #include "filebuf.hpp"
 #include "ba2file.hpp"
-#include "ddstxt.hpp"
 #include "bsrefl.hpp"
+#include "bsmatcdb.hpp"
+
+#include <mutex>
 
 // CE2Material (.mat file), object type 1
 //   |
@@ -32,14 +34,9 @@ struct CE2MaterialObject
   // 4: CE2Material::Material
   // 5: CE2Material::TextureSet
   // 6: CE2Material::UVStream
-  // For uninitialized objects, ~(base object ID) * 256 is added to type.
-  std::int32_t  type;
-  // extension (0x0074616D for "mat\0")
-  std::uint32_t e;
-  // b0 to b31 = base name hash (lower case, no extension)
-  // b32 to b63 = directory name hash (lower case with '\\', no trailing '\\')
-  std::uint64_t h;
-  const std::string *name;
+  unsigned char type;
+  const BSMaterialsCDB::MaterialObject  *cdbObject;     // valid if type > 0
+  const char  *name;
   const CE2MaterialObject *parent;
   void printObjectInfo(std::string& buf, size_t indentCnt) const;
 };
@@ -123,7 +120,20 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     // 0 = "Red" (default), 1 = "Green", 2 = "Blue", 3 = "Alpha"
     unsigned char colorChannel;
     // values set via BSMaterial::MaterialParamFloat and BSMaterial::ParamBool
+    // 0: height blend threshold
+    // 1: height blend factor
+    // 2: position
+    // 3: contrast
+    // 4: mask intensity
     float   floatParams[maxFloatParams];
+    // 0: blend albedo texture
+    // 1: blend metalness texture
+    // 2: blend roughness texture
+    // 3: blend normal map texture
+    // 4: blend normals additively
+    // 5: vertex alpha
+    // 6: blend ambient occlusion texture
+    // 7: use dual blend mask
     bool    boolParams[maxBoolParams];
     void printObjectInfo(std::string& buf, size_t indentCnt) const;
   };
@@ -219,6 +229,10 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     float   backlightTransparency;
     FloatVector4  backlightTintColor;
     int     depthBias;
+    inline void setFlags(std::uint32_t m, bool n)
+    {
+      flags = (flags & ~m) | ((0U - std::uint32_t(n)) & m);
+    }
   };
   struct EmissiveSettings
   {
@@ -419,175 +433,169 @@ struct CE2Material : public CE2MaterialObject   // object type 1
                        bool isLODMaterial = false) const;
 };
 
-class CE2MaterialDB
+class CE2MaterialDB : public BSMaterialsCDB
 {
  protected:
-  class ComponentInfo : public BSReflStream::Chunk
+  struct ComponentInfo
   {
-   public:
-    typedef void (*ReadFunctionType)(ComponentInfo&, bool);
-    static const ReadFunctionType readFunctionTable[128];
     CE2MaterialDB&  cdb;
     CE2MaterialObject *o;
-    unsigned int  componentIndex;
-    unsigned int  componentType;        // as BSReflStream::stringTable[] index
-    std::string   stringBuf;
-    std::vector< CE2MaterialObject * >  objectTable;
-    BSReflStream& cdbBuf;
-    static void readLayeredEmissivityComponent(ComponentInfo& p, bool isDiff);
-    static void readAlphaBlenderSettings(ComponentInfo& p, bool isDiff);
-    static void readBSFloatCurve(ComponentInfo& p, bool isDiff);
-    static void readEmissiveSettingsComponent(ComponentInfo& p, bool isDiff);
-    static void readWaterFoamSettingsComponent(ComponentInfo& p, bool isDiff);
-    static void readFlipbookComponent(ComponentInfo& p, bool isDiff);
-    static void readPhysicsMaterialType(ComponentInfo& p, bool isDiff);
-    static void readTerrainTintSettingsComponent(ComponentInfo& p, bool isDiff);
-    static void readUVStreamID(ComponentInfo& p, bool isDiff);
-    static void readDecalSettingsComponent(ComponentInfo& p, bool isDiff);
-    static void readDirectory(ComponentInfo& p, bool isDiff);
-    static void readWaterSettingsComponent(ComponentInfo& p, bool isDiff);
-    static void readControl(ComponentInfo& p, bool isDiff);
-    static void readComponentProperty(ComponentInfo& p, bool isDiff);
-    static bool readXMFLOAT4(FloatVector4& v, ComponentInfo& p, bool isDiff);
-    static void readEffectSettingsComponent(ComponentInfo& p, bool isDiff);
-    static void readCTName(ComponentInfo& p, bool isDiff);
-    static void readGlobalLayerDataComponent(ComponentInfo& p, bool isDiff);
-    static void readOffset(ComponentInfo& p, bool isDiff);
-    static void readTextureAddressModeComponent(ComponentInfo& p, bool isDiff);
-    static void readFloatCurveController(ComponentInfo& p, bool isDiff);
-    static void readMaterialPropertyNode(ComponentInfo& p, bool isDiff);
-    static void readProjectedDecalSettings(ComponentInfo& p, bool isDiff);
-    static void readParamBool(ComponentInfo& p, bool isDiff);
-    static void readFloat3DCurveController(ComponentInfo& p, bool isDiff);
-    static bool readColorValue(FloatVector4& c, ComponentInfo& p, bool isDiff);
-    static bool readColorValue(std::uint32_t& c, ComponentInfo& p, bool isDiff);
-    static void readColor(ComponentInfo& p, bool isDiff);
-    static bool readSourceTextureWithReplacement(
+    const BSMaterialsCDB::MaterialComponent *componentData;
+    inline bool readBool(bool& n,
+                         const BSMaterialsCDB::CDBObject *p, size_t fieldNum);
+    inline bool readUInt8(unsigned char& n,
+                          const BSMaterialsCDB::CDBObject *p, size_t fieldNum);
+    inline bool readUInt16(std::uint16_t& n,
+                           const BSMaterialsCDB::CDBObject *p, size_t fieldNum);
+    inline bool readUInt32(std::uint32_t& n,
+                           const BSMaterialsCDB::CDBObject *p, size_t fieldNum);
+    inline bool readFloat(float& n,
+                          const BSMaterialsCDB::CDBObject *p, size_t fieldNum,
+                          bool clampTo0To1 = false);
+    inline bool readString(const char*& s,
+                           const BSMaterialsCDB::CDBObject *p, size_t fieldNum);
+    bool readPath(const std::string*& s,
+                  const BSMaterialsCDB::CDBObject *p, size_t fieldNum,
+                  const char *prefix = nullptr, const char *suffix = nullptr);
+    // t = sequence of strings with length prefix (e.g. "\005False\004True")
+    bool readEnum(unsigned char& n,
+                  const BSMaterialsCDB::CDBObject *p, size_t fieldNum,
+                  const char *t);
+    bool readLayerNumber(unsigned char& n,
+                         const BSMaterialsCDB::CDBObject *p, size_t fieldNum);
+    bool readBlenderNumber(unsigned char& n,
+                           const BSMaterialsCDB::CDBObject *p, size_t fieldNum);
+    void readLayeredEmissivityComponent(const BSMaterialsCDB::CDBObject *p);
+    void readAlphaBlenderSettings(const BSMaterialsCDB::CDBObject *p);
+    void readBSFloatCurve(const BSMaterialsCDB::CDBObject *p);
+    void readEmissiveSettingsComponent(const BSMaterialsCDB::CDBObject *p);
+    void readWaterFoamSettingsComponent(const BSMaterialsCDB::CDBObject *p);
+    void readFlipbookComponent(const BSMaterialsCDB::CDBObject *p);
+    void readPhysicsMaterialType(const BSMaterialsCDB::CDBObject *p);
+    void readTerrainTintSettingsComponent(const BSMaterialsCDB::CDBObject *p);
+    void readUVStreamID(const BSMaterialsCDB::CDBObject *p,
+                        size_t fieldNum = 0);
+    void readDecalSettingsComponent(const BSMaterialsCDB::CDBObject *p);
+    void readDirectory(const BSMaterialsCDB::CDBObject *p);
+    void readWaterSettingsComponent(const BSMaterialsCDB::CDBObject *p);
+    void readControl(const BSMaterialsCDB::CDBObject *p);
+    void readComponentProperty(const BSMaterialsCDB::CDBObject *p);
+    bool readXMFLOAT4(FloatVector4& v,
+                      const BSMaterialsCDB::CDBObject *p, size_t fieldNum);
+    void readEffectSettingsComponent(const BSMaterialsCDB::CDBObject *p);
+    void readCTName(const BSMaterialsCDB::CDBObject *p);
+    void readGlobalLayerDataComponent(const BSMaterialsCDB::CDBObject *p);
+    void readOffset(const BSMaterialsCDB::CDBObject *p);
+    void readTextureAddressModeComponent(const BSMaterialsCDB::CDBObject *p);
+    void readFloatCurveController(const BSMaterialsCDB::CDBObject *p);
+    void readMaterialPropertyNode(const BSMaterialsCDB::CDBObject *p);
+    void readProjectedDecalSettings(const BSMaterialsCDB::CDBObject *p);
+    void readParamBool(const BSMaterialsCDB::CDBObject *p);
+    void readFloat3DCurveController(const BSMaterialsCDB::CDBObject *p);
+    bool readColorValue(FloatVector4& c,
+                        const BSMaterialsCDB::CDBObject *p, size_t fieldNum);
+    bool readColorValue(std::uint32_t& c,
+                        const BSMaterialsCDB::CDBObject *p, size_t fieldNum);
+    void readColor(const BSMaterialsCDB::CDBObject *p);
+    bool readSourceTextureWithReplacement(
         const std::string*& texturePath, std::uint32_t& textureReplacement,
-        bool& textureReplacementEnabled, ComponentInfo& p, bool isDiff);
-    static void readEdgeInfo(ComponentInfo& p, bool isDiff);
-    static void readFlowSettingsComponent(ComponentInfo& p, bool isDiff);
-    static void readDetailBlenderSettings(ComponentInfo& p, bool isDiff);
-    static void readLayerID(ComponentInfo& p, bool isDiff);
-    static void readMapping(ComponentInfo& p, bool isDiff);
-    static void readClassReference(ComponentInfo& p, bool isDiff);
-    static void readComponentInfo(ComponentInfo& p, bool isDiff);
-    static void readScale(ComponentInfo& p, bool isDiff);
-    static void readWaterGrimeSettingsComponent(ComponentInfo& p, bool isDiff);
-    static void readUVStreamParamBool(ComponentInfo& p, bool isDiff);
-    static void readComponentTypeInfo(ComponentInfo& p, bool isDiff);
-    static void readMultiplex(ComponentInfo& p, bool isDiff);
-    static void readOpacityComponent(ComponentInfo& p, bool isDiff);
-    static void readBlendParamFloat(ComponentInfo& p, bool isDiff);
-    static void readDBFileIndex(ComponentInfo& p, bool isDiff);
-    static void readColorRemapSettingsComponent(ComponentInfo& p, bool isDiff);
-    static void readEyeSettingsComponent(ComponentInfo& p, bool isDiff);
-    static void readFilePair(ComponentInfo& p, bool isDiff);
-    static void readFloat2DLerpController(ComponentInfo& p, bool isDiff);
-    static const CE2MaterialObject *readBSComponentDB2ID(
-        ComponentInfo& p, bool isDiff, unsigned char typeRequired = 0);
-    static void readTextureReplacement(ComponentInfo& p, bool isDiff);
-    static void readBlendModeComponent(ComponentInfo& p, bool isDiff);
-    static void readLayeredEdgeFalloffComponent(ComponentInfo& p, bool isDiff);
-    static void readVegetationSettingsComponent(ComponentInfo& p, bool isDiff);
-    static void readTextureResolutionSetting(ComponentInfo& p, bool isDiff);
-    static void readAddress(ComponentInfo& p, bool isDiff);
-    static void readDirectoryComponent(ComponentInfo& p, bool isDiff);
-    static void readMaterialUVStreamPropertyNode(ComponentInfo& p, bool isDiff);
-    static void readShaderRouteComponent(ComponentInfo& p, bool isDiff);
-    static void readFloatLerpController(ComponentInfo& p, bool isDiff);
-    static void readColorChannelTypeComponent(ComponentInfo& p, bool isDiff);
-    static void readAlphaSettingsComponent(ComponentInfo& p, bool isDiff);
-    static void readLevelOfDetailSettings(ComponentInfo& p, bool isDiff);
-    static void readTextureSetID(ComponentInfo& p, bool isDiff);
-    static void readFloat2DCurveController(ComponentInfo& p, bool isDiff);
-    static void readTextureFile(ComponentInfo& p, bool isDiff);
-    static void readTranslucencySettings(ComponentInfo& p, bool isDiff);
-    static void readMouthSettingsComponent(ComponentInfo& p, bool isDiff);
-    static void readDistortionComponent(ComponentInfo& p, bool isDiff);
-    static void readDetailBlenderSettingsComponent(ComponentInfo& p,
-                                                   bool isDiff);
-    static void readObjectInfo(ComponentInfo& p, bool isDiff);
-    static void readStarmapBodyEffectComponent(ComponentInfo& p, bool isDiff);
-    static void readMaterialParamFloat(ComponentInfo& p, bool isDiff);
-    static void readBSFloat2DCurve(ComponentInfo& p, bool isDiff);
-    static void readBSFloat3DCurve(ComponentInfo& p, bool isDiff);
-    static void readTranslucencySettingsComponent(ComponentInfo& p,
-                                                  bool isDiff);
-    static void readGlobalLayerNoiseSettings(ComponentInfo& p, bool isDiff);
-    static void readMaterialID(ComponentInfo& p, bool isDiff);
-    static bool readXMFLOAT2L(FloatVector4& v, ComponentInfo& p, bool isDiff);
-    static bool readXMFLOAT2H(FloatVector4& v, ComponentInfo& p, bool isDiff);
-    static void readTimerController(ComponentInfo& p, bool isDiff);
-    static void readControllers(ComponentInfo& p, bool isDiff);
-    static void readEmittanceSettings(ComponentInfo& p, bool isDiff);
-    static void readShaderModelComponent(ComponentInfo& p, bool isDiff);
-    static void readBSResourceID(ComponentInfo& p, bool isDiff);
-    static bool readXMFLOAT3(FloatVector4& v, ComponentInfo& p, bool isDiff);
-    static void readMaterialOverrideColorTypeComponent(ComponentInfo& p,
-                                                       bool isDiff);
-    static void readChannel(ComponentInfo& p, bool isDiff);
-    static void readColorCurveController(ComponentInfo& p, bool isDiff);
-    static void readCompiledDB(ComponentInfo& p, bool isDiff);
-    static void readHairSettingsComponent(ComponentInfo& p, bool isDiff);
-    static void readBSColorCurve(ComponentInfo& p, bool isDiff);
-    static void readControllerComponent(ComponentInfo& p, bool isDiff);
-    static void readMRTextureFile(ComponentInfo& p, bool isDiff);
-    static void readTextureSetKindComponent(ComponentInfo& p, bool isDiff);
-    static void readBlenderID(ComponentInfo& p, bool isDiff);
-    static void readCollisionComponent(ComponentInfo& p, bool isDiff);
-    static void readTerrainSettingsComponent(ComponentInfo& p, bool isDiff);
-    static void readLODMaterialID(ComponentInfo& p, bool isDiff);
-    static void readMipBiasSetting(ComponentInfo& p, bool isDiff);
-    ComponentInfo(CE2MaterialDB& p, BSReflStream& cdbFileBuf)
+        bool& textureReplacementEnabled,
+        const BSMaterialsCDB::CDBObject *p, size_t fieldNum);
+    void readFlowSettingsComponent(const BSMaterialsCDB::CDBObject *p);
+    void readDetailBlenderSettings(const BSMaterialsCDB::CDBObject *p);
+    void readLayerID(const BSMaterialsCDB::CDBObject *p);
+    void readMapping(const BSMaterialsCDB::CDBObject *p);
+    void readClassReference(const BSMaterialsCDB::CDBObject *p);
+    void readScale(const BSMaterialsCDB::CDBObject *p);
+    void readWaterGrimeSettingsComponent(const BSMaterialsCDB::CDBObject *p);
+    void readUVStreamParamBool(const BSMaterialsCDB::CDBObject *p);
+    void readMultiplex(const BSMaterialsCDB::CDBObject *p);
+    void readOpacityComponent(const BSMaterialsCDB::CDBObject *p);
+    void readBlendParamFloat(const BSMaterialsCDB::CDBObject *p);
+    void readColorRemapSettingsComponent(const BSMaterialsCDB::CDBObject *p);
+    void readEyeSettingsComponent(const BSMaterialsCDB::CDBObject *p);
+    void readFloat2DLerpController(const BSMaterialsCDB::CDBObject *p);
+    bool readBSComponentDB2ID(const CE2MaterialObject*& linkedObject,
+                              const BSMaterialsCDB::CDBObject *p,
+                              size_t fieldNum, unsigned char typeRequired = 0);
+    void readTextureReplacement(const BSMaterialsCDB::CDBObject *p);
+    void readBlendModeComponent(const BSMaterialsCDB::CDBObject *p);
+    void readLayeredEdgeFalloffComponent(const BSMaterialsCDB::CDBObject *p);
+    void readVegetationSettingsComponent(const BSMaterialsCDB::CDBObject *p);
+    void readTextureResolutionSetting(const BSMaterialsCDB::CDBObject *p);
+    void readAddress(const BSMaterialsCDB::CDBObject *p);
+    void readDirectoryComponent(const BSMaterialsCDB::CDBObject *p);
+    void readMaterialUVStreamPropertyNode(const BSMaterialsCDB::CDBObject *p);
+    void readShaderRouteComponent(const BSMaterialsCDB::CDBObject *p);
+    void readFloatLerpController(const BSMaterialsCDB::CDBObject *p);
+    void readColorChannelTypeComponent(const BSMaterialsCDB::CDBObject *p);
+    void readAlphaSettingsComponent(const BSMaterialsCDB::CDBObject *p);
+    void readLevelOfDetailSettings(const BSMaterialsCDB::CDBObject *p);
+    void readTextureSetID(const BSMaterialsCDB::CDBObject *p);
+    void readFloat2DCurveController(const BSMaterialsCDB::CDBObject *p);
+    void readTextureFile(const BSMaterialsCDB::CDBObject *p);
+    void readTranslucencySettings(const BSMaterialsCDB::CDBObject *p);
+    void readMouthSettingsComponent(const BSMaterialsCDB::CDBObject *p);
+    void readDistortionComponent(const BSMaterialsCDB::CDBObject *p);
+    void readDetailBlenderSettingsComponent(const BSMaterialsCDB::CDBObject *p);
+    void readStarmapBodyEffectComponent(const BSMaterialsCDB::CDBObject *p);
+    void readMaterialParamFloat(const BSMaterialsCDB::CDBObject *p);
+    void readBSFloat2DCurve(const BSMaterialsCDB::CDBObject *p);
+    void readBSFloat3DCurve(const BSMaterialsCDB::CDBObject *p);
+    void readTranslucencySettingsComponent(const BSMaterialsCDB::CDBObject *p);
+    void readGlobalLayerNoiseSettings(const BSMaterialsCDB::CDBObject *p);
+    void readMaterialID(const BSMaterialsCDB::CDBObject *p);
+    bool readXMFLOAT2L(FloatVector4& v,
+                       const BSMaterialsCDB::CDBObject *p, size_t fieldNum);
+    bool readXMFLOAT2H(FloatVector4& v,
+                       const BSMaterialsCDB::CDBObject *p, size_t fieldNum);
+    void readTimerController(const BSMaterialsCDB::CDBObject *p);
+    void readControllers(const BSMaterialsCDB::CDBObject *p);
+    void readEmittanceSettings(const BSMaterialsCDB::CDBObject *p);
+    void readShaderModelComponent(const BSMaterialsCDB::CDBObject *p);
+    void readBSResourceID(const BSMaterialsCDB::CDBObject *p);
+    bool readXMFLOAT3(FloatVector4& v,
+                      const BSMaterialsCDB::CDBObject *p, size_t fieldNum);
+    void readMaterialOverrideColorTypeComponent(
+        const BSMaterialsCDB::CDBObject *p);
+    void readChannel(const BSMaterialsCDB::CDBObject *p);
+    void readColorCurveController(const BSMaterialsCDB::CDBObject *p);
+    void readHairSettingsComponent(const BSMaterialsCDB::CDBObject *p);
+    void readBSColorCurve(const BSMaterialsCDB::CDBObject *p);
+    void readControllerComponent(const BSMaterialsCDB::CDBObject *p);
+    void readMRTextureFile(const BSMaterialsCDB::CDBObject *p);
+    void readTextureSetKindComponent(const BSMaterialsCDB::CDBObject *p);
+    void readBlenderID(const BSMaterialsCDB::CDBObject *p);
+    void readCollisionComponent(const BSMaterialsCDB::CDBObject *p);
+    void readTerrainSettingsComponent(const BSMaterialsCDB::CDBObject *p);
+    void readLODMaterialID(const BSMaterialsCDB::CDBObject *p);
+    void readMipBiasSetting(const BSMaterialsCDB::CDBObject *p);
+    void loadComponent(const BSMaterialsCDB::MaterialComponent *p);
+    ComponentInfo(CE2MaterialDB& p, CE2MaterialObject *q)
       : cdb(p),
-        cdbBuf(cdbFileBuf)
+        o(q)
     {
     }
-    inline bool readString();
-    inline bool readAndStoreString(const std::string*& s, int type);
-    // returns chunk type (e.g. 0x5453494C for "LIST")
-    unsigned int readChunk(BSReflStream::Chunk& chunkBuf);
   };
-  enum
-  {
-    objectNameHashMask = 0x0007FFFF,
-    stringBufShift = 16,
-    stringBufMask = 0xFFFF,
-    stringHashMask = 0x001FFFFF
-  };
-  // objectNameHashMask + 1 elements
-  std::vector< CE2MaterialObject * >  objectNameMap;
-  std::vector< std::vector< unsigned char > > objectBuffers;
-  // stringHashMask + 1 elements
-  std::vector< std::uint32_t >  storedStringParams;
-  // stringBuffers[0][0] = ""
-  std::vector< std::vector< std::string > > stringBuffers;
-  inline const CE2MaterialObject *findObject(
-      const std::vector< CE2MaterialObject * >& t, unsigned int objectID) const;
-  void initializeObject(CE2MaterialObject *o,
-                        const std::vector< CE2MaterialObject * >& objectTable);
-  void *allocateSpace(size_t nBytes, const void *copySrc = nullptr,
-                      size_t alignBytes = 16);
-  CE2MaterialObject *allocateObject(
-      std::vector< CE2MaterialObject * >& objectTable,
-      std::uint32_t objectID, std::uint32_t baseObjID,
-      std::uint64_t h, std::uint32_t e);
-  // type = 0: general string (stored without conversion)
-  // type = 1: DDS file name (prefix = "textures/", suffix = ".dds")
-  const std::string *readStringParam(std::string& stringBuf, FileBuffer& buf,
-                                     size_t len, int type);
+  std::mutex  materialDBMutex;
+  // objectHashMask + 1 elements
+  CE2MaterialObject **objectNameMap;
+  // *(storedStdStrings.begin()) is always an empty string
+  std::set< std::string > storedStdStrings;
+  std::map< const BSMaterialsCDB::MaterialObject *, CE2MaterialObject * >
+      materialObjectMap;
+  std::string stringBuf;
+  const BA2File *ba2File1;
+  const BA2File *ba2File2;
+  const std::string *storeStdString(const std::string& s);
+  CE2MaterialObject *findMaterialObject(
+      const BSMaterialsCDB::MaterialObject *p);
  public:
   CE2MaterialDB();
-  // fileName defaults to "materials/materialsbeta.cdb", it can be a comma
-  // separated list of multiple CDB file names
-  CE2MaterialDB(const BA2File& ba2File, const char *fileName = nullptr);
-  virtual ~CE2MaterialDB();
-  void loadCDBFile(BSReflStream& buf);
-  void loadCDBFile(const unsigned char *buf, size_t bufSize);
-  void loadCDBFile(const BA2File& ba2File, const char *fileName = nullptr);
-  const CE2Material *findMaterial(const std::string& fileName) const;
-  void listMaterials(std::vector< const CE2Material * >& materials) const;
+  ~CE2MaterialDB();
+  void loadArchives(const BA2File& archive1, const BA2File *archive2 = nullptr);
+  const CE2Material *loadMaterial(const std::string& materialPath);
+  void clear();
 };
 
 #endif
