@@ -302,11 +302,14 @@ void CE2MaterialDB::clear()
     objectNameMap = nullptr;
     ba2File1 = nullptr;
     ba2File2 = nullptr;
+    bool    constructFlag =
+        (storedStdStrings.begin() == storedStdStrings.end());
     storedStdStrings.clear();
     materialObjectMap.clear();
     stringBuf.clear();
     storedStdStrings.emplace("");
-    BSMaterialsCDB::clear();
+    if (!constructFlag)
+      BSMaterialsCDB::clear();
     objectNameMap =
         reinterpret_cast< CE2MaterialObject ** >(
             BSMaterialsCDB::allocateSpace(

@@ -595,6 +595,10 @@ class CE2MaterialDB : public BSMaterialsCDB
   void loadArchives(const BA2File& archive1, const BA2File *archive2 = nullptr);
   const CE2Material *loadMaterial(const std::string& materialPath);
   void clear();
+  void getMaterialList(
+      std::set< std::string >& materialPaths, bool excludeJSONMaterials = false,
+      bool (*fileFilterFunc)(void *p, const std::string& s) = nullptr,
+      void *fileFilterFuncData = nullptr) const;
 };
 
 #endif

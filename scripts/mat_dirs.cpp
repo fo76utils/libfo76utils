@@ -109,9 +109,7 @@ int main(int argc, char **argv)
     std::fprintf(stderr, "%s: error opening file %s\n", argv[0], argv[1]);
     return 1;
   }
-  std::fprintf(f, "\n#ifndef MAT_DIRS_CPP_INCLUDED\n");
-  std::fprintf(f, "#define MAT_DIRS_CPP_INCLUDED\n\n");
-  std::fprintf(f, "static const size_t matDirNamesSize = %u;\n\n",
+  std::fprintf(f, "\nstatic const size_t matDirNamesSize = %u;\n\n",
                (unsigned int) uncompressedSize);
   std::fprintf(f, "static const unsigned char  matDirNamesZLib[%u] =\n{\n",
                (unsigned int) outBuf.size());
@@ -126,7 +124,7 @@ int main(int argc, char **argv)
     else if (((i + 1) % 12) == 0)
       std::fprintf(f, ",\n");
   }
-  std::fprintf(f, "};\n\n#endif\n\n");
+  std::fprintf(f, "};\n\n");
   std::fclose(f);
   return 0;
 }

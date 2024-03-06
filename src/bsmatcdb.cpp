@@ -234,7 +234,7 @@ void * BSMaterialsCDB::allocateSpace(size_t nBytes, size_t alignBytes)
   addr = (addr + alignMask) & ~alignMask;
   std::uintptr_t  bufBytes = ObjectBuffers::ObjBuf::minCapacity();
   std::uintptr_t  endAddr = std::max< std::uintptr_t >(addr0 + bufBytes, addr);
-  std::uintptr_t  bytesRequired = (nBytes + alignMask) & ~alignMask;
+  std::uintptr_t  bytesRequired = std::uintptr_t(nBytes);
   if ((endAddr - addr) < bytesRequired) [[unlikely]]
   {
     bufBytes = std::max< std::uintptr_t >(bufBytes, bytesRequired + alignBytes);

@@ -1,6 +1,7 @@
 
-#ifndef MAT_DIRS_CPP_INCLUDED
-#define MAT_DIRS_CPP_INCLUDED
+#include "common.hpp"
+#include "material.hpp"
+#include "zlib.hpp"
 
 static const size_t matDirNamesSize = 91125;
 
@@ -1134,9 +1135,6 @@ static const unsigned char  matDirNamesZLib[13503] =
   0xCD, 0xAF, 0xFA
 };
 
-#include "common.hpp"
-#include "zlib.hpp"
-
 static void getStarfieldMaterialDirMap(
     std::map< std::uint32_t, std::string >& dirNameMap)
 {
@@ -1161,5 +1159,79 @@ static void getStarfieldMaterialDirMap(
   }
 }
 
-#endif
+static bool matFileNameFilterFunc(void *p, const std::string& s)
+{
+  (void) p;
+  return (s.ends_with(".mat") && s.starts_with("materials/"));
+}
+
+void CE2MaterialDB::getMaterialList(
+    std::set< std::string >& materialPaths, bool excludeJSONMaterials,
+    bool (*fileFilterFunc)(void *p, const std::string& s),
+    void *fileFilterFuncData) const
+{
+  std::map< std::uint32_t, std::string >  dirNameMap;
+  getStarfieldMaterialDirMap(dirNameMap);
+  std::vector< const BSMaterialsCDB::MaterialObject * > matObjects;
+  BSMaterialsCDB::getMaterials(matObjects);
+  std::string tmp;
+  for (size_t i = 0; i < matObjects.size(); i++)
+  {
+    const BSMaterialsCDB::MaterialObject  *o = matObjects[i];
+    if (!o->parent && o->persistentID.ext == 0x0074616D &&      // "mat\0"
+        o->baseObject && o->baseObject->persistentID.file == 0x7EA3660C &&
+        !o->isJSON())
+    {                                                   // "layeredmaterials"
+      std::map< std::uint32_t, std::string >::const_iterator  j =
+          dirNameMap.find(o->persistentID.dir);
+      if (j == dirNameMap.end())
+        continue;
+      const char  *baseName = nullptr;
+      const BSMaterialsCDB::MaterialComponent *k = o->components;
+      while (k)
+      {
+        if (k->className == BSReflStream::String_BSComponentDB_CTName &&
+            k->o && k->o->type == BSReflStream::String_BSComponentDB_CTName &&
+            k->o->childCnt >= 1 && k->o->children()[0] &&
+            k->o->children()[0]->type == BSReflStream::String_String)
+        {
+          baseName = k->o->children()[0]->stringValue();
+          break;
+        }
+      }
+      if (!(baseName && *baseName))
+        continue;
+      tmp = baseName;
+      std::uint32_t h = 0U;
+      for (size_t l = 0; l < tmp.length(); l++)
+      {
+        if (tmp[l] >= 'A' && tmp[l] <= 'Z')
+          tmp[l] = tmp[l] + ('a' - 'A');
+        hashFunctionCRC32(h, (unsigned char) tmp[l]);
+      }
+      if (h != o->persistentID.file)
+        continue;
+      tmp.insert(0, j->second);
+      tmp += ".mat";
+      if (!fileFilterFunc || fileFilterFunc(fileFilterFuncData, tmp))
+        materialPaths.insert(tmp);
+    }
+  }
+  if (excludeJSONMaterials)
+    return;
+  std::vector< std::string >  matFileList;
+  for (size_t i = 0; i < 2; i++)
+  {
+    const BA2File *ba2File = (i == 0 ? ba2File1 : ba2File2);
+    if (!ba2File)
+      continue;
+    ba2File->getFileList(matFileList, true, &matFileNameFilterFunc);
+    for (std::vector< std::string >::const_iterator
+             j = matFileList.begin(); j != matFileList.end(); j++)
+    {
+      if (!fileFilterFunc || fileFilterFunc(fileFilterFuncData, *j))
+        materialPaths.insert(*j);
+    }
+  }
+}
 
