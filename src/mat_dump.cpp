@@ -520,6 +520,9 @@ void CE2Material::printObjectInfo(
                      layeredEmissiveSettings->minOffset);
     printToStringBuf(buf, indentCnt, "Layered emittance maximum offset: %f\n",
                      layeredEmissiveSettings->maxOffset);
+    printToStringBuf(buf, indentCnt,
+                     "Layered emissivity: ignores fog: %s\n",
+                     (!layeredEmissiveSettings->ignoresFog ? "False" : "True"));
   }
   if ((flags & Flag_Translucency) && translucencySettings &&
       translucencySettings->isEnabled)

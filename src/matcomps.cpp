@@ -192,6 +192,7 @@ bool CE2MaterialDB::ComponentInfo::readBlenderNumber(
 //   Bool  EnableAdaptiveLimits
 //   Float  MaxOffsetEmittance
 //   Float  MinOffsetEmittance
+//   Bool  IgnoresFog
 
 void CE2MaterialDB::ComponentInfo::readLayeredEmissivityComponent(
     const BSMaterialsCDB::CDBObject *p)
@@ -248,6 +249,7 @@ void CE2MaterialDB::ComponentInfo::readLayeredEmissivityComponent(
   readBool(sp->enableAdaptiveLimits, p, 20);
   readFloat(sp->maxOffset, p, 21);
   readFloat(sp->minOffset, p, 22);
+  readBool(sp->ignoresFog, p, 23);
 }
 
 // BSMaterial::AlphaBlenderSettings

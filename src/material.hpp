@@ -266,6 +266,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     unsigned char blender2Mode;
     bool    adaptiveEmittance;
     bool    enableAdaptiveLimits;
+    bool    ignoresFog;
     std::uint32_t layer1Tint;           // R, G, B, overall scale
     std::uint32_t layer2Tint;
     std::uint32_t layer3Tint;
