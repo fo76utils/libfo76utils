@@ -2046,6 +2046,8 @@ void CE2MaterialDB::ComponentInfo::readColorCurveController(
 //   Float  TangentBend
 //   String  DepthOffsetMaskVertexColorChannel
 //   String  AOVertexColorChannel
+// NOTE: AlphaDistance, MipBase and AlphaBias have been removed
+// as of version 1.10.30.0
 
 void CE2MaterialDB::ComponentInfo::readHairSettingsComponent(
     const BSMaterialsCDB::CDBObject *p)
