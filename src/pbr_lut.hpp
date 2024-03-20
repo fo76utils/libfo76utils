@@ -8,33 +8,40 @@
 
 class SF_PBR_Tables
 {
+ public:
+  static inline FloatVector4 Hammersley(int i, int n);
+  // Returns H vector, assuming normal = (0, 0, 1). a2 = pow(roughness, 4.0)
+  static FloatVector4 importanceSampleGGX(FloatVector4 xi, float a2);
  protected:
   std::vector< unsigned char >  imageData;
-  static inline FloatVector4 Hammersley(int i, int n);
-  static FloatVector4 importanceSampleGGX(FloatVector4 xi, FloatVector4 normal,
-                                          float a2);    // pow(roughness, 4)
   // approximates Fresnel function for n = 1.5, normalized to 0.0 to 1.0
   static inline FloatVector8 fresnel_n(FloatVector8 x);
-  // gamma = cos(phi_L - phi_V)
-  static FloatVector4 OrenNayar_1(float nDotL, float angleLN, float angleVN,
-                                  float gamma);
-  // g = return value of OrenNayar_1()
-  static float OrenNayar_2(FloatVector4 g, float roughness);
   static void threadFunction(unsigned char *outBuf, int width, int nSpec,
-                             int y0, int y1, const FloatVector4 *coordTable_D);
+                             int y0, int y1);
  public:
-  SF_PBR_Tables(int width = 512, int nSpec = 4096, int nDiff = 1024);
-  // texture U = N·V
-  // texture V = roughness
-  // R = indirect specular F
+  SF_PBR_Tables(int width = 512, int nSpec = 4096);
+  // R = indirect specular F (U = N·V, V = roughness)
   // G = indirect specular G
-  // B = indirect diffuse scale
-  // A = normalized Fresnel function without roughness
+  // B = fresnel_n(U)
+  // A = fresnel_n(V)
   inline const std::vector< unsigned char >& getImageData() const
   {
     return imageData;
   }
 };
+
+inline FloatVector4 SF_PBR_Tables::Hammersley(int i, int n)
+{
+  FloatVector4  xi(0.0f);
+  xi[0] = float(i) / float(n);
+  std::uint32_t tmp = std::uint32_t(i);
+  tmp = ((tmp & 0x55555555U) << 1) | ((tmp >> 1) & 0x55555555U);
+  tmp = ((tmp & 0x33333333U) << 2) | ((tmp >> 2) & 0x33333333U);
+  tmp = ((tmp & 0x0F0F0F0FU) << 4) | ((tmp >> 4) & 0x0F0F0F0FU);
+  tmp = FileBuffer::swapUInt32(tmp);
+  xi[1] = float(int(tmp >> 1)) * float(0.5 / double(0x40000000));
+  return xi;
+}
 
 #endif
 
