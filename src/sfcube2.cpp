@@ -324,7 +324,11 @@ size_t SFCubeMapFilter::convertImage(
       if (w >= filterMinWidth)
         cubeFilterTable = nullptr;
       importanceSampleTable = nullptr;
+#if ENABLE_X86_64_SIMD < 2
+      if (enableFilter && w > 64 && roughness < importanceSampleThreshold)
+#else
       if (enableFilter && w > 128 && roughness < importanceSampleThreshold)
+#endif
       {
         importanceSampleTable = &importanceSampleBuf;
         importanceSampleBuf.resize(1024, FloatVector4(0.0f));
