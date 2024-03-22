@@ -11,16 +11,24 @@ class BA2File
   struct FileDeclaration
   {
     const unsigned char *fileData;
-    unsigned int  packedSize;           // 0 if the file is uncompressed
+    // 0 if the file is uncompressed and can be accessed directly via fileData
+    unsigned int  packedSize;
     unsigned int  unpackedSize;         // not valid for compressed BSA files
-    // 0: BA2 general, 1: BA2 textures, 2: BA2 textures in raw LZ4 format,
-    // 64: Morrowind BSA, >= 103: Oblivion+ BSA (version + flags,
-    // 0x40000000: compressed, 0x0100: full name)
+    //    < 0: loose file
+    //      0: BA2 general
+    //      1: BA2 textures
+    //      2: BA2 textures in raw LZ4 format (Starfield)
+    //     64: Morrowind BSA
+    // >= 103: Oblivion+ BSA (version + flags, 0x40000000: compressed,
+    //         0x0100: full name)
     int           archiveType;
-    unsigned int  archiveFile;
+    unsigned int  archiveFile;          // archiveFiles[] index
     std::uint32_t hashValue;            // 32-bit hash value
     std::int32_t  prv;                  // index of previous file with same hash
-    std::string   fileName;
+    std::string   fileName;             // full path in archive
+    // NOTE: for loose files, if NIFSKOPE_VERSION is defined, archiveFile
+    // is 0xFFFFFFFF, and fileData and packedSize are the full path on the
+    // file system and its length, respectively
     inline FileDeclaration(const std::string& fName,
                            std::uint32_t h, std::int32_t p);
     inline bool compare(const std::string& fName, std::uint32_t h) const;
@@ -63,8 +71,15 @@ class BA2File
   void loadBA2Textures(FileBuffer& buf, size_t archiveFile, size_t hdrSize);
   void loadBSAFile(FileBuffer& buf, size_t archiveFile, int archiveType);
   void loadTES3Archive(FileBuffer& buf, size_t archiveFile);
-  bool loadFile(FileBuffer& buf, size_t archiveFile, const char *fileName,
-                size_t prefixLen);
+#ifndef NIFSKOPE_VERSION
+  bool loadFile(FileBuffer& buf, size_t archiveFile,
+                const char *fileName, size_t nameLen, size_t prefixLen);
+#else
+  bool loadFile(const char *fileName, size_t nameLen, size_t prefixLen,
+                size_t fileSize);
+  void loadFile(std::vector< unsigned char >& buf,
+                const FileDeclaration& fd) const;
+#endif
   static bool checkDataDirName(const char *s, size_t len);
   static size_t findPrefixLen(const char *pathName);
   void loadArchivesFromDir(const char *pathName, size_t prefixLen);
