@@ -345,10 +345,8 @@ bool FileBuffer::getDefaultDataPath(std::string& dataPath)
   dataPath.clear();
 #ifdef BUILD_CE2UTILS
   const char  *s = std::getenv("CE2UTILS_DATAPATH");
-#elif !defined(NIFSKOPE_VERSION)
-  const char  *s = std::getenv("FO76UTILS_DATAPATH");
 #else
-  const char  *s = nullptr;
+  const char  *s = std::getenv("FO76UTILS_DATAPATH");
 #endif
   if (!s)
     return false;

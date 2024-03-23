@@ -294,13 +294,8 @@ void BA2File::loadTES3Archive(FileBuffer& buf, size_t archiveFile)
   }
 }
 
-#ifndef NIFSKOPE_VERSION
 bool BA2File::loadFile(FileBuffer& buf, size_t archiveFile,
                        const char *fileName, size_t nameLen, size_t prefixLen)
-#else
-bool BA2File::loadFile(const char *fileName, size_t nameLen, size_t prefixLen,
-                       size_t fileSize)
-#endif
 {
   std::string fileName2;
   fileName2.reserve(nameLen);
@@ -326,49 +321,13 @@ bool BA2File::loadFile(const char *fileName, size_t nameLen, size_t prefixLen,
   FileDeclaration *fileDecl = addPackedFile(fileName2);
   if (!fileDecl)
     return false;
-#ifdef NIFSKOPE_VERSION
-  if (fileDeclBufs.size() < 1 ||
-      fileDeclBufs.back().size() >= (fileDeclBufMask + 1U))
-  {
-    fileDeclBufs.emplace_back();
-    fileDeclBufs.back().reserve(fileDeclBufMask + 1U);
-  }
-  std::vector< FileDeclaration >& fdBuf = fileDeclBufs.back();
-  fdBuf.emplace_back(std::string(fileName), 0U, 0);
-  fileDecl->fileData =
-      reinterpret_cast< const unsigned char * >(fdBuf.back().fileName.c_str());
-  fileDecl->packedSize = (unsigned int) nameLen;
-  fileDecl->unpackedSize = (unsigned int) fileSize;
-  fileDecl->archiveType = -0x80000000;
-  fileDecl->archiveFile = 0xFFFFFFFFU;
-#else
   fileDecl->fileData = buf.data();
   fileDecl->packedSize = 0;
   fileDecl->unpackedSize = (unsigned int) buf.size();
   fileDecl->archiveType = -0x80000000;
   fileDecl->archiveFile = (unsigned int) archiveFile;
-#endif
   return true;
 }
-
-#ifdef NIFSKOPE_VERSION
-void BA2File::loadFile(
-    std::vector< unsigned char >& buf, const FileDeclaration& fd) const
-{
-  const char  *fileName = reinterpret_cast< const char * >(fd.fileData);
-  FileBuffer  f(fileName);
-  if (f.size() != fd.unpackedSize)
-  {
-    throw FO76UtilsError("BA2File: unexpected change to size of loose file %s",
-                         fileName);
-  }
-  if (fd.unpackedSize) [[likely]]
-  {
-    buf.resize(fd.unpackedSize);
-    std::memcpy(buf.data(), f.data(), fd.unpackedSize);
-  }
-}
-#endif
 
 bool BA2File::checkDataDirName(const char *s, size_t len)
 {
@@ -497,18 +456,11 @@ void BA2File::loadArchivesFromDir(const char *pathName, size_t prefixLen)
         case 0x6264632EU:               // ".cdb"
         case 0x7364642EU:               // ".dds"
         case 0x74616D2EU:               // ".mat"
-#ifndef NIFSKOPE_VERSION
         case 0x66696E2EU:               // ".nif"
-#endif
         case 0x6D656762U:               // "bgem"
         case 0x6D736762U:               // "bgsm"
         case 0x6873656DU:               // "mesh"
         case 0x73676E69U:               // "ings"
-#ifdef NIFSKOPE_VERSION
-        case 0x706D622EU:               // ".bmp"
-        case 0x7264682EU:               // ".hdr"
-        case 0x6167742EU:               // ".tga"
-#endif
           break;
         default:
           continue;
@@ -563,9 +515,6 @@ void BA2File::loadArchiveFile(const char *fileName, size_t prefixLen)
     return;
   }
   size_t  nameLen = std::strlen(fileName);
-#ifdef NIFSKOPE_VERSION
-  size_t  fileSize;
-#endif
   {
     if (!prefixLen) [[unlikely]]
       prefixLen = findPrefixLen(fileName);
@@ -595,21 +544,11 @@ void BA2File::loadArchiveFile(const char *fileName, size_t prefixLen)
       loadArchivesFromDir(fileName, prefixLen);
       return;
     }
-#ifdef NIFSKOPE_VERSION
-    fileSize = size_t(std::max< std::int64_t >(std::int64_t(st.st_size), 0));
-#endif
   }
 
   std::uint32_t ext = 0;
   if (nameLen >= 4)
     ext = FileBuffer::readUInt32Fast(fileName + (nameLen - 4)) | 0x20202000U;
-#ifdef NIFSKOPE_VERSION
-  if (!(fileSize >= 12 && (ext == 0x3261622E || ext == 0x6173622E)))
-  {                                     // not ".ba2" or ".bsa"
-    (void) loadFile(fileName, nameLen, prefixLen, fileSize);
-    return;
-  }
-#endif
 
   FileBuffer  *bufp = new FileBuffer(fileName);
   try
@@ -657,11 +596,6 @@ void BA2File::loadArchiveFile(const char *fileName, size_t prefixLen)
         loadTES3Archive(buf, archiveFile);
         break;
       default:
-#ifdef NIFSKOPE_VERSION
-        delete bufp;
-        (void) loadFile(fileName, nameLen, prefixLen, fileSize);
-        return;
-#else
         if (!loadFile(buf, archiveFile,
                       fileName, nameLen, prefixLen)) [[unlikely]]
         {
@@ -669,7 +603,6 @@ void BA2File::loadArchiveFile(const char *fileName, size_t prefixLen)
           return;
         }
         break;
-#endif
     }
     archiveFiles.push_back(bufp);
   }
@@ -788,13 +721,7 @@ long BA2File::getFileSize(const std::string& fileName, bool packedSize) const
   if (!fd)
     return -1L;
   if (packedSize && fd->packedSize)
-  {
-#ifdef NIFSKOPE_VERSION
-    if (fd->archiveType < 0) [[unlikely]]
-      return long(fd->unpackedSize);
-#endif
     return long(fd->packedSize);
-  }
   if (fd->archiveType & 0x40000000)     // compressed BSA
   {
     const unsigned char *p = fd->fileData;
@@ -901,13 +828,6 @@ void BA2File::extractFile(std::vector< unsigned char >& buf,
   unsigned int  packedSize = fileDecl.packedSize;
   unsigned int  unpackedSize = fileDecl.unpackedSize;
   int     archiveType = fileDecl.archiveType;
-#ifdef NIFSKOPE_VERSION
-  if (archiveType < 0) [[unlikely]]
-  {
-    loadFile(buf, fileDecl);
-    return;
-  }
-#endif
   if (archiveType & 0x40000100)         // BSA with compression or full names
   {
     unpackedSize = getBSAUnpackedSize(p, fileDecl);
@@ -938,13 +858,6 @@ int BA2File::extractTexture(std::vector< unsigned char >& buf,
   unsigned int  packedSize = fileDecl.packedSize;
   unsigned int  unpackedSize = fileDecl.unpackedSize;
   int     archiveType = fileDecl.archiveType;
-#ifdef NIFSKOPE_VERSION
-  if (archiveType < 0) [[unlikely]]
-  {
-    loadFile(buf, fileDecl);
-    return mipOffset;
-  }
-#endif
   if (archiveType & 0x40000100)         // BSA with compression or full names
   {
     unpackedSize = getBSAUnpackedSize(p, fileDecl);
@@ -975,14 +888,6 @@ size_t BA2File::extractFile(
   unsigned int  packedSize = fileDecl.packedSize;
   unsigned int  unpackedSize = fileDecl.unpackedSize;
   int     archiveType = fileDecl.archiveType;
-#ifdef NIFSKOPE_VERSION
-  if (archiveType < 0) [[unlikely]]
-  {
-    loadFile(buf, fileDecl);
-    fileData = buf.data();
-    return buf.size();
-  }
-#endif
   if (archiveType & 0x40000100)         // BSA with compression or full names
   {
     unpackedSize = getBSAUnpackedSize(p, fileDecl);
