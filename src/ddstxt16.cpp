@@ -4,7 +4,7 @@
 
 #include <new>
 
-const DDSTexture16::DXGIFormatInfo DDSTexture16::dxgiFormatInfoTable[32] =
+const DDSTexture16::DXGIFormatInfo DDSTexture16::dxgiFormatInfoTable[34] =
 {
   {                             //  0: DXGI_FORMAT_UNKNOWN = 0x00
     (size_t (*)(std::uint64_t *, const unsigned char *, unsigned int)) 0,
@@ -101,17 +101,24 @@ const DDSTexture16::DXGIFormatInfo DDSTexture16::dxgiFormatInfoTable[32] =
   {                             // 30: FORMAT_R8G8B8_UNORM_SRGB = 0x7F
     &decodeLine_RGB, "R8G8B8_UNORM_SRGB", false, true, 3, 3
   },
+  // end of non-standard formats
   {                             // 31: DXGI_FORMAT_R9G9B9E5_SHAREDEXP = 0x43
     &decodeLine_RGB9E5, "R9G9B9E5_SHAREDEXP", false, false, 3, 4
+  },
+  {                             // 32: DXGI_FORMAT_R10G10B10A2_UNORM = 0x18
+    &decodeLine_R10G10B10A2, "R10G10B10A2_UNORM", false, false, 4, 4
+  },
+  {                             // 33: DXGI_FORMAT_R8G8_SNORM = 0x33
+    &decodeLine_R8G8S, "R8G8_SNORM", false, false, 2, 2
   }
 };
 
 const unsigned char DDSTexture16::dxgiFormatMap[128] =
 {
    0,  0,  0,  0,   0,  0,  0,  0,   0,  0,  1,  0,   0,  0,  0,  0,    // 0x00
-   0,  0,  0,  0,   0,  0,  0,  0,   0,  0,  0,  0,   2,  3,  0,  0,    // 0x10
+   0,  0,  0,  0,   0,  0,  0,  0,  32,  0,  0,  0,   2,  3,  0,  0,    // 0x10
    0,  0,  0,  0,   0,  0,  0,  0,   0,  0,  0,  0,   0,  0,  0,  0,    // 0x20
-   0,  4,  0,  0,   0,  0,  0,  0,   0,  0,  0,  0,   0,  5,  6,  0,    // 0x30
+   0,  4,  0, 33,   0,  0,  0,  0,   0,  0,  0,  0,   0,  5,  6,  0,    // 0x30
    0,  0,  0, 31,   0,  0,  0,  7,   8,  0,  9, 10,   0, 11, 12,  0,    // 0x40
   13, 14,  0, 15,  16,  0,  0, 17,  18,  0,  0, 19,   0, 20,  0, 21,    // 0x50
   22,  0, 23, 24,   0,  0,  0,  0,   0,  0,  0,  0,   0,  0,  0,  0,    // 0x60
@@ -503,6 +510,38 @@ size_t DDSTexture16::decodeLine_RGB9E5(
     *dst = FloatVector4::convertR9G9B9E5(b).convertToFloat16();
   }
   return (size_t(w) << 2);
+}
+
+size_t DDSTexture16::decodeLine_R10G10B10A2(
+    std::uint64_t *dst, const unsigned char *src, unsigned int w)
+{
+  for (unsigned int x = 0; x < w; x++, dst++, src = src + 4)
+  {
+    std::uint32_t b = FileBuffer::readUInt32Fast(src);
+    FloatVector4  c(FloatVector4::convertA2R10G10B10(b));
+    *dst = (c * (1.0f / 255.0f)).shuffleValues(0xC6).convertToFloat16();
+  }
+  return (size_t(w) << 2);
+}
+
+size_t DDSTexture16::decodeLine_R8G8S(
+    std::uint64_t *dst, const unsigned char *src, unsigned int w)
+{
+  unsigned int  x = 0;
+  for ( ; (x + 2U) <= w; x = x + 2U, dst = dst + 2, src = src + 4)
+  {
+    std::uint32_t b = FileBuffer::readUInt32Fast(src) ^ 0x80808080U;
+    FloatVector4  c(b);
+    c = c * (1.0f / 127.5f) - 1.0f;
+    dst[0] = FloatVector4(c[0], c[1], 0.0f, 1.0f).convertToFloat16();
+    dst[1] = FloatVector4(c[2], c[3], 0.0f, 1.0f).convertToFloat16();
+  }
+  if (x < w)
+  {
+    std::uint32_t b = 0xFF808080U ^ FileBuffer::readUInt16Fast(src);
+    *dst = (FloatVector4(b) * (1.0f / 127.5f) - 1.0f).convertToFloat16();
+  }
+  return (size_t(w) << 1);
 }
 
 static void srgbExpandBlock(void *buf, int w, int h, int pitch)
@@ -1024,24 +1063,11 @@ inline FloatVector4 DDSTexture16::getPixelB_Cube(
 {
   if ((x0 | y0 | (x0 + 1) | (y0 + 1)) & ~(int(xMask))) [[unlikely]]
     return getPixelB_CubeWrap(p, x0, y0, n, faceDataSize, xf, yf, xMask);
-  int     x1 = x0 + 1;
-  int     y1 = y0 + 1;
+  p = p + (size_t(n) * faceDataSize);
   unsigned int  w = xMask + 1U;
-  FloatVector4  c0(FloatVector4::convertFloat16(
-                       p[(size_t(n) * faceDataSize)
-                         + ((unsigned int) y0 * w + (unsigned int) x0)]));
-  FloatVector4  c1(FloatVector4::convertFloat16(
-                       p[(size_t(n) * faceDataSize)
-                         + ((unsigned int) y0 * w + (unsigned int) x1)]));
-  FloatVector4  c2(FloatVector4::convertFloat16(
-                       p[(size_t(n) * faceDataSize)
-                         + ((unsigned int) y1 * w + (unsigned int) x0)]));
-  FloatVector4  c3(FloatVector4::convertFloat16(
-                       p[(size_t(n) * faceDataSize)
-                         + ((unsigned int) y1 * w + (unsigned int) x1)]));
-  c0 = (c0 * (1.0f - xf)) + (c1 * xf);
-  c2 = (c2 * (1.0f - xf)) + (c3 * xf);
-  return (c0 + ((c2 - c0) * yf));
+  return getPixelBFloat16(p + ((unsigned int) y0 * w + (unsigned int) x0),
+                          p + ((unsigned int) (y0 + 1) * w + (unsigned int) x0),
+                          xf, yf);
 }
 
 FloatVector4 DDSTexture16::cubeMap(float x, float y, float z,

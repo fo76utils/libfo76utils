@@ -20,7 +20,7 @@ class DDSTexture16
     unsigned char channelCnt;
     unsigned char blockSize;
   };
-  static const DXGIFormatInfo dxgiFormatInfoTable[32];
+  static const DXGIFormatInfo dxgiFormatInfoTable[34];
   static const unsigned char  dxgiFormatMap[128];
   static const unsigned char  cubeWrapTable[24];
   std::uint32_t xMaskMip0;              // width - 1
@@ -72,6 +72,10 @@ class DDSTexture16
       std::uint64_t *dst, const unsigned char *src, unsigned int w);
   static size_t decodeLine_RGB9E5(
       std::uint64_t *dst, const unsigned char *src, unsigned int w);
+  static size_t decodeLine_R10G10B10A2(
+      std::uint64_t *dst, const unsigned char *src, unsigned int w);
+  static size_t decodeLine_R8G8S(
+      std::uint64_t *dst, const unsigned char *src, unsigned int w);
   void loadTextureData(const unsigned char *srcPtr, int n,
                        const DXGIFormatInfo& formatInfo, bool noSRGBExpand);
   void loadTexture(FileBuffer& buf, int mipOffset, bool noSRGBExpand);
@@ -81,6 +85,11 @@ class DDSTexture16
       unsigned int& xMask, unsigned int& yMask,
       float x, float y, int mipLevel) const;
   static inline void getNextMipTexCoord(int& x0, int& y0, float& xf, float& yf);
+  static inline FloatVector4 getPixelBFloat16(
+      const std::uint64_t *p0, const std::uint64_t *p1,
+      const std::uint64_t *p2, const std::uint64_t *p3, float xf, float yf);
+  static inline FloatVector4 getPixelBFloat16(
+      const std::uint64_t *p0, const std::uint64_t *p2, float xf, float yf);
   static inline FloatVector4 getPixelB_Wrap(
       const std::uint64_t *p, int x0, int y0,
       float xf, float yf, unsigned int xMask, unsigned int yMask);
@@ -260,6 +269,33 @@ inline void DDSTexture16::getNextMipTexCoord(
   yf = yf - yi;
 }
 
+inline FloatVector4 DDSTexture16::getPixelBFloat16(
+    const std::uint64_t *p0, const std::uint64_t *p1,
+    const std::uint64_t *p2, const std::uint64_t *p3, float xf, float yf)
+{
+  FloatVector4  c0, c1, c2, c3;
+#if ENABLE_X86_64_SIMD >= 3
+  __asm__ ("vcvtph2ps %1, %0" : "=x" (c0.v) : "m" (*p0));
+  __asm__ ("vcvtph2ps %1, %0" : "=x" (c1.v) : "m" (*p1));
+  __asm__ ("vcvtph2ps %1, %0" : "=x" (c2.v) : "m" (*p2));
+  __asm__ ("vcvtph2ps %1, %0" : "=x" (c3.v) : "m" (*p3));
+#else
+  c0 = FloatVector4::convertFloat16(*p0);
+  c1 = FloatVector4::convertFloat16(*p1);
+  c2 = FloatVector4::convertFloat16(*p2);
+  c3 = FloatVector4::convertFloat16(*p3);
+#endif
+  c0 = (c0 * (1.0f - xf)) + (c1 * xf);
+  c2 = (c2 * (1.0f - xf)) + (c3 * xf);
+  return (c0 + ((c2 - c0) * yf));
+}
+
+inline FloatVector4 DDSTexture16::getPixelBFloat16(
+    const std::uint64_t *p0, const std::uint64_t *p2, float xf, float yf)
+{
+  return getPixelBFloat16(p0, p0 + 1, p2, p2 + 1, xf, yf);
+}
+
 inline FloatVector4 DDSTexture16::getPixelB_Wrap(
     const std::uint64_t *p, int x0, int y0,
     float xf, float yf, unsigned int xMask, unsigned int yMask)
@@ -271,13 +307,8 @@ inline FloatVector4 DDSTexture16::getPixelB_Wrap(
   unsigned int  y1 = (y0u + 1U) & yMask;
   x0u = x0u & xMask;
   y0u = y0u & yMask;
-  FloatVector4  c0(FloatVector4::convertFloat16(p[y0u * w + x0u]));
-  FloatVector4  c1(FloatVector4::convertFloat16(p[y0u * w + x1]));
-  FloatVector4  c2(FloatVector4::convertFloat16(p[y1 * w + x0u]));
-  FloatVector4  c3(FloatVector4::convertFloat16(p[y1 * w + x1]));
-  c0 = (c0 * (1.0f - xf)) + (c1 * xf);
-  c2 = (c2 * (1.0f - xf)) + (c3 * xf);
-  return (c0 + ((c2 - c0) * yf));
+  return getPixelBFloat16(p + (y0u * w + x0u), p + (y0u * w + x1),
+                          p + (y1 * w + x0u), p + (y1 * w + x1), xf, yf);
 }
 
 inline FloatVector4 DDSTexture16::getPixelB_Clamp(
@@ -289,17 +320,11 @@ inline FloatVector4 DDSTexture16::getPixelB_Clamp(
   x0 = std::min< int >(std::max< int >(x0, 0), int(xMask));
   y0 = std::min< int >(std::max< int >(y0, 0), int(yMask));
   unsigned int  w = xMask + 1U;
-  FloatVector4  c0(FloatVector4::convertFloat16(p[(unsigned int) y0 * w
-                                                  + (unsigned int) x0]));
-  FloatVector4  c1(FloatVector4::convertFloat16(p[(unsigned int) y0 * w
-                                                  + (unsigned int) x1]));
-  FloatVector4  c2(FloatVector4::convertFloat16(p[(unsigned int) y1 * w
-                                                  + (unsigned int) x0]));
-  FloatVector4  c3(FloatVector4::convertFloat16(p[(unsigned int) y1 * w
-                                                  + (unsigned int) x1]));
-  c0 = (c0 * (1.0f - xf)) + (c1 * xf);
-  c2 = (c2 * (1.0f - xf)) + (c3 * xf);
-  return (c0 + ((c2 - c0) * yf));
+  return getPixelBFloat16(p + ((unsigned int) y0 * w + (unsigned int) x0),
+                          p + ((unsigned int) y0 * w + (unsigned int) x1),
+                          p + ((unsigned int) y1 * w + (unsigned int) x0),
+                          p + ((unsigned int) y1 * w + (unsigned int) x1),
+                          xf, yf);
 }
 
 inline FloatVector4 DDSTexture16::getPixelB_Inline(

@@ -102,6 +102,7 @@ const DDSTexture::DXGIFormatInfo DDSTexture::dxgiFormatInfoTable[32] =
   {                             // 30: FORMAT_R8G8B8_UNORM_SRGB = 0x7F
     &decodeLine_RGB, "R8G8B8_UNORM_SRGB", false, true, 3, 3
   },
+  // end of non-standard formats
   {                             // 31: DXGI_FORMAT_R9G9B9E5_SHAREDEXP = 0x43
     &decodeLine_RGB9E5, "R9G9B9E5_SHAREDEXP", false, true, 3, 4
   }
