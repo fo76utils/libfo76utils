@@ -346,7 +346,7 @@ size_t SFCubeMapFilter::convertImage(
           d = a2 / (d * d);
           float   pdf = d * 0.25f + 0.0001f;
           float   saTexel =
-              2.09439510f / (float(t.getWidth()) * float(t.getWidth()));
+              0.66666667f / (float(t.getWidth()) * float(t.getWidth()));
           float   saSample = 1.0f / (float(n) * pdf);
           float   mipLevel = 0.5f * float(std::log2(saSample / saTexel));
           h[3] = std::min(std::max(mipLevel, 0.0f), 16.0f);
