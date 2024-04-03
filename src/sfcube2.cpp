@@ -339,16 +339,14 @@ size_t SFCubeMapFilter::convertImage(
         {
           FloatVector4  h(SF_PBR_Tables::importanceSampleGGX(
                               SF_PBR_Tables::Hammersley(i, n), a2));
-          // calculate mip level using formula from
+          // calculate mip level, based on formula from
           // https://chetanjags.wordpress.com/2015/08/26/image-based-lighting/
           float   nDotH = h[2];
           float   d = nDotH * nDotH * (a2 - 1.0f) + 1.0f;
           d = a2 / (d * d);
-          float   pdf = d * 0.25f + 0.0001f;
-          float   saTexel =
-              0.66666667f / (float(t.getWidth()) * float(t.getWidth()));
-          float   saSample = 1.0f / (float(n) * pdf);
-          float   mipLevel = 0.5f * float(std::log2(saSample / saTexel));
+          float   mipLevel =            // mip bias = +1.0
+              float(std::log2(float(t.getWidth()) * float(t.getWidth())
+                              / (float(n) * d))) * 0.5f + 2.29248125f;
           h[3] = std::min(std::max(mipLevel, 0.0f), 16.0f);
           importanceSampleBuf[i] = h;
         }
