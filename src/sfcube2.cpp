@@ -143,17 +143,12 @@ void SFCubeMapFilter::processImage_ImportanceSample(
       float   weight = 0.0f;
       for (int i = 0; i < int(sCnt); i++)
       {
-        FloatVector4  h(importanceSampleData[i]);
-        float   nDotH = h[2];
-        float   nDotL = nDotH * nDotH * 2.0f - 1.0f;
-        if (nDotL > 0.0f)
-        {
-          float   mipLevel = h[3];
-          h = (t_x * h[0]) + (t_y * h[1]) + (normal * h[2]);
-          FloatVector4  l(h * (nDotH * 2.0f) - normal);
-          c += cubeMap->cubeMap(l[0], l[1], l[2], mipLevel) * nDotL;
-          weight += nDotL;
-        }
+        FloatVector4  l(importanceSampleData[i]);
+        float   nDotL = l[2];
+        float   mipLevel = l[3];
+        l = (t_x * l[0]) + (t_y * l[1]) + (normal * l[2]);
+        c += cubeMap->cubeMap(l[0], l[1], l[2], mipLevel) * nDotL;
+        weight += nDotL;
       }
       pixelStoreFunction(p, c * (normalizeScale / weight));
     }
@@ -330,25 +325,30 @@ size_t SFCubeMapFilter::convertImage(
       if (enableFilter && w > 128 && roughness < importanceSampleThreshold)
 #endif
       {
+        int     n = 1024;
         importanceSampleTable = &importanceSampleBuf;
-        importanceSampleBuf.resize(1024, FloatVector4(0.0f));
+        importanceSampleBuf.clear();
+        importanceSampleBuf.reserve(size_t(n));
         float   a = roughness * roughness;
         float   a2 = a * a;
-        int     n = int(importanceSampleBuf.size());
         for (int i = 0; i < n; i++)
         {
           FloatVector4  h(SF_PBR_Tables::importanceSampleGGX(
                               SF_PBR_Tables::Hammersley(i, n), a2));
+          float   nDotH = h[2];
+          FloatVector4  l(h * (nDotH * 2.0f)    // L = reflect(-N, H)
+                          - FloatVector4(0.0f, 0.0f, 1.0f, 0.0f));
+          if (!(l[2] > 0.0f))
+            continue;
           // calculate mip level, based on formula from
           // https://chetanjags.wordpress.com/2015/08/26/image-based-lighting/
-          float   nDotH = h[2];
           float   d = nDotH * nDotH * (a2 - 1.0f) + 1.0f;
           d = a2 / (d * d);
           float   mipLevel =            // mip bias = +1.0
               float(std::log2(float(t.getWidth()) * float(t.getWidth())
                               / (float(n) * d))) * 0.5f + 2.29248125f;
-          h[3] = std::min(std::max(mipLevel, 0.0f), 16.0f);
-          importanceSampleBuf[i] = h;
+          l[3] = std::min(std::max(mipLevel, 0.0f), 16.0f);
+          importanceSampleBuf.push_back(l);
         }
       }
       else if (enableFilter && !cubeFilterTable)
