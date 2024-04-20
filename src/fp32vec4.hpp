@@ -606,20 +606,18 @@ inline FloatVector4& FloatVector4::normalize3Fast()
 inline FloatVector4 FloatVector4::normalize3x3Fast(
     const FloatVector4& a, const FloatVector4& b, const FloatVector4& c)
 {
-  XMM_Float tmp1, tmp2, tmp3;
   // tmp1 = b[0], b[0], c[0], c[0]
-  __asm__ ("vshufps $0x00, %2, %1, %0" : "=x" (tmp1) : "x" (b), "xm" (c));
+  XMM_Float tmp1 = __builtin_ia32_shufps(b.v, c.v, 0x00);
   // tmp2 = a[1], a[1], c[1], c[1]
-  __asm__ ("vshufps $0x55, %2, %1, %0" : "=x" (tmp2) : "x" (a), "xm" (c));
+  XMM_Float tmp2 = __builtin_ia32_shufps(a.v, c.v, 0x55);
   // tmp3 = a[2], b[2], a[3], b[3]
-  __asm__ ("vunpckhps %2, %1, %0" : "=x" (tmp3) : "x" (a), "xm" (b));
-  __asm__ ("vblendps $0x09, %1, %0, %0" : "+x" (tmp1) : "xm" (a));
-  __asm__ ("vblendps $0x0a, %1, %0, %0" : "+x" (tmp2) : "xm" (b));
-  __asm__ ("vblendps $0x0c, %1, %0, %0" : "+x" (tmp3) : "xm" (c));
+  XMM_Float tmp3 = __builtin_ia32_unpckhps(a.v, b.v);
+  tmp1 = __builtin_ia32_blendps(tmp1, a.v, 0x09);
+  tmp2 = __builtin_ia32_blendps(tmp2, b.v, 0x0A);
+  tmp3 = __builtin_ia32_blendps(tmp3, c.v, 0x0C);
   tmp1 = (tmp1 * tmp1) + (tmp2 * tmp2) + (tmp3 * tmp3);
-  __asm__ ("vmaxps %1, %0, %0" : "+x" (tmp1) : "xm" (floatMinValV));
-  __asm__ ("vrsqrtps %0, %0" : "+x" (tmp1));
-  return tmp1;
+  tmp1 = __builtin_ia32_rsqrtps(__builtin_ia32_maxps(tmp1, floatMinValV));
+  return FloatVector4(tmp1);
 }
 
 inline FloatVector4& FloatVector4::srgbExpand()
@@ -633,9 +631,8 @@ inline FloatVector4& FloatVector4::srgbCompress()
 {
   minValues(FloatVector4(1.0f));
   maxValues(FloatVector4(1.0f / float(0x40000000)));
-  XMM_Float tmp;
   XMM_Float tmp2 = v * float(0.03876962 * 255.0) + float(1.15864660 * 255.0);
-  __asm__ ("vrsqrtps %1, %0" : "=x" (tmp) : "x" (v));
+  XMM_Float tmp = __builtin_ia32_rsqrtps(v);
   v *= (tmp * tmp2 - float(0.19741622 * 255.0));
   return (*this);
 }
