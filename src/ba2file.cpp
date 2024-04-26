@@ -629,7 +629,7 @@ void BA2File::loadArchiveFile(const char *fileName, size_t prefixLen)
         if (hdr3 == 0x4C524E47)                         // "GNRL"
           archiveType = (!(hdr2 & 0x0C) ? 24 : 32);
         else if (hdr3 == 0x30315844)                    // "DX10"
-          archiveType = (!(hdr2 & 0x0C) ? 25 : (!(hdr2 & 1) ? 33 : 37));
+          archiveType = (!(hdr2 & 0x0C) ? 25 : (!(hdr2 & 8) ? 33 : 37));
       }
       else if (hdr1 == 0x00415342 && hdr3 == 36)        // "BSA\0", header size
       {
