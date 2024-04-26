@@ -624,12 +624,12 @@ void BA2File::loadArchiveFile(const char *fileName, size_t prefixLen)
       unsigned int  hdr1 = buf.readUInt32Fast();
       unsigned int  hdr2 = buf.readUInt32Fast();
       unsigned int  hdr3 = buf.readUInt32Fast();
-      if (hdr1 == 0x58445442 && hdr2 && hdr2 <= 3U)     // "BTDX", version <= 3
-      {
+      if (hdr1 == 0x58445442 && hdr2 <= 15U && ((hdr2 = (1U << hdr2)) & 0x018E))
+      {                                 // "BTDX", version 1, 2, 3, 7 or 8
         if (hdr3 == 0x4C524E47)                         // "GNRL"
-          archiveType = (hdr2 == 1 ? 24 : 32);
+          archiveType = (!(hdr2 & 0x0C) ? 24 : 32);
         else if (hdr3 == 0x30315844)                    // "DX10"
-          archiveType = (hdr2 == 1 ? 25 : (hdr2 == 2 ? 33 : 37));
+          archiveType = (!(hdr2 & 0x0C) ? 25 : (!(hdr2 & 1) ? 33 : 37));
       }
       else if (hdr1 == 0x00415342 && hdr3 == 36)        // "BSA\0", header size
       {
