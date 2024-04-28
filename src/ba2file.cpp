@@ -747,18 +747,18 @@ void BA2File::getFileList(
     void *fileFilterFuncData) const
 {
   fileList.clear();
-  for (size_t i = 0; i < fileDeclBufs.size(); i++)
+  for (const auto& i : fileDeclBufs)
   {
     if (!fileFilterFunc)
     {
-      for (size_t j = 0; j < fileDeclBufs[i].size(); j++)
-        fileList.emplace_back(fileDeclBufs[i][j].fileName);
+      for (const auto& fd : i)
+        fileList.emplace_back(fd.fileName);
     }
     else
     {
-      for (size_t j = 0; j < fileDeclBufs[i].size(); j++)
+      for (const auto& fd : i)
       {
-        const std::string&  s = fileDeclBufs[i][j].fileName;
+        const std::string&  s = fd.fileName;
         if (fileFilterFunc(fileFilterFuncData, s))
           fileList.emplace_back(s);
       }
@@ -766,6 +766,21 @@ void BA2File::getFileList(
   }
   if (fileList.size() > 1 && !disableSorting)
     std::sort(fileList.begin(), fileList.end());
+}
+
+bool BA2File::scanFileList(
+    bool (*fileScanFunc)(void *p, const FileDeclaration& fd),
+    void *fileScanFuncData) const
+{
+  for (const auto& i : fileDeclBufs)
+  {
+    for (const auto& fd : i)
+    {
+      if (fileScanFunc(fileScanFuncData, fd))
+        return true;
+    }
+  }
+  return false;
 }
 
 const BA2File::FileDeclaration * BA2File::findFile(

@@ -105,6 +105,9 @@ class BA2File
                    bool (*fileFilterFunc)(void *p,
                                           const std::string& s) = nullptr,
                    void *fileFilterFuncData = nullptr) const;
+  // processing stops and true is returned if fileScanFunc() returns true
+  bool scanFileList(bool (*fileScanFunc)(void *p, const FileDeclaration& fd),
+                    void *fileScanFuncData = nullptr) const;
   // returns pointer to file information, or NULL if the file is not found
   const FileDeclaration *findFile(const std::string& fileName) const;
   // returns -1 if the file is not found
