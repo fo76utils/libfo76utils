@@ -638,6 +638,7 @@ void BSMaterialsCDB::readAllChunks(BSReflStream& cdbFile)
   std::vector< std::pair< std::uint32_t, std::uint32_t > >  componentInfo;
   BSReflStream::Chunk chunkBuf;
   unsigned int  chunkType;
+  unsigned int  objectInfoSize = 21;
   size_t  componentID = 0;
   size_t  componentCnt = 0;
   while ((chunkType = cdbFile.readChunk(chunkBuf)) != 0U)
@@ -686,18 +687,36 @@ void BSMaterialsCDB::readAllChunks(BSReflStream& cdbFile)
         if (className == BSReflStream::String_Unknown)
           continue;
         CDBClassDef&  classDef = allocateClassDef(className);
-        if (classDef.className)
-          continue;
-        classDef.className = className;
         (void) chunkBuf.readUInt32();   // classVersion
-        unsigned int  classFlags = chunkBuf.readUInt16();
-        classDef.isUser = bool(classFlags & 4U);
-        classDef.fieldCnt = chunkBuf.readUInt16();
+        std::uint16_t classFlags = chunkBuf.readUInt16();
+        std::uint16_t fieldCnt = chunkBuf.readUInt16();
+        if (className
+            == BSReflStream::String_BSComponentDB2_DBFileIndex_ObjectInfo &&
+            fieldCnt > 4)
+        {
+          // version >= 1.11.33.0 also stores the parent ID as BSResource::ID
+          objectInfoSize = 33;
+        }
+        if (classDef.className)
+        {
+          if (classDef.fieldCnt != fieldCnt) [[unlikely]]
+          {
+#if 0
+            std::fprintf(stderr,
+                         "WARNING: incompatible CDB version, skipping file\n");
+#endif
+            return;
+          }
+          continue;
+        }
+        classDef.className = className;
+        classDef.isUser = bool(classFlags & 4);
+        classDef.fieldCnt = fieldCnt;
         classDef.fields =
             reinterpret_cast< CDBClassDef::Field * >(
-                allocateSpace(sizeof(CDBClassDef::Field) * classDef.fieldCnt,
+                allocateSpace(sizeof(CDBClassDef::Field) * fieldCnt,
                               alignof(CDBClassDef::Field)));
-        for (size_t i = 0; i < classDef.fieldCnt; i++)
+        for (size_t i = 0; i < fieldCnt; i++)
         {
           CDBClassDef::Field& f =
               const_cast< CDBClassDef::Field * >(classDef.fields)[i];
@@ -718,14 +737,15 @@ void BSMaterialsCDB::readAllChunks(BSReflStream& cdbFile)
       n = chunkBuf.readUInt32Fast();
     if (className == BSReflStream::String_BSComponentDB2_DBFileIndex_ObjectInfo)
     {
-      if (n > ((chunkBuf.size() - chunkBuf.getPosition()) / 21))
+      if (n > ((chunkBuf.size() - chunkBuf.getPosition()) / objectInfoSize))
         errorMessage("unexpected end of LIST chunk in material database");
       const unsigned char *objectInfoPtr = chunkBuf.getReadPtr();
       std::uint32_t maxObjID = 0U;
       for (std::uint32_t i = 0U; i < n; i++)
       {
         std::uint32_t dbID =
-            FileBuffer::readUInt32Fast(objectInfoPtr + (i * 21U + 12U));
+            FileBuffer::readUInt32Fast(
+                objectInfoPtr + (i * objectInfoSize + 12U));
         maxObjID = std::max(maxObjID, dbID);
       }
       if (maxObjID > 0x007FFFFFU)
@@ -733,13 +753,13 @@ void BSMaterialsCDB::readAllChunks(BSReflStream& cdbFile)
       objectTable.resize(maxObjID + 1U, nullptr);
       objectTablePtr = objectTable.data();
       objectTableSize = objectTable.size();
-      for (std::uint32_t i = 0U; i < n; i++)
+      for (std::uint32_t i = 0U; i < n; i++, objectInfoPtr += objectInfoSize)
       {
         BSResourceID  persistentID;
-        persistentID.file = chunkBuf.readUInt32();
-        persistentID.ext = chunkBuf.readUInt32();
-        persistentID.dir = chunkBuf.readUInt32();
-        std::uint32_t dbID = chunkBuf.readUInt32();
+        persistentID.file = FileBuffer::readUInt32Fast(objectInfoPtr);
+        persistentID.ext = FileBuffer::readUInt32Fast(objectInfoPtr + 4);
+        persistentID.dir = FileBuffer::readUInt32Fast(objectInfoPtr + 8);
+        std::uint32_t dbID = FileBuffer::readUInt32Fast(objectInfoPtr + 12);
         if (!(dbID && dbID <= maxObjID))
           errorMessage("invalid object ID in material database");
         MaterialObject  *o =
@@ -750,8 +770,21 @@ void BSMaterialsCDB::readAllChunks(BSReflStream& cdbFile)
         objectTable[dbID] = o;
         o->persistentID = persistentID;
         o->dbID = dbID;
-        o->baseObject = findObject(chunkBuf.readUInt32());
-        (void) static_cast< FileBuffer * >(&chunkBuf)->readUInt8(); // HasData
+        o->baseObject =
+            findObject(FileBuffer::readUInt32Fast(objectInfoPtr + 16));
+        bool    hasData = bool(objectInfoPtr[objectInfoSize - 1U]);
+        if (objectInfoSize >= 33U)      // version >= 1.11.33.0
+        {
+          if (!o->baseObject) [[unlikely]]
+          {
+            BSResourceID  parentID;
+            parentID.file = FileBuffer::readUInt32Fast(objectInfoPtr + 20);
+            parentID.ext = FileBuffer::readUInt32Fast(objectInfoPtr + 24);
+            parentID.dir = FileBuffer::readUInt32Fast(objectInfoPtr + 28);
+            if (hasData)
+              o->baseObject = findMatFileObject(parentID);
+          }
+        }
         o->components = nullptr;
         o->parent = nullptr;
         o->children = nullptr;

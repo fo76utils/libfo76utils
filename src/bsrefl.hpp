@@ -113,9 +113,9 @@ class BSReflStream : public FileBuffer
     String_BSMaterial_WaterGrimeSettingsComponent = 224,
     String_BSMaterial_WaterSettingsComponent = 225,
     String_BSResource_ID = 228,
-    String_XMFLOAT2 = 1091,
-    String_XMFLOAT3 = 1092,
-    String_XMFLOAT4 = 1093
+    String_XMFLOAT2 = 1093,
+    String_XMFLOAT3 = 1094,
+    String_XMFLOAT4 = 1095
   };
   class Chunk : public FileBuffer
   {
@@ -152,7 +152,7 @@ class BSReflStream : public FileBuffer
     // t = sequence of strings with length prefix (e.g. "\005False\004True")
     bool readEnum(unsigned char& n, const char *t);
   };
-  static const char *stringTable[1151];
+  static const char *stringTable[1153];
   static int findString(const char *s);
   unsigned int  chunksRemaining;
  protected:
