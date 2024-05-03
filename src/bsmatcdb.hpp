@@ -163,7 +163,7 @@ class BSMaterialsCDB
   {
     classHashMask = 0x000001FF,
     stringHashMask = 0x000FFFFF,
-    objectHashMask = 0x0003FFFF
+    objectHashMask = 0x001FFFFF
   };
   struct ObjectBuffers
   {

@@ -762,6 +762,9 @@ void BSMaterialsCDB::readAllChunks(BSReflStream& cdbFile)
         std::uint32_t dbID = FileBuffer::readUInt32Fast(objectInfoPtr + 12);
         if (!(dbID && dbID <= maxObjID))
           errorMessage("invalid object ID in material database");
+        bool    hasData = bool(objectInfoPtr[objectInfoSize - 1U]);
+        if (findMatFileObject(persistentID) && hasData)
+          continue;                     // ignore duplicate objects
         MaterialObject  *o =
             reinterpret_cast< MaterialObject * >(
                 allocateSpace(sizeof(MaterialObject), alignof(MaterialObject)));
@@ -772,7 +775,6 @@ void BSMaterialsCDB::readAllChunks(BSReflStream& cdbFile)
         o->dbID = dbID;
         o->baseObject =
             findObject(FileBuffer::readUInt32Fast(objectInfoPtr + 16));
-        bool    hasData = bool(objectInfoPtr[objectInfoSize - 1U]);
         if (objectInfoSize >= 33U)      // version >= 1.11.33.0
         {
           if (!o->baseObject) [[unlikely]]
@@ -841,7 +843,7 @@ void BSMaterialsCDB::readAllChunks(BSReflStream& cdbFile)
       continue;
     if (p->baseObject && p->baseObject->baseObject)
       copyBaseObject(*p);
-    if (!p->parent && p->persistentID.ext == 0x0074616DU)       // "mat\0"
+    if (p->persistentID.file | p->persistentID.ext | p->persistentID.dir)
       storeMatFileObject(p);
   }
 }
@@ -1204,8 +1206,9 @@ void BSMaterialsCDB::getMaterials(
 {
   for (size_t i = 0; i <= objectHashMask; i++)
   {
-    if (matFileObjectMap[i])
-      materials.push_back(matFileObjectMap[i]);
+    const MaterialObject  *o = matFileObjectMap[i];
+    if (o && o->persistentID.ext == 0x0074616D && !o->parent)   // "mat\0"
+      materials.push_back(o);
   }
 }
 

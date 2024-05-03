@@ -196,8 +196,7 @@ CE2MaterialDB::~CE2MaterialDB()
 static bool cdbFileNameFilterFunc(void *p, const std::string& s)
 {
   (void) p;
-  return (s.ends_with(".cdb") && s.starts_with("materials/") &&
-          !s.starts_with("materials/creations/"));
+  return (s.ends_with(".cdb") && s.starts_with("materials/"));
 }
 
 void CE2MaterialDB::loadArchives(
