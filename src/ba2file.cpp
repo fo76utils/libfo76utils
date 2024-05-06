@@ -5,7 +5,11 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <dirent.h>
+#if defined(_WIN32) || defined(_WIN64)
+#  include <io.h>
+#else
+#  include <dirent.h>
+#endif
 
 inline BA2File::FileDeclaration::FileDeclaration(
     const std::string& fName, std::uint32_t h, std::int32_t p)
@@ -425,30 +429,42 @@ size_t BA2File::findPrefixLen(const char *pathName)
 
 void BA2File::loadArchivesFromDir(const char *pathName, size_t prefixLen)
 {
+  std::string dirName(pathName);
+#if defined(_WIN32) || defined(_WIN64)
+  dirName += ((dirName.back() != '/' && dirName.back() != '\\' &&
+               !(dirName.length() == 2 && dirName[1] == ':')) ? "\\*" : "*");
+  __finddata64_t  e;
+  std::intptr_t   d = _findfirst64(dirName.c_str(), &e);
+  if (d < 0)
+    errorMessage("error opening archive directory");
+  dirName.resize(dirName.length() - 1);
+#else
+  if (dirName.back() != '/')
+    dirName += '/';
   DIR     *d = opendir(pathName);
   if (!d)
     errorMessage("error opening archive directory");
+#endif
+  if (!prefixLen)
+    prefixLen = dirName.length();
+
   try
   {
     std::set< std::string > archiveNames;
-    std::string dirName(pathName);
-#if defined(_WIN32) || defined(_WIN64)
-    if (dirName.back() != '/' && dirName.back() != '\\' &&
-        !(dirName.length() == 2 && dirName[1] == ':'))
-#else
-    if (dirName.back() != '/')
-#endif
-    {
-      dirName += '/';
-    }
     std::string baseName;
     // 0: game archive, 1: DLC or update archive, 2: mod archive, 3: loose file
     std::string fullName("0");
     fullName += dirName;
+#if defined(_WIN32) || defined(_WIN64)
+    do
+    {
+      baseName = e.name;
+#else
     struct dirent *e;
     while (bool(e = readdir(d)))
     {
       baseName = e->d_name;
+#endif
       if (baseName.length() < 1 || baseName == "." || baseName == "..")
         continue;
       fullName.resize(dirName.length() + 1);
@@ -460,16 +476,22 @@ void BA2File::loadArchivesFromDir(const char *pathName, size_t prefixLen)
       }
       {
 #if defined(_WIN32) || defined(_WIN64)
-        struct __stat64 st;
-        if (_stat64(fullName.c_str() + 1, &st) == 0 &&
-            (st.st_mode & _S_IFMT) == _S_IFDIR)
+#  ifdef NIFSKOPE_VERSION
+        std::int64_t  fileSize = std::int64_t(e.size);
+#  endif
+        bool    isDir = bool(e.attrib & _A_SUBDIR);
 #else
         struct stat st;
-        if (stat(fullName.c_str() + 1, &st) == 0 &&
-            (st.st_mode & S_IFMT) == S_IFDIR)
+        if (stat(fullName.c_str() + 1, &st) != 0)
+          continue;
+#  ifdef NIFSKOPE_VERSION
+        std::int64_t  fileSize = std::int64_t(st.st_size);
+#  endif
+        bool    isDir = ((st.st_mode & S_IFMT) == S_IFDIR);
 #endif
+        if (isDir)
         {
-          if ((prefixLen && prefixLen < dirName.length()) ||
+          if (prefixLen < dirName.length() ||
               checkDataDirName(baseName.c_str(), baseName.length()))
           {
             fullName[0] = '3';
@@ -490,25 +512,21 @@ void BA2File::loadArchivesFromDir(const char *pathName, size_t prefixLen)
       switch (fileType)
       {
         case 0x3261622EU:               // ".ba2"
+        case 0x6167742EU:               // ".tga"
         case 0x6173622EU:               // ".bsa"
-        case 0x6474622EU:               // ".btd"
-        case 0x6F74622EU:               // ".bto"
-        case 0x7274622EU:               // ".btr"
         case 0x6264632EU:               // ".cdb"
-        case 0x7364642EU:               // ".dds"
-        case 0x74616D2EU:               // ".mat"
-#ifndef NIFSKOPE_VERSION
+        case 0x6474622EU:               // ".btd"
         case 0x66696E2EU:               // ".nif"
-#endif
+        case 0x6873656DU:               // "mesh"
         case 0x6D656762U:               // "bgem"
         case 0x6D736762U:               // "bgsm"
-        case 0x6873656DU:               // "mesh"
-        case 0x73676E69U:               // "ings"
-#ifdef NIFSKOPE_VERSION
+        case 0x6F74622EU:               // ".bto"
         case 0x706D622EU:               // ".bmp"
         case 0x7264682EU:               // ".hdr"
-        case 0x6167742EU:               // ".tga"
-#endif
+        case 0x7274622EU:               // ".btr"
+        case 0x7364642EU:               // ".dds"
+        case 0x73676E69U:               // "ings"
+        case 0x74616D2EU:               // ".mat"
           break;
         default:
           continue;
@@ -531,13 +549,29 @@ void BA2File::loadArchivesFromDir(const char *pathName, size_t prefixLen)
           c = '1';
         }
       }
+#ifdef NIFSKOPE_VERSION
+      else
+      {
+        // create list of loose files without opening them
+        if (fileSize > 0)
+        {
+          (void) loadFile(fullName.c_str() + 1, fullName.length() - 1,
+                          prefixLen, size_t(fileSize));
+        }
+        continue;
+      }
+#endif
       fullName[0] = c;
       archiveNames.insert(fullName);
     }
+#if defined(_WIN32) || defined(_WIN64)
+    while (_findnext64(d, &e) >= 0);
+    _findclose(d);
+    d = -1;
+#else
     closedir(d);
     d = nullptr;
-    if (!prefixLen)
-      prefixLen = dirName.length();
+#endif
     for (std::set< std::string >::iterator i = archiveNames.begin();
          i != archiveNames.end(); i++)
     {
@@ -546,8 +580,13 @@ void BA2File::loadArchivesFromDir(const char *pathName, size_t prefixLen)
   }
   catch (...)
   {
+#if defined(_WIN32) || defined(_WIN64)
+    if (d >= 0)
+      _findclose(d);
+#else
     if (d)
       closedir(d);
+#endif
     throw;
   }
 }
