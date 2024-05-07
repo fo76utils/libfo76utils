@@ -8,7 +8,7 @@
 class BA2File
 {
  public:
-  struct FileDeclaration
+  struct FileInfo
   {
     const unsigned char *fileData;
     // 0 if the file is uncompressed and can be accessed directly via fileData
@@ -29,19 +29,18 @@ class BA2File
     // NOTE: for loose files, if NIFSKOPE_VERSION is defined, archiveFile
     // is 0xFFFFFFFF, and fileData and packedSize are the full path on the
     // file system and its length, respectively
-    inline FileDeclaration(const std::string& fName,
-                           std::uint32_t h, std::int32_t p);
+    inline FileInfo(const std::string& fName, std::uint32_t h, std::int32_t p);
     inline bool compare(const std::string& fName, std::uint32_t h) const;
   };
  protected:
   enum
   {
-    fileDeclBufShift = 12,
-    fileDeclBufMask = 0x0FFF,
+    fileInfoBufShift = 12,
+    fileInfoBufMask = 0x0FFF,
     nameHashMask = 0x001FFFFF
   };
   std::vector< std::int32_t >   fileMap;        // nameHashMask + 1 elements
-  std::vector< std::vector< FileDeclaration > > fileDeclBufs;
+  std::vector< std::vector< FileInfo > >  fileInfoBufs;
   std::vector< FileBuffer * >   archiveFiles;
   // User defined function that returns true if the path in 's'
   // should be included.
@@ -57,16 +56,16 @@ class BA2File
       return '/';
     return char(c);
   }
-  inline FileDeclaration& getFileDecl(std::uint32_t n)
+  inline FileInfo& getFileInfo(std::uint32_t n)
   {
-    return fileDeclBufs[n >> fileDeclBufShift][n & fileDeclBufMask];
+    return fileInfoBufs[n >> fileInfoBufShift][n & fileInfoBufMask];
   }
-  inline const FileDeclaration& getFileDecl(std::uint32_t n) const
+  inline const FileInfo& getFileInfo(std::uint32_t n) const
   {
-    return fileDeclBufs[n >> fileDeclBufShift][n & fileDeclBufMask];
+    return fileInfoBufs[n >> fileInfoBufShift][n & fileInfoBufMask];
   }
   static inline std::uint32_t hashFunction(const std::string& s);
-  FileDeclaration *addPackedFile(const std::string& fileName);
+  FileInfo *addPackedFile(const std::string& fileName);
   void loadBA2General(FileBuffer& buf, size_t archiveFile, size_t hdrSize);
   void loadBA2Textures(FileBuffer& buf, size_t archiveFile, size_t hdrSize);
   void loadBSAFile(FileBuffer& buf, size_t archiveFile, int archiveType);
@@ -77,15 +76,14 @@ class BA2File
 #else
   bool loadFile(const char *fileName, size_t nameLen, size_t prefixLen,
                 size_t fileSize);
-  void loadFile(std::vector< unsigned char >& buf,
-                const FileDeclaration& fd) const;
+  void loadFile(std::vector< unsigned char >& buf, const FileInfo& fd) const;
 #endif
   static bool checkDataDirName(const char *s, size_t len);
   static size_t findPrefixLen(const char *pathName);
   void loadArchivesFromDir(const char *pathName, size_t prefixLen);
   void loadArchiveFile(const char *fileName, size_t prefixLen);
   unsigned int getBSAUnpackedSize(const unsigned char*& dataPtr,
-                                  const FileDeclaration& fd) const;
+                                  const FileInfo& fd) const;
  public:
   BA2File();
   BA2File(const char *pathName,
@@ -106,19 +104,17 @@ class BA2File
                                           const std::string& s) = nullptr,
                    void *fileFilterFuncData = nullptr) const;
   // processing stops and true is returned if fileScanFunc() returns true
-  bool scanFileList(bool (*fileScanFunc)(void *p, const FileDeclaration& fd),
+  bool scanFileList(bool (*fileScanFunc)(void *p, const FileInfo& fd),
                     void *fileScanFuncData = nullptr) const;
   // returns pointer to file information, or NULL if the file is not found
-  const FileDeclaration *findFile(const std::string& fileName) const;
+  const FileInfo *findFile(const std::string& fileName) const;
   // returns -1 if the file is not found
   long getFileSize(const std::string& fileName, bool packedSize = false) const;
  protected:
   int extractBA2Texture(std::vector< unsigned char >& buf,
-                        const FileDeclaration& fileDecl,
-                        int mipOffset = 0) const;
+                        const FileInfo& fd, int mipOffset = 0) const;
   void extractBlock(std::vector< unsigned char >& buf,
-                    unsigned int unpackedSize,
-                    const FileDeclaration& fileDecl,
+                    unsigned int unpackedSize, const FileInfo& fd,
                     const unsigned char *p, unsigned int packedSize) const;
  public:
   void extractFile(std::vector< unsigned char >& buf,

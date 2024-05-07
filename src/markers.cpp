@@ -716,10 +716,9 @@ void MapImage::findMarkers(unsigned int worldID)
   {
     if (!(priorityMask & (1U << p)))
       continue;
-    for (std::set< REFRRecord >::const_iterator i = objectsFound.begin();
-         i != objectsFound.end(); i++)
+    for (const auto& i : objectsFound)
     {
-      REFRRecord    refr = *i;
+      REFRRecord    refr = i;
       unsigned int  formID = refr.formID;
       unsigned int  n = refr.name;
       if (refr.isInterior || refr.isChildWorld)
@@ -740,28 +739,27 @@ void MapImage::findMarkers(unsigned int worldID)
           continue;
         }
       }
-      for (std::vector< MarkerDef >::const_iterator m = markerDefs.begin();
-           m != markerDefs.end(); m++)
+      for (const MarkerDef& m : markerDefs)
       {
-        if ((m->formID != n && m->formID != formID) || m->priority != p)
+        if ((m.formID != n && m.formID != formID) || m.priority != p)
           continue;
-        if (m->flags >= 0)
+        if (m.flags >= 0)
         {
           if (!refr.isMapMarker)
           {
-            unsigned int  tmp = (unsigned int) m->flags;
+            unsigned int  tmp = (unsigned int) m.flags;
             if ((tmp & 3U) == 3U || isInteriorMap)
               tmp = tmp & ~3U;
             if (refr.flags & tmp)
               continue;
           }
-          else if (refr.flags != (unsigned int) m->flags ||
+          else if (refr.flags != (unsigned int) m.flags ||
                    disabledMarkers.find(refr.formID) != disabledMarkers.end())
           {
             continue;
           }
         }
-        drawIcon(size_t(m - markerDefs.begin()), refr.x, refr.y, refr.z);
+        drawIcon(size_t(&m - markerDefs.data()), refr.x, refr.y, refr.z);
       }
     }
   }

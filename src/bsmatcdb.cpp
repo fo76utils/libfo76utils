@@ -835,10 +835,8 @@ void BSMaterialsCDB::readAllChunks(BSReflStream& cdbFile)
       }
     }
   }
-  for (std::vector< MaterialObject * >::iterator
-           i = objectTable.begin(); i != objectTable.end(); i++)
+  for (MaterialObject *p : objectTable)
   {
-    MaterialObject  *p = *i;
     if (!p)
       continue;
     if (p->baseObject && p->baseObject->baseObject)

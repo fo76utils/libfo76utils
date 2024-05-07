@@ -302,11 +302,9 @@ void BSMaterialsCDB::loadJSONItem(
     }
     const JSONReader::JSONObject  *jsonObjectData =
         static_cast< const JSONReader::JSONObject * >(j->second);
-    for (std::map< std::string, const JSONReader::JSONItem * >::const_iterator
-             i = jsonObjectData->children.begin();
-         i != jsonObjectData->children.end(); i++)
+    for (const auto& i : jsonObjectData->children)
     {
-      const std::string&  fieldName = i->first;
+      const std::string&  fieldName = i.first;
       int     fieldNum = -1;
       for (size_t l = 0; l < classDef->fieldCnt; l++)
       {
@@ -316,22 +314,22 @@ void BSMaterialsCDB::loadJSONItem(
           break;
         }
       }
-      if (fieldNum < 0 || !i->second)
+      if (fieldNum < 0 || !i.second)
       {
         if (classDef->isUser && !classDef->fieldCnt && fieldName == "null" &&
-            i->second && i->second->type == JSONReader::JSONItemType_String)
+            i.second && i.second->type == JSONReader::JSONItemType_String)
         {
           // work around ClassReference being defined with 0 fields
           if (o->childCnt < 1)
             o->childCnt = 1;
-          loadJSONItem(o->children()[0], i->second, BSReflStream::String_String,
+          loadJSONItem(o->children()[0], i.second, BSReflStream::String_String,
                        materialObject, objectMap);
         }
         continue;
       }
       std::uint32_t fieldType = classDef->fields[fieldNum].type;
       loadJSONItem(o->children()[fieldNum],
-                   i->second, fieldType, materialObject, objectMap);
+                   i.second, fieldType, materialObject, objectMap);
     }
     return;
   }
@@ -630,10 +628,9 @@ void BSMaterialsCDB::loadJSONFile(
   }
 
   // sort child objects
-  for (std::map< BSResourceID, MaterialObject * >::iterator
-           i = objectMap.begin(); i != objectMap.end(); i++)
+  for (auto& i : objectMap)
   {
-    MaterialObject  *o = i->second;
+    MaterialObject  *o = i.second;
     if (!o->children)
       continue;
     bool    linksSorted;
@@ -661,11 +658,10 @@ void BSMaterialsCDB::loadJSONFile(
   }
 
   // add materials to database
-  for (std::map< BSResourceID, MaterialObject * >::iterator
-           i = objectMap.begin(); i != objectMap.end(); i++)
+  for (auto& i : objectMap)
   {
-    if (i->second && !i->second->parent && i->first.ext == 0x0074616DU)
-      storeMatFileObject(i->second);                    // "mat\0"
+    if (i.second && !i.second->parent && i.first.ext == 0x0074616DU)
+      storeMatFileObject(i.second);                     // "mat\0"
   }
 }
 

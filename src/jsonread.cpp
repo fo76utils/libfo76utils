@@ -328,11 +328,10 @@ void JSONReader::deleteJSONObjects(JSONItem *p)
     case JSONItemType_Object:
       {
         JSONObject& o = *(static_cast< JSONObject * >(p));
-        for (std::map< std::string, const JSONItem * >::iterator
-                 i = o.children.begin(); i != o.children.end(); i++)
+        for (auto& i : o.children)
         {
-          if (i->second)
-            deleteJSONObjects(const_cast< JSONItem * >(i->second));
+          if (i.second)
+            deleteJSONObjects(const_cast< JSONItem * >(i.second));
         }
         delete &o;
       }
@@ -340,11 +339,10 @@ void JSONReader::deleteJSONObjects(JSONItem *p)
     case JSONItemType_Array:
       {
         JSONArray&  o = *(static_cast< JSONArray * >(p));
-        for (std::vector< const JSONItem * >::iterator
-                 i = o.children.begin(); i != o.children.end(); i++)
+        for (auto& i : o.children)
         {
-          if (*i)
-            deleteJSONObjects(const_cast< JSONItem * >(*i));
+          if (i)
+            deleteJSONObjects(const_cast< JSONItem * >(i));
         }
         delete &o;
       }

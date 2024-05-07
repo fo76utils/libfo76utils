@@ -7,10 +7,9 @@ bool StringDB::archiveFilterFunction(void *p, const std::string& s)
 {
   std::vector< std::string >& fileNames =
       *(reinterpret_cast< std::vector< std::string > * >(p));
-  for (std::vector< std::string >::const_iterator
-           i = fileNames.begin(); i != fileNames.end(); i++)
+  for (const auto& i : fileNames)
   {
-    if (s.find(*i) != std::string::npos)
+    if (s.find(i) != std::string::npos)
       return true;
   }
   return false;

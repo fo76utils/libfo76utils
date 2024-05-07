@@ -1162,10 +1162,24 @@ static void getStarfieldMaterialDirMap(
   }
 }
 
-static bool matFileNameFilterFunc(void *p, const std::string& s)
+struct MatFileFilterData
 {
-  (void) p;
-  return (s.ends_with(".mat") && s.starts_with("materials/"));
+  std::set< std::string > *materialPaths;
+  bool    (*fileFilterFunc)(void *p, const std::string& s);
+  void    *fileFilterFuncData;
+  inline bool addFile(const std::string& s)
+  {
+    if (!fileFilterFunc || fileFilterFunc(fileFilterFuncData, s))
+      materialPaths->insert(s);
+    return false;
+  }
+};
+
+static bool matFileScanFunc(void *p, const BA2File::FileInfo& fd)
+{
+  if (fd.fileName.ends_with(".mat") && fd.fileName.starts_with("materials/"))
+    return reinterpret_cast< MatFileFilterData * >(p)->addFile(fd.fileName);
+  return false;
 }
 
 void CE2MaterialDB::getMaterialList(
@@ -1229,19 +1243,13 @@ void CE2MaterialDB::getMaterialList(
   }
   if (excludeJSONMaterials)
     return;
-  std::vector< std::string >  matFileList;
-  for (size_t i = 0; i < 2; i++)
-  {
-    const BA2File *ba2File = (i == 0 ? ba2File1 : ba2File2);
-    if (!ba2File)
-      continue;
-    ba2File->getFileList(matFileList, true, &matFileNameFilterFunc);
-    for (std::vector< std::string >::const_iterator
-             j = matFileList.begin(); j != matFileList.end(); j++)
-    {
-      if (!fileFilterFunc || fileFilterFunc(fileFilterFuncData, *j))
-        materialPaths.insert(*j);
-    }
-  }
+  MatFileFilterData filterData;
+  filterData.materialPaths = &materialPaths;
+  filterData.fileFilterFunc = fileFilterFunc;
+  filterData.fileFilterFuncData = fileFilterFuncData;
+  if (ba2File1)
+    ba2File1->scanFileList(&matFileScanFunc, &filterData);
+  if (ba2File2)
+    ba2File2->scanFileList(&matFileScanFunc, &filterData);
 }
 
