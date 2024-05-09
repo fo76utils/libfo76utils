@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cmath>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <set>
 #include <map>
@@ -314,6 +315,28 @@ void memsetFloat(float *p, float c, size_t n);
 __attribute__ ((__format__ (__printf__, 2, 3)))
 #endif
 void printToString(std::string& s, const char *fmt, ...);
+
+class AllocBuffers
+{
+ protected:
+  struct DataBuf
+  {
+    std::uint32_t bytesUsed;
+    std::uint32_t minCapacity;
+    DataBuf *prv;
+    inline unsigned char *data()
+    {
+      return (reinterpret_cast< unsigned char * >(this) + sizeof(DataBuf));
+    }
+  };
+  DataBuf *lastBuf;
+  DataBuf *allocateBuffer(size_t nBytes);
+ public:
+  AllocBuffers();
+  ~AllocBuffers();
+  void *allocateSpace(size_t nBytes, size_t alignBytes = 16);
+  void clear();
+};
 
 #endif
 

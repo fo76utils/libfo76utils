@@ -2,8 +2,6 @@
 #include "common.hpp"
 #include "bsmatcdb.hpp"
 
-#include <new>
-
 #define CDB_COMPONENTS_SORTED   0
 #define CDB_JSON_QUOTE_NUMBERS  1
 #define CDB_SORT_STRUCT_MEMBERS 1
@@ -155,29 +153,6 @@ void BSMaterialsCDB::CDBObject_Compound::insertMapItem(
   }
 }
 
-BSMaterialsCDB::ObjectBuffers::ObjBuf *
-    BSMaterialsCDB::ObjectBuffers::allocateBuffer(size_t capacity)
-{
-  void    *tmp = std::calloc(sizeof(ObjBuf) + capacity, sizeof(unsigned char));
-  if (!tmp)
-    throw std::bad_alloc();
-  ObjBuf  *prv = lastBuf;
-  lastBuf = reinterpret_cast< ObjBuf * >(tmp);
-  lastBuf->bytesUsed = 0;
-  lastBuf->prv = prv;
-  return lastBuf;
-}
-
-BSMaterialsCDB::ObjectBuffers::~ObjectBuffers()
-{
-  while (lastBuf)
-  {
-    ObjBuf  *prv = lastBuf->prv;
-    std::free(lastBuf);
-    lastBuf = prv;
-  }
-}
-
 BSMaterialsCDB::MaterialComponent& BSMaterialsCDB::findComponent(
     MaterialObject& o, std::uint32_t key, std::uint32_t className)
 {
@@ -218,32 +193,6 @@ inline BSMaterialsCDB::MaterialObject *
 {
   const BSMaterialsCDB *p = this;
   return const_cast< MaterialObject * >(p->findObject(dbID));
-}
-
-void * BSMaterialsCDB::allocateSpace(size_t nBytes, size_t alignBytes)
-{
-  if (nBytes > 0x7FFFFF00U)
-    throw std::bad_alloc();
-  size_t  n = size_t(std::bit_width(std::uintptr_t(alignBytes)));
-  n = std::min< size_t >(std::max< size_t >(n, 2), 4) - 2;
-  ObjectBuffers&  objectBuffer = objectBuffers[n];
-  ObjectBuffers::ObjBuf *buf = objectBuffer.lastBuf;
-  std::uintptr_t  alignMask = std::uintptr_t(alignBytes - 1);
-  std::uintptr_t  addr0 = reinterpret_cast< std::uintptr_t >(buf->data());
-  std::uintptr_t  addr = addr0 + std::uintptr_t(buf->bytesUsed);
-  addr = (addr + alignMask) & ~alignMask;
-  std::uintptr_t  bufBytes = ObjectBuffers::ObjBuf::minCapacity();
-  std::uintptr_t  endAddr = std::max< std::uintptr_t >(addr0 + bufBytes, addr);
-  std::uintptr_t  bytesRequired = std::uintptr_t(nBytes);
-  if ((endAddr - addr) < bytesRequired) [[unlikely]]
-  {
-    bufBytes = std::max< std::uintptr_t >(bufBytes, bytesRequired + alignBytes);
-    buf = objectBuffer.allocateBuffer(size_t(bufBytes));
-    addr0 = reinterpret_cast< std::uintptr_t >(buf->data());
-    addr = (addr0 + alignMask) & ~alignMask;
-  }
-  buf->bytesUsed = size_t((addr + bytesRequired) - addr0);
-  return reinterpret_cast< unsigned char * >(addr);
 }
 
 const std::uint8_t BSMaterialsCDB::cdbObjectSizeAlignTable[38] =
@@ -854,10 +803,7 @@ void BSMaterialsCDB::clear()
   storedStrings = nullptr;
   matFileObjectMap = nullptr;
   for (size_t i = 0; i < 3; i++)
-  {
-    objectBuffers[i].~ObjectBuffers();
-    (void) new(&(objectBuffers[i])) ObjectBuffers();
-  }
+    objectBuffers[i].clear();
   classes = reinterpret_cast< CDBClassDef * >(
                 allocateSpace(sizeof(CDBClassDef) * (classHashMask + 1),
                               alignof(CDBClassDef)));

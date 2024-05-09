@@ -165,42 +165,23 @@ class BSMaterialsCDB
     stringHashMask = 0x000FFFFF,
     objectHashMask = 0x001FFFFF
   };
-  struct ObjectBuffers
-  {
-    struct ObjBuf
-    {
-      size_t  bytesUsed;
-      ObjBuf  *prv;
-      inline unsigned char *data()
-      {
-        return (reinterpret_cast< unsigned char * >(this) + sizeof(ObjBuf));
-      }
-      static inline size_t minCapacity()
-      {
-        return 65536;
-      }
-    };
-    ObjBuf  *lastBuf;
-    ObjBuf *allocateBuffer(size_t capacity);
-    ObjectBuffers()
-      : lastBuf(nullptr)
-    {
-      allocateBuffer(ObjBuf::minCapacity());
-    }
-    ~ObjectBuffers();
-  };
   static const std::uint8_t cdbObjectSizeAlignTable[38];
   CDBClassDef     *classes;             // classHashMask + 1 elements
   MaterialObject  **objectTablePtr;
   size_t          objectTableSize;
   const char      **storedStrings;      // stringHashMask + 1 elements
   MaterialObject  **matFileObjectMap;   // objectHashMask + 1 elements
-  ObjectBuffers   objectBuffers[3];     // for align bytes <= 2, 4 and >= 8
+  AllocBuffers    objectBuffers[3];     // for align bytes <= 2, 4 and >= 8
   MaterialComponent& findComponent(MaterialObject& o,
                                    std::uint32_t key, std::uint32_t className);
   inline MaterialObject *findObject(std::uint32_t dbID);
   inline const MaterialObject *findObject(std::uint32_t dbID) const;
-  void *allocateSpace(size_t nBytes, size_t alignBytes = 16);
+  inline void *allocateSpace(size_t nBytes, size_t alignBytes = 16)
+  {
+    size_t  n = size_t(std::bit_width(std::uintptr_t(alignBytes)));
+    n = std::min< size_t >(std::max< size_t >(n, 2), 4) - 2;
+    return objectBuffers[n].allocateSpace(nBytes, alignBytes);
+  }
   CDBObject *allocateObject(std::uint32_t itemType, const CDBClassDef *classDef,
                             size_t elementCnt = 0);
   void copyObject(CDBObject*& o);

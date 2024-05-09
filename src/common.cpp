@@ -2,6 +2,8 @@
 #include "common.hpp"
 #include "filebuf.hpp"
 
+#include <new>
+
 const char * FO76UtilsError::defaultErrorMessage = "unknown error";
 
 void FO76UtilsError::storeMessage(const char *msg, bool copyFlag) noexcept
@@ -387,4 +389,74 @@ const std::uint32_t crc32Table_82F63B78[256] =
   0xBE2DA0A5, 0x4C4623A6, 0x5F16D052, 0xAD7D5351
 };
 #endif
+
+AllocBuffers::DataBuf * AllocBuffers::allocateBuffer(size_t nBytes)
+{
+  DataBuf *prv = lastBuf;
+  std::uint32_t minCapacity = prv->minCapacity << 1;
+  minCapacity = std::max< std::uint32_t >(minCapacity, 4096U);
+  minCapacity = std::min< std::uint32_t >(minCapacity, 262144U);
+  nBytes = std::max< size_t >(nBytes, minCapacity);
+  void    *tmp = std::calloc(sizeof(DataBuf) + nBytes, sizeof(unsigned char));
+  if (!tmp)
+    throw std::bad_alloc();
+  lastBuf = reinterpret_cast< DataBuf * >(tmp);
+  lastBuf->bytesUsed = 0;
+  lastBuf->minCapacity = minCapacity;
+  lastBuf->prv = prv;
+  return lastBuf;
+}
+
+AllocBuffers::AllocBuffers()
+{
+  void    *tmp = std::malloc(sizeof(DataBuf));
+  if (!tmp)
+    throw std::bad_alloc();
+  lastBuf = reinterpret_cast< DataBuf * >(tmp);
+  lastBuf->bytesUsed = 0;
+  lastBuf->minCapacity = 0;
+  lastBuf->prv = nullptr;
+}
+
+AllocBuffers::~AllocBuffers()
+{
+  for (DataBuf *p = lastBuf; p; )
+  {
+    DataBuf *prv = p->prv;
+    std::free(p);
+    p = prv;
+  }
+}
+
+void * AllocBuffers::allocateSpace(size_t nBytes, size_t alignBytes)
+{
+  if (nBytes > 0x7FFFFF00U)
+    throw std::bad_alloc();
+  DataBuf *buf = lastBuf;
+  std::uintptr_t  alignMask = std::uintptr_t(alignBytes - 1);
+  std::uintptr_t  addr0 = reinterpret_cast< std::uintptr_t >(buf->data());
+  std::uintptr_t  addr = addr0 + std::uintptr_t(buf->bytesUsed);
+  addr = (addr + alignMask) & ~alignMask;
+  std::uintptr_t  bufBytes = buf->minCapacity;
+  std::uintptr_t  endAddr = std::max< std::uintptr_t >(addr0 + bufBytes, addr);
+  std::uintptr_t  bytesRequired = std::uintptr_t(nBytes);
+  if ((endAddr - addr) < bytesRequired) [[unlikely]]
+  {
+    buf = allocateBuffer(size_t(bytesRequired + alignBytes));
+    addr0 = reinterpret_cast< std::uintptr_t >(buf->data());
+    addr = (addr0 + alignMask) & ~alignMask;
+  }
+  buf->bytesUsed = size_t((addr + bytesRequired) - addr0);
+  return reinterpret_cast< unsigned char * >(addr);
+}
+
+void AllocBuffers::clear()
+{
+  DataBuf *prv;
+  while ((prv = lastBuf->prv) != nullptr)
+  {
+    std::free(lastBuf);
+    lastBuf = prv;
+  }
+}
 
