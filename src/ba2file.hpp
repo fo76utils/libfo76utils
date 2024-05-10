@@ -16,35 +16,29 @@ class BA2File
     unsigned int  unpackedSize;         // not valid for compressed BSA files
     //    < 0: loose file
     //      0: BA2 general
-    //      1: BA2 textures
+    //      1: BA2 textures (fileData points to texture info + 13 (numChunks))
     //      2: BA2 textures in raw LZ4 format (Starfield)
     //     64: Morrowind BSA
     // >= 103: Oblivion+ BSA (version + flags, 0x40000000: compressed,
     //         0x0100: full name)
     int           archiveType;
-    unsigned int  archiveFile;          // archiveFiles[] index
-    std::uint32_t hashValue;            // 32-bit hash value
-    std::int32_t  prv;                  // index of previous file with same hash
-    std::string   fileName;             // full path in archive
     // NOTE: for loose files, if NIFSKOPE_VERSION is defined, archiveFile
     // is 0xFFFFFFFF, and fileData and packedSize are the full path on the
     // file system and its length, respectively
-    inline FileInfo(const std::string& fName, std::uint32_t h, std::int32_t p);
-    inline bool compare(const std::string& fName, std::uint32_t h) const;
+    unsigned int  archiveFile;          // archiveFiles[] index
+    std::uint64_t hashValue;            // hash calculated from fileName
+    std::string_view  fileName;         // full path in archive, null-terminated
   };
  protected:
-  enum
-  {
-    fileInfoBufShift = 12,
-    fileInfoBufMask = 0x0FFF,
-    nameHashMask = 0x001FFFFF
-  };
-  std::vector< std::int32_t >   fileMap;        // nameHashMask + 1 elements
-  std::vector< std::vector< FileInfo > >  fileInfoBufs;
+  FileInfo  **fileMap;
+  size_t  fileMapHashMask;
+  size_t  fileMapFileCnt;
+  AllocBuffers  fileInfoBufs;
   std::vector< FileBuffer * >   archiveFiles;
+  AllocBuffers  fileNameBufs;
   // User defined function that returns true if the path in 's'
   // should be included.
-  bool    (*fileFilterFunction)(void *p, const std::string& s);
+  bool    (*fileFilterFunction)(void *p, const std::string_view& s);
   void    *fileFilterFunctionData;
   static inline char fixNameCharacter(unsigned char c)
   {
@@ -56,16 +50,9 @@ class BA2File
       return '/';
     return char(c);
   }
-  inline FileInfo& getFileInfo(std::uint32_t n)
-  {
-    return fileInfoBufs[n >> fileInfoBufShift][n & fileInfoBufMask];
-  }
-  inline const FileInfo& getFileInfo(std::uint32_t n) const
-  {
-    return fileInfoBufs[n >> fileInfoBufShift][n & fileInfoBufMask];
-  }
-  static inline std::uint32_t hashFunction(const std::string& s);
-  FileInfo *addPackedFile(const std::string& fileName);
+  static inline std::uint64_t hashFunction(const std::string_view& s);
+  FileInfo *addPackedFile(const std::string_view& fileName);
+  void allocateFileMap();
   void loadBA2General(FileBuffer& buf, size_t archiveFile, size_t hdrSize);
   void loadBA2Textures(FileBuffer& buf, size_t archiveFile, size_t hdrSize);
   void loadBSAFile(FileBuffer& buf, size_t archiveFile, int archiveType);
@@ -84,32 +71,35 @@ class BA2File
   void loadArchiveFile(const char *fileName, size_t prefixLen);
   unsigned int getBSAUnpackedSize(const unsigned char*& dataPtr,
                                   const FileInfo& fd) const;
+  [[noreturn]] static void findFileError(const std::string_view& fileName);
+  void clear();
  public:
   BA2File();
   BA2File(const char *pathName,
-          bool (*fileFilterFunc)(void *p, const std::string& s) = nullptr,
+          bool (*fileFilterFunc)(void *p, const std::string_view& s) = nullptr,
           void *fileFilterFuncData = nullptr);
   BA2File(const std::vector< std::string >& pathNames,
-          bool (*fileFilterFunc)(void *p, const std::string& s) = nullptr,
+          bool (*fileFilterFunc)(void *p, const std::string_view& s) = nullptr,
           void *fileFilterFuncData = nullptr);
   // load a single archive file or directory
-  void loadArchivePath(const char *pathName,
-                       bool (*fileFilterFunc)(void *p,
-                                              const std::string& s) = nullptr,
-                       void *fileFilterFuncData = nullptr);
+  void loadArchivePath(
+      const char *pathName,
+      bool (*fileFilterFunc)(void *p, const std::string_view& s) = nullptr,
+      void *fileFilterFuncData = nullptr);
   virtual ~BA2File();
-  void getFileList(std::vector< std::string >& fileList,
+  void getFileList(std::vector< std::string_view >& fileList,
                    bool disableSorting = false,
                    bool (*fileFilterFunc)(void *p,
-                                          const std::string& s) = nullptr,
+                                          const std::string_view& s) = nullptr,
                    void *fileFilterFuncData = nullptr) const;
   // processing stops and true is returned if fileScanFunc() returns true
   bool scanFileList(bool (*fileScanFunc)(void *p, const FileInfo& fd),
                     void *fileScanFuncData = nullptr) const;
   // returns pointer to file information, or NULL if the file is not found
-  const FileInfo *findFile(const std::string& fileName) const;
+  const FileInfo *findFile(const std::string_view& fileName) const;
   // returns -1 if the file is not found
-  long getFileSize(const std::string& fileName, bool packedSize = false) const;
+  std::int64_t getFileSize(const std::string_view& fileName,
+                           bool packedSize = false) const;
  protected:
   int extractBA2Texture(std::vector< unsigned char >& buf,
                         const FileInfo& fd, int mipOffset = 0) const;
@@ -118,15 +108,19 @@ class BA2File
                     const unsigned char *p, unsigned int packedSize) const;
  public:
   void extractFile(std::vector< unsigned char >& buf,
-                   const std::string& fileName) const;
+                   const std::string_view& fileName) const;
   // returns the remaining number of mip levels to be skipped
   int extractTexture(std::vector< unsigned char >& buf,
-                     const std::string& fileName, int mipOffset = 0) const;
+                     const std::string_view& fileName, int mipOffset = 0) const;
   // extract file to buf, or get data pointer only if the file is uncompressed
   // returns the file size
   size_t extractFile(const unsigned char*& fileData,
                      std::vector< unsigned char >& buf,
-                     const std::string& fileName) const;
+                     const std::string_view& fileName) const;
+  inline size_t size() const
+  {
+    return fileMapFileCnt;
+  }
 };
 
 #endif

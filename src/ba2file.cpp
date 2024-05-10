@@ -3,6 +3,8 @@
 #include "zlib.hpp"
 #include "ba2file.hpp"
 
+#include <new>
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #if defined(_WIN32) || defined(_WIN64)
@@ -11,72 +13,74 @@
 #  include <dirent.h>
 #endif
 
-inline BA2File::FileInfo::FileInfo(
-    const std::string& fName, std::uint32_t h, std::int32_t p)
-  : fileData(nullptr),
-    packedSize(0U),
-    unpackedSize(0U),
-    archiveType(0),
-    archiveFile(0U),
-    hashValue(h),
-    prv(p),
-    fileName(fName)
+inline std::uint64_t BA2File::hashFunction(const std::string_view& s)
 {
+  size_t  l = s.length();
+  std::uint64_t h = hashFunctionUInt32(s.data(), l);
+  h = h | (std::uint64_t(l) << 32);
+  return h;
 }
 
-inline bool BA2File::FileInfo::compare(
-    const std::string& fName, std::uint32_t h) const
-{
-  return (hashValue == h && fileName == fName);
-}
-
-inline std::uint32_t BA2File::hashFunction(const std::string& s)
-{
-  std::uint64_t h = 0xFFFFFFFFU;
-  size_t  n = s.length();
-  const std::uint8_t  *p = reinterpret_cast< const std::uint8_t * >(s.c_str());
-  for ( ; n >= 8; n = n - 8, p = p + 8)
-    hashFunctionUInt64(h, FileBuffer::readUInt64Fast(p));
-  if (n)
-  {
-    std::uint64_t m = 0U;
-    if (n & 1)
-      m = p[n & 6];
-    if (n & 2)
-      m = (m << 16) | FileBuffer::readUInt16Fast(p + (n & 4));
-    if (n & 4)
-      m = (m << 32) | FileBuffer::readUInt32Fast(p);
-    hashFunctionUInt64(h, m);
-  }
-  return std::uint32_t(h & 0xFFFFFFFFU);
-}
-
-BA2File::FileInfo * BA2File::addPackedFile(const std::string& fileName)
+BA2File::FileInfo * BA2File::addPackedFile(const std::string_view& fileName)
 {
   if (fileFilterFunction)
   {
     if (!fileFilterFunction(fileFilterFunctionData, fileName))
       return nullptr;
   }
-  std::uint32_t h = hashFunction(fileName);
-  for (std::int32_t n = fileMap[h & nameHashMask]; n >= 0; )
+  std::uint64_t h = hashFunction(fileName);
+  size_t  m = fileMapHashMask;
+  size_t  n;
+  for (n = size_t(h & m); fileMap[n]; n = (n + 1) & m)
   {
-    FileInfo& fd = getFileInfo(std::uint32_t(n));
-    if (fd.compare(fileName, h))
-      return &fd;
-    n = fd.prv;
+    if (fileMap[n]->hashValue == h && fileMap[n]->fileName == fileName)
+      break;
   }
-  if (fileInfoBufs.size() < 1 ||
-      fileInfoBufs.back().size() >= (fileInfoBufMask + 1U))
+  FileInfo  *fd = fileMap[n];
+  if (fd) [[unlikely]]
+    return fd;
+  fd = reinterpret_cast< FileInfo * >(
+           fileInfoBufs.allocateSpace(sizeof(FileInfo), alignof(FileInfo)));
+  fd->fileData = nullptr;
+  fd->hashValue = h;
+  size_t  nameLen = fileName.length();
+  char    *s = reinterpret_cast< char * >(
+                   fileNameBufs.allocateSpace(
+                       sizeof(char) * (nameLen + 1), alignof(char)));
+  if (nameLen) [[likely]]
+    std::memcpy(s, fileName.data(), nameLen);
+  (void) new(&(fd->fileName)) std::string_view(s, nameLen);
+  fileMap[n] = fd;
+  fileMapFileCnt++;
+  if ((fileMapFileCnt * 3UL) > (m << 1)) [[unlikely]]
+    allocateFileMap();                  // keep load factor below 2/3
+  return fd;
+}
+
+void BA2File::allocateFileMap()
+{
+  size_t  m = (fileMapHashMask << 1) | 0x0FFF;
+  void    *p = std::calloc(m + 1, sizeof(FileInfo *));
+  if (!p)
+    throw std::bad_alloc();
+  FileInfo  **q = reinterpret_cast< FileInfo ** >(p);
+#if !(defined(__i386__) || defined(__x86_64__) || defined(__x86_64))
+  for (size_t i = 0; i <= m; i++)
+    q[i] = nullptr;
+#endif
+  size_t  n = fileMapHashMask + size_t(bool(fileMapHashMask));
+  for (size_t i = 0; i < n; i++)
   {
-    fileInfoBufs.emplace_back();
-    fileInfoBufs.back().reserve(fileInfoBufMask + 1U);
+    if (!fileMap[i])
+      continue;
+    size_t  j = size_t(fileMap[i]->hashValue & m);
+    while (q[j])
+      j = (j + 1) & m;
+    q[j] = fileMap[i];
   }
-  std::vector< FileInfo >&  fdBuf = fileInfoBufs.back();
-  size_t  n = ((fileInfoBufs.size() - 1) << fileInfoBufShift) | fdBuf.size();
-  fdBuf.emplace_back(fileName, h, fileMap[h & nameHashMask]);
-  fileMap[h & nameHashMask] = std::int32_t(n);
-  return &(fdBuf.back());
+  std::free(fileMap);
+  fileMap = q;
+  fileMapHashMask = m;
 }
 
 void BA2File::loadBA2General(
@@ -91,29 +95,29 @@ void BA2File::loadBA2General(
   std::string fileName;
   for (size_t i = 0; i < fileCnt; i++)
   {
-    fileName.clear();
     size_t  nameLen = buf.readUInt16();
     if ((buf.getPosition() + nameLen) > buf.size())
       errorMessage("end of input file");
-    while (nameLen--)
-      fileName += fixNameCharacter(buf.readUInt8Fast());
+    fileName.resize(nameLen);
+    for (size_t j = 0; j < nameLen; j++)
+      fileName[j] = fixNameCharacter(buf.readUInt8Fast());
     fileList[i] = addPackedFile(fileName);
   }
   for (size_t i = 0; i < fileCnt; i++)
   {
     if (!fileList[i])
       continue;
-    FileInfo& fileInfo = *(fileList[i]);
+    FileInfo& fd = *(fileList[i]);
     buf.setPosition(i * 36 + hdrSize);
     (void) buf.readUInt32Fast();        // unknown
     (void) buf.readUInt32Fast();        // extension
     (void) buf.readUInt32Fast();        // unknown
     (void) buf.readUInt32Fast();        // flags
-    fileInfo.fileData = buf.data() + buf.readUInt64();
-    fileInfo.packedSize = buf.readUInt32Fast();
-    fileInfo.unpackedSize = buf.readUInt32Fast();
-    fileInfo.archiveType = 0;
-    fileInfo.archiveFile = (unsigned int) archiveFile;
+    fd.fileData = buf.data() + buf.readUInt64();
+    fd.packedSize = buf.readUInt32Fast();
+    fd.unpackedSize = buf.readUInt32Fast();
+    fd.archiveType = 0;
+    fd.archiveFile = (unsigned int) archiveFile;
     (void) buf.readUInt32Fast();        // 0xBAADF00D
   }
 }
@@ -130,12 +134,12 @@ void BA2File::loadBA2Textures(
   std::string fileName;
   for (size_t i = 0; i < fileCnt; i++)
   {
-    fileName.clear();
     size_t  nameLen = buf.readUInt16();
     if ((buf.getPosition() + nameLen) > buf.size())
       errorMessage("end of input file");
-    while (nameLen--)
-      fileName += fixNameCharacter(buf.readUInt8Fast());
+    fileName.resize(nameLen);
+    for (size_t j = 0; j < nameLen; j++)
+      fileName[j] = fixNameCharacter(buf.readUInt8Fast());
     fileList[i] = addPackedFile(fileName);
   }
   buf.setPosition(hdrSize);
@@ -170,12 +174,12 @@ void BA2File::loadBA2Textures(
     }
     if (fileList[i])
     {
-      FileInfo& fileInfo = *(fileList[i]);
-      fileInfo.fileData = fileData;
-      fileInfo.packedSize = packedSize;
-      fileInfo.unpackedSize = unpackedSize;
-      fileInfo.archiveType = (hdrSize != 36 ? 1 : 2);
-      fileInfo.archiveFile = (unsigned int) archiveFile;
+      FileInfo& fd = *(fileList[i]);
+      fd.fileData = fileData;
+      fd.packedSize = packedSize;
+      fd.unpackedSize = unpackedSize;
+      fd.archiveType = (hdrSize != 36 ? 1 : 2);
+      fd.archiveFile = (unsigned int) archiveFile;
     }
   }
 }
@@ -238,20 +242,19 @@ void BA2File::loadBSAFile(FileBuffer& buf, size_t archiveFile, int archiveType)
       unsigned char c;
       while ((c = buf.readUInt8()) != '\0')
         fileName += fixNameCharacter(c);
-      FileInfo  *fileInfo = addPackedFile(fileName);
-      if (fileInfo)
+      FileInfo  *fd = addPackedFile(fileName);
+      if (fd)
       {
-        fileInfo->fileData = buf.data() + size_t(fileList[n] >> 32);
-        fileInfo->packedSize = 0;
-        fileInfo->unpackedSize = (unsigned int) (fileList[n] & 0x7FFFFFFFU);
-        fileInfo->archiveType =
-            archiveType
-            | int((flags & 0x0100) | (fileInfo->unpackedSize & 0x40000000));
-        fileInfo->archiveFile = archiveFile;
-        if (fileInfo->unpackedSize & 0x40000000)
+        fd->fileData = buf.data() + size_t(fileList[n] >> 32);
+        fd->packedSize = 0;
+        fd->unpackedSize = (unsigned int) (fileList[n] & 0x7FFFFFFFU);
+        fd->archiveType = archiveType | int((flags & 0x0100)
+                          | (fd->unpackedSize & 0x40000000));
+        fd->archiveFile = archiveFile;
+        if (fd->unpackedSize & 0x40000000)
         {
-          fileInfo->packedSize = fileInfo->unpackedSize & 0x3FFFFFFFU;
-          fileInfo->unpackedSize = 0;
+          fd->packedSize = fd->unpackedSize & 0x3FFFFFFFU;
+          fd->unpackedSize = 0;
         }
       }
     }
@@ -282,18 +285,18 @@ void BA2File::loadTES3Archive(FileBuffer& buf, size_t archiveFile)
     unsigned char c;
     while ((c = buf.readUInt8()) != '\0')
       fileName += fixNameCharacter(c);
-    FileInfo  *fileInfo = addPackedFile(fileName);
-    if (fileInfo)
+    FileInfo  *fd = addPackedFile(fileName);
+    if (fd)
     {
       std::uint64_t dataOffs = fileDataOffs + (fileList[i].first >> 32);
       std::uint32_t dataSize = std::uint32_t(fileList[i].first & 0xFFFFFFFFU);
       if ((dataOffs + dataSize) > buf.size())
         errorMessage("invalid file data offset in Morrowind BSA file");
-      fileInfo->fileData = buf.data() + dataOffs;
-      fileInfo->packedSize = 0;
-      fileInfo->unpackedSize = dataSize;
-      fileInfo->archiveType = 64;
-      fileInfo->archiveFile = archiveFile;
+      fd->fileData = buf.data() + dataOffs;
+      fd->packedSize = 0;
+      fd->unpackedSize = dataSize;
+      fd->archiveType = 64;
+      fd->archiveFile = archiveFile;
     }
   }
 }
@@ -327,30 +330,25 @@ bool BA2File::loadFile(const char *fileName, size_t nameLen, size_t prefixLen,
     fileName2.erase(0, 3);
   if (fileName2.empty())
     return false;
-  FileInfo  *fileInfo = addPackedFile(fileName2);
-  if (!fileInfo)
+  FileInfo  *fd = addPackedFile(fileName2);
+  if (!fd)
     return false;
 #ifdef NIFSKOPE_VERSION
-  if (fileInfoBufs.size() < 1 ||
-      fileInfoBufs.back().size() >= (fileInfoBufMask + 1U))
-  {
-    fileInfoBufs.emplace_back();
-    fileInfoBufs.back().reserve(fileInfoBufMask + 1U);
-  }
-  std::vector< FileInfo >&  fdBuf = fileInfoBufs.back();
-  fdBuf.emplace_back(std::string(fileName), 0U, 0);
-  fileInfo->fileData =
-      reinterpret_cast< const unsigned char * >(fdBuf.back().fileName.c_str());
-  fileInfo->packedSize = (unsigned int) nameLen;
-  fileInfo->unpackedSize = (unsigned int) fileSize;
-  fileInfo->archiveType = -0x80000000;
-  fileInfo->archiveFile = 0xFFFFFFFFU;
+  unsigned char *fsPath =
+      reinterpret_cast< unsigned char * >(
+          fileNameBufs.allocateSpace(nameLen + 1, alignof(unsigned char)));
+  std::memcpy(fsPath, fileName, nameLen + 1);
+  fd->fileData = fsPath;
+  fd->packedSize = (unsigned int) nameLen;
+  fd->unpackedSize = (unsigned int) fileSize;
+  fd->archiveType = -0x80000000;
+  fd->archiveFile = 0xFFFFFFFFU;
 #else
-  fileInfo->fileData = buf.data();
-  fileInfo->packedSize = 0;
-  fileInfo->unpackedSize = (unsigned int) buf.size();
-  fileInfo->archiveType = -0x80000000;
-  fileInfo->archiveFile = (unsigned int) archiveFile;
+  fd->fileData = buf.data();
+  fd->packedSize = 0;
+  fd->unpackedSize = (unsigned int) buf.size();
+  fd->archiveType = -0x80000000;
+  fd->archiveFile = (unsigned int) archiveFile;
 #endif
   return true;
 }
@@ -752,37 +750,75 @@ unsigned int BA2File::getBSAUnpackedSize(const unsigned char*& dataPtr,
   return unpackedSize;
 }
 
+[[noreturn]] void BA2File::findFileError(const std::string_view& fileName)
+{
+  std::string s(fileName);
+  throw FO76UtilsError("file %s not found in archive", s.c_str());
+}
+
+void BA2File::clear()
+{
+  for (size_t i = 0; i < archiveFiles.size(); i++)
+    delete archiveFiles[i];
+  std::free(fileMap);
+}
+
 BA2File::BA2File()
-  : fileMap(size_t(nameHashMask + 1), std::int32_t(-1)),
+  : fileMap(nullptr),
+    fileMapHashMask(0),
+    fileMapFileCnt(0),
     fileFilterFunction(nullptr),
     fileFilterFunctionData(nullptr)
 {
+  allocateFileMap();
 }
 
 BA2File::BA2File(const char *pathName,
-                 bool (*fileFilterFunc)(void *p, const std::string& s),
+                 bool (*fileFilterFunc)(void *p, const std::string_view& s),
                  void *fileFilterFuncData)
-  : fileMap(size_t(nameHashMask + 1), std::int32_t(-1)),
+  : fileMap(nullptr),
+    fileMapHashMask(0),
+    fileMapFileCnt(0),
     fileFilterFunction(fileFilterFunc),
     fileFilterFunctionData(fileFilterFuncData)
 {
-  loadArchiveFile(pathName, 0);
+  allocateFileMap();
+  try
+  {
+    loadArchiveFile(pathName, 0);
+  }
+  catch (...)
+  {
+    clear();
+    throw;
+  }
 }
 
 BA2File::BA2File(const std::vector< std::string >& pathNames,
-                 bool (*fileFilterFunc)(void *p, const std::string& s),
+                 bool (*fileFilterFunc)(void *p, const std::string_view& s),
                  void *fileFilterFuncData)
-  : fileMap(size_t(nameHashMask + 1), std::int32_t(-1)),
+  : fileMap(nullptr),
+    fileMapHashMask(0),
+    fileMapFileCnt(0),
     fileFilterFunction(fileFilterFunc),
     fileFilterFunctionData(fileFilterFuncData)
 {
-  for (size_t i = 0; i < pathNames.size(); i++)
-    loadArchiveFile(pathNames[i].c_str(), 0);
+  allocateFileMap();
+  try
+  {
+    for (size_t i = 0; i < pathNames.size(); i++)
+      loadArchiveFile(pathNames[i].c_str(), 0);
+  }
+  catch (...)
+  {
+    clear();
+    throw;
+  }
 }
 
 void BA2File::loadArchivePath(
     const char *pathName,
-    bool (*fileFilterFunc)(void *p, const std::string& s),
+    bool (*fileFilterFunc)(void *p, const std::string_view& s),
     void *fileFilterFuncData)
 {
   fileFilterFunction = fileFilterFunc;
@@ -792,31 +828,38 @@ void BA2File::loadArchivePath(
 
 BA2File::~BA2File()
 {
-  for (size_t i = 0; i < archiveFiles.size(); i++)
-    delete archiveFiles[i];
+  clear();
 }
 
 void BA2File::getFileList(
-    std::vector< std::string >& fileList, bool disableSorting,
-    bool (*fileFilterFunc)(void *p, const std::string& s),
+    std::vector< std::string_view >& fileList, bool disableSorting,
+    bool (*fileFilterFunc)(void *p, const std::string_view& s),
     void *fileFilterFuncData) const
 {
   fileList.clear();
-  for (const auto& i : fileInfoBufs)
+  size_t  m = fileMapHashMask;
+  if (!fileFilterFunc)
   {
-    if (!fileFilterFunc)
+    size_t  n = fileMapFileCnt;
+    fileList.resize(n);
+    size_t  j = 0;
+    for (size_t i = 0; j < n && i <= m; i++)
     {
-      for (const auto& fd : i)
-        fileList.emplace_back(fd.fileName);
+      if (!fileMap[i])
+        continue;
+      fileList[j] = fileMap[i]->fileName;
+      j++;
     }
-    else
+  }
+  else
+  {
+    for (size_t i = 0; i <= m; i++)
     {
-      for (const auto& fd : i)
-      {
-        const std::string&  s = fd.fileName;
-        if (fileFilterFunc(fileFilterFuncData, s))
-          fileList.emplace_back(s);
-      }
+      if (!fileMap[i])
+        continue;
+      const std::string_view& s = fileMap[i]->fileName;
+      if (fileFilterFunc(fileFilterFuncData, s))
+        fileList.push_back(s);
     }
   }
   if (fileList.size() > 1 && !disableSorting)
@@ -827,49 +870,48 @@ bool BA2File::scanFileList(
     bool (*fileScanFunc)(void *p, const FileInfo& fd),
     void *fileScanFuncData) const
 {
-  for (const auto& i : fileInfoBufs)
+  size_t  m = fileMapHashMask;
+  for (size_t i = 0; i <= m; i++)
   {
-    for (const auto& fd : i)
-    {
-      if (fileScanFunc(fileScanFuncData, fd))
-        return true;
-    }
+    if (fileMap[i] && fileScanFunc(fileScanFuncData, *(fileMap[i])))
+      return true;
   }
   return false;
 }
 
-const BA2File::FileInfo * BA2File::findFile(const std::string& fileName) const
+const BA2File::FileInfo * BA2File::findFile(
+    const std::string_view& fileName) const
 {
-  std::uint32_t h = hashFunction(fileName);
-  for (std::int32_t n = fileMap[h & nameHashMask]; n >= 0; )
+  std::uint64_t h = hashFunction(fileName);
+  size_t  m = fileMapHashMask;
+  for (size_t n = size_t(h & m); fileMap[n]; n = (n + 1) & m)
   {
-    const FileInfo& fd = getFileInfo(std::uint32_t(n));
-    if (fd.compare(fileName, h))
-      return &fd;
-    n = fd.prv;
+    if (fileMap[n]->hashValue == h && fileMap[n]->fileName == fileName)
+      return fileMap[n];
   }
   return nullptr;
 }
 
-long BA2File::getFileSize(const std::string& fileName, bool packedSize) const
+std::int64_t BA2File::getFileSize(
+    const std::string_view& fileName, bool packedSize) const
 {
   const FileInfo  *fd = findFile(fileName);
   if (!fd)
-    return -1L;
+    return -1;
   if (packedSize && fd->packedSize)
   {
 #ifdef NIFSKOPE_VERSION
     if (fd->archiveType < 0) [[unlikely]]
-      return long(fd->unpackedSize);
+      return std::int64_t(fd->unpackedSize);
 #endif
-    return long(fd->packedSize);
+    return std::int64_t(fd->packedSize);
   }
   if (fd->archiveType & 0x40000000)     // compressed BSA
   {
     const unsigned char *p = fd->fileData;
-    return long(getBSAUnpackedSize(p, *fd));
+    return std::int64_t(getBSAUnpackedSize(p, *fd));
   }
-  return long(fd->unpackedSize);
+  return std::int64_t(fd->unpackedSize);
 }
 
 int BA2File::extractBA2Texture(std::vector< unsigned char >& buf,
@@ -957,12 +999,12 @@ void BA2File::extractBlock(
 }
 
 void BA2File::extractFile(std::vector< unsigned char >& buf,
-                          const std::string& fileName) const
+                          const std::string_view& fileName) const
 {
   buf.clear();
   const FileInfo  *fdPtr = findFile(fileName);
-  if (!fdPtr)
-    throw FO76UtilsError("file %s not found in archive", fileName.c_str());
+  if (!fdPtr) [[unlikely]]
+    findFileError(fileName);
   const FileInfo& fd = *fdPtr;
   const unsigned char *p = fd.fileData;
   unsigned int  packedSize = fd.packedSize;
@@ -993,13 +1035,14 @@ void BA2File::extractFile(std::vector< unsigned char >& buf,
   extractBlock(buf, unpackedSize, fd, p, packedSize);
 }
 
-int BA2File::extractTexture(std::vector< unsigned char >& buf,
-                            const std::string& fileName, int mipOffset) const
+int BA2File::extractTexture(
+    std::vector< unsigned char >& buf,
+    const std::string_view& fileName, int mipOffset) const
 {
   buf.clear();
   const FileInfo  *fdPtr = findFile(fileName);
-  if (!fdPtr)
-    throw FO76UtilsError("file %s not found in archive", fileName.c_str());
+  if (!fdPtr) [[unlikely]]
+    findFileError(fileName);
   const FileInfo& fd = *fdPtr;
   const unsigned char *p = fd.fileData;
   unsigned int  packedSize = fd.packedSize;
@@ -1030,13 +1073,13 @@ int BA2File::extractTexture(std::vector< unsigned char >& buf,
 
 size_t BA2File::extractFile(
     const unsigned char*& fileData, std::vector< unsigned char >& buf,
-    const std::string& fileName) const
+    const std::string_view& fileName) const
 {
   fileData = nullptr;
   buf.clear();
   const FileInfo  *fdPtr = findFile(fileName);
-  if (!fdPtr)
-    throw FO76UtilsError("file %s not found in archive", fileName.c_str());
+  if (!fdPtr) [[unlikely]]
+    findFileError(fileName);
   const FileInfo& fd = *fdPtr;
   const unsigned char *p = fd.fileData;
   unsigned int  packedSize = fd.packedSize;
