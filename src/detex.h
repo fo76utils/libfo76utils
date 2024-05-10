@@ -391,7 +391,7 @@ enum {
         DETEX_MODE_MASK_ALL_MODES_ETC2_PUNCHTHROUGH = 0X1E,
         DETEX_MODE_MASK_ALL_MODES_BPTC = 0xFF,
         DETEX_MODE_MASK_ALL_MODES_BPTC_FLOAT = 0x3FFF,
-        DETEX_MODE_MASK_ALL = 0XFFFFFFFF,
+        DETEX_MODE_MASK_ALL = -1
 };
 
 /* Decompression function flags. */
