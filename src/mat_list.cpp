@@ -1165,12 +1165,12 @@ static void getStarfieldMaterialDirMap(
 struct MatFileFilterData
 {
   std::set< std::string > *materialPaths;
-  bool    (*fileFilterFunc)(void *p, const std::string& s);
+  bool    (*fileFilterFunc)(void *p, const std::string_view& s);
   void    *fileFilterFuncData;
-  inline bool addFile(const std::string& s)
+  inline bool addFile(const std::string_view& s)
   {
     if (!fileFilterFunc || fileFilterFunc(fileFilterFuncData, s))
-      materialPaths->insert(s);
+      materialPaths->emplace(s);
     return false;
   }
 };
@@ -1184,7 +1184,7 @@ static bool matFileScanFunc(void *p, const BA2File::FileInfo& fd)
 
 void CE2MaterialDB::getMaterialList(
     std::set< std::string >& materialPaths, bool excludeJSONMaterials,
-    bool (*fileFilterFunc)(void *p, const std::string& s),
+    bool (*fileFilterFunc)(void *p, const std::string_view& s),
     void *fileFilterFuncData) const
 {
   std::map< std::uint32_t, std::string >  dirNameMap;

@@ -18,9 +18,9 @@ class BSMaterialsCDB
     inline BSResourceID()
     {
     }
-    BSResourceID(const std::string& fileName);
+    BSResourceID(const std::string_view& fileName);
     // convert .mat file path or "res:dir:file:ext" format resource ID
-    void fromJSONString(const std::string& s);
+    void fromJSONString(const std::string_view& s);
     inline bool operator<(const BSResourceID& r) const
     {
       return (file < r.file || (file == r.file && ext < r.ext) ||
@@ -224,23 +224,24 @@ class BSMaterialsCDB
     clear();
     loadCDBFile(fileName);
   }
-  void loadJSONFile(const JSONReader& matFile, const char *materialPath);
+  void loadJSONFile(const JSONReader& matFile,
+                    const std::string_view& materialPath);
   void loadJSONFile(const unsigned char *fileData, size_t fileSize,
-                    const char *materialPath);
-  void loadJSONFile(const char *fileName, const char *materialPath);
+                    const std::string_view& materialPath);
+  void loadJSONFile(const char *fileName, const std::string_view& materialPath);
   void clear();
   const CDBClassDef *getClassDef(std::uint32_t type) const;
   const MaterialObject *getMaterial(BSResourceID objectID) const
   {
     return findMatFileObject(objectID);
   }
-  const MaterialObject *getMaterial(const std::string& materialPath) const
+  const MaterialObject *getMaterial(const std::string_view& materialPath) const
   {
     return findMatFileObject(BSResourceID(materialPath));
   }
   void getMaterials(std::vector< const MaterialObject * >& materials) const;
   void getJSONMaterial(std::string& jsonBuf,
-                       const std::string& materialPath) const;
+                       const std::string_view& materialPath) const;
 };
 
 inline bool BSMaterialsCDB::CDBObject::boolValue() const

@@ -3,7 +3,7 @@
 #include "ba2file.hpp"
 #include "stringdb.hpp"
 
-bool StringDB::archiveFilterFunction(void *p, const std::string& s)
+bool StringDB::archiveFilterFunction(void *p, const std::string_view& s)
 {
   std::vector< std::string >& fileNames =
       *(reinterpret_cast< std::vector< std::string > * >(p));
@@ -51,22 +51,22 @@ bool StringDB::loadFile(const BA2File& ba2File, const char *stringsPrefix)
     fileNames.push_back(tmpName);
   }
   std::vector< unsigned char >  buf;
-  std::vector< std::string >    namesFound;
+  std::vector< std::string_view > namesFound;
   ba2File.getFileList(namesFound, true);
   for (int k = 0; k < 3; k++)
   {
-    tmpName.clear();
+    std::string_view  fileName;
     for (size_t i = 0; i < namesFound.size(); i++)
     {
       if (namesFound[i].find(fileNames[k]) != std::string::npos)
       {
-        tmpName = namesFound[i];
+        fileName = namesFound[i];
         break;
       }
     }
-    if (tmpName.empty())
+    if (fileName.empty())
       continue;
-    ba2File.extractFile(buf, tmpName);
+    ba2File.extractFile(buf, fileName);
     fileBuf = buf.data();
     fileBufSize = buf.size();
     filePos = 0;

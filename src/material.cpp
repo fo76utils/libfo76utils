@@ -193,9 +193,9 @@ CE2MaterialDB::~CE2MaterialDB()
 {
 }
 
-static bool cdbFileNameFilterFunc(void *p, const std::string& s)
+static bool cdbFileNameFilterFunc(
+    [[maybe_unused]] void *p, const std::string_view& s)
 {
-  (void) p;
   return (s.ends_with(".cdb") && s.starts_with("materials/"));
 }
 
@@ -209,7 +209,7 @@ void CE2MaterialDB::loadArchives(
       clear();
     ba2File1 = &archive1;
     ba2File2 = archive2;
-    std::vector< std::string >  cdbPaths;
+    std::vector< std::string_view > cdbPaths;
     std::vector< unsigned char >  cdbBuf;
     for (size_t i = 0; i < 2; i++)
     {
@@ -246,7 +246,8 @@ void CE2MaterialDB::loadArchives(
   materialDBMutex.unlock();
 }
 
-const CE2Material * CE2MaterialDB::loadMaterial(const std::string& materialPath)
+const CE2Material * CE2MaterialDB::loadMaterial(
+    const std::string_view& materialPath)
 {
   if (materialPath.empty()) [[unlikely]]
     return nullptr;
@@ -279,7 +280,7 @@ const CE2Material * CE2MaterialDB::loadMaterial(const std::string& materialPath)
       if (jsonSize < 1 && ba2File1 && ba2File1->findFile(materialPath))
         jsonSize = ba2File1->extractFile(jsonData, jsonBuf, materialPath);
       if (jsonSize > 0)
-        BSMaterialsCDB::loadJSONFile(jsonData, jsonSize, materialPath.c_str());
+        BSMaterialsCDB::loadJSONFile(jsonData, jsonSize, materialPath);
       o = findMaterialObject(BSMaterialsCDB::getMaterial(materialPath));
       if (!(o && o->type == 1)) [[unlikely]]
         o = nullptr;

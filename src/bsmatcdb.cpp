@@ -7,7 +7,7 @@
 #define CDB_SORT_STRUCT_MEMBERS 1
 #define CDB_COPY_CONTROLLERS    0
 
-BSMaterialsCDB::BSResourceID::BSResourceID(const std::string& fileName)
+BSMaterialsCDB::BSResourceID::BSResourceID(const std::string_view& fileName)
 {
   size_t  baseNamePos = fileName.rfind('/');
   size_t  baseNamePos2 = fileName.rfind('\\');
@@ -29,7 +29,7 @@ BSMaterialsCDB::BSResourceID::BSResourceID(const std::string& fileName)
     // directory name
     for ( ; i < baseNamePos; i++)
     {
-      unsigned char c = (unsigned char) fileName.c_str()[i];
+      unsigned char c = (unsigned char) fileName.data()[i];
       if (c >= 0x41 && c <= 0x5A)       // 'A' - 'Z'
         c = c | 0x20;                   // convert to lower case
       else if (c == 0x2F)               // '/'
@@ -43,30 +43,40 @@ BSMaterialsCDB::BSResourceID::BSResourceID(const std::string& fileName)
   for ( ; i < extPos; i++)
   {
     // base name
-    unsigned char c = (unsigned char) fileName.c_str()[i];
+    unsigned char c = (unsigned char) fileName.data()[i];
     if (c >= 0x41 && c <= 0x5A)         // 'A' - 'Z'
       c = c | 0x20;                     // convert to lower case
     hashFunctionCRC32(crcValue, c);
   }
   file = crcValue;
-  i++;
-  if ((i + 3) <= fileName.length())
-    ext = FileBuffer::readUInt32Fast(fileName.c_str() + i);
-  else if ((i + 2) <= fileName.length())
-    ext = FileBuffer::readUInt16Fast(fileName.c_str() + i);
-  else if (i < fileName.length())
-    ext = (unsigned char) fileName.c_str()[i];
-  else
-    ext = 0U;
+  switch (fileName.length() - i)
+  {
+    case 0:
+    case 1:
+      ext = 0U;
+      break;
+    case 2:
+      ext = (unsigned char) fileName.data()[i + 1];
+      break;
+    case 3:
+      ext = FileBuffer::readUInt16Fast(fileName.data() + (i + 1));
+      break;
+    case 4:
+      ext = FileBuffer::readUInt32Fast(fileName.data() + i) >> 8;
+      break;
+    default:
+      ext = FileBuffer::readUInt32Fast(fileName.data() + (i + 1));
+      break;
+  }
   // convert extension to lower case
   ext = ext | ((ext >> 1) & 0x20202020U);
 }
 
-void BSMaterialsCDB::BSResourceID::fromJSONString(const std::string& s)
+void BSMaterialsCDB::BSResourceID::fromJSONString(const std::string_view& s)
 {
   if (s.length() == 30 && s[12] == ':' && s[21] == ':' && s[26] != '.')
   {
-    std::uint32_t tmp = FileBuffer::readUInt32Fast(s.c_str());
+    std::uint32_t tmp = FileBuffer::readUInt32Fast(s.data());
     if ((tmp | ((tmp >> 1) & 0x20202020)) == 0x3A736572)        // "res:"
     {
       file = 0;
@@ -1157,7 +1167,7 @@ void BSMaterialsCDB::getMaterials(
 }
 
 void BSMaterialsCDB::getJSONMaterial(
-    std::string& jsonBuf, const std::string& materialPath) const
+    std::string& jsonBuf, const std::string_view& materialPath) const
 {
   jsonBuf.clear();
   if (materialPath.empty())

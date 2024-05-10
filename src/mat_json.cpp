@@ -475,7 +475,7 @@ void BSMaterialsCDB::loadJSONItem(
 }
 
 void BSMaterialsCDB::loadJSONFile(
-    const JSONReader& matFile, const char *materialPath)
+    const JSONReader& matFile, const std::string_view& materialPath)
 {
   const JSONReader::JSONItem  *p = matFile.getData();
   if (!(p && p->type == JSONReader::JSONItemType_Object))
@@ -526,7 +526,7 @@ void BSMaterialsCDB::loadJSONFile(
     if (j == jsonObject->children.end() ||
         !j->second || j->second->type != JSONReader::JSONItemType_String)
     {
-      objectID.fromJSONString(std::string(materialPath ? materialPath : ""));
+      objectID.fromJSONString(materialPath);
     }
     else
     {
@@ -666,18 +666,19 @@ void BSMaterialsCDB::loadJSONFile(
 }
 
 void BSMaterialsCDB::loadJSONFile(
-    const unsigned char *fileData, size_t fileSize, const char *materialPath)
+    const unsigned char *fileData, size_t fileSize,
+    const std::string_view& materialPath)
 {
   JSONReader  matFile(fileData, fileSize);
   loadJSONFile(matFile, materialPath);
 }
 
 void BSMaterialsCDB::loadJSONFile(
-    const char *fileName, const char *materialPath)
+    const char *fileName, const std::string_view& materialPath)
 {
-  if (!(materialPath && *materialPath))
-    materialPath = fileName;
   JSONReader  matFile(fileName);
-  loadJSONFile(matFile, materialPath);
+  loadJSONFile(
+      matFile,
+      (!materialPath.empty() ? materialPath : std::string_view(fileName)));
 }
 
