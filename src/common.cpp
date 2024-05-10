@@ -275,22 +275,19 @@ std::uint32_t hashFunctionUInt32(const void *p, size_t nBytes)
     hashFunctionUInt64(h, tmp);
     return std::uint32_t(h);
   }
-  for ( ; (q + 16) <= endp; q = q + 16)
+  for ( ; (q + 16) < endp; q = q + 16)
   {
     hashFunctionUInt64(h, FileBuffer::readUInt64Fast(q));
     hashFunctionUInt64(h, FileBuffer::readUInt64Fast(q + 8));
   }
-  if ((q + 8) <= endp)
+  if ((q + 8) < endp)
   {
     hashFunctionUInt64(h, FileBuffer::readUInt64Fast(q));
     q = q + 8;
   }
-  if (q < endp)
-  {
-    std::uint64_t tmp = FileBuffer::readUInt64Fast(endp - 8);
-    tmp = tmp >> (unsigned char) (size_t(q - (endp - 8)) << 3);
-    hashFunctionUInt64(h, tmp);
-  }
+  std::uint64_t tmp = FileBuffer::readUInt64Fast(endp - 8);
+  tmp = tmp >> (unsigned char) (size_t(q - (endp - 8)) << 3);
+  hashFunctionUInt64(h, tmp);
   return std::uint32_t(h);
 }
 

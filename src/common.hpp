@@ -79,10 +79,7 @@ class FO76UtilsError : public std::exception
   }
 };
 
-#ifdef __GNUC__
-__attribute__ ((__noreturn__))
-#endif
-inline void errorMessage(const char *msg)
+[[noreturn]] inline void errorMessage(const char *msg)
 {
   throw FO76UtilsError(0, msg);
 }
