@@ -1164,13 +1164,13 @@ static void getStarfieldMaterialDirMap(
 
 struct MatFileFilterData
 {
-  std::set< std::string > *materialPaths;
+  std::set< std::string_view >  *materialPaths;
   bool    (*fileFilterFunc)(void *p, const std::string_view& s);
   void    *fileFilterFuncData;
   inline bool addFile(const std::string_view& s)
   {
     if (!fileFilterFunc || fileFilterFunc(fileFilterFuncData, s))
-      materialPaths->emplace(s);
+      materialPaths->insert(s);
     return false;
   }
 };
@@ -1183,7 +1183,8 @@ static bool matFileScanFunc(void *p, const BA2File::FileInfo& fd)
 }
 
 void CE2MaterialDB::getMaterialList(
-    std::set< std::string >& materialPaths, bool excludeJSONMaterials,
+    std::set< std::string_view >& materialPaths, AllocBuffers& buf,
+    bool excludeJSONMaterials,
     bool (*fileFilterFunc)(void *p, const std::string_view& s),
     void *fileFilterFuncData) const
 {
@@ -1237,8 +1238,13 @@ void CE2MaterialDB::getMaterialList(
         continue;
       tmp.insert(0, j->second);
       tmp += ".mat";
-      if (!fileFilterFunc || fileFilterFunc(fileFilterFuncData, tmp))
-        materialPaths.insert(tmp);
+      if (fileFilterFunc && !fileFilterFunc(fileFilterFuncData, tmp))
+        continue;
+      char    *s = reinterpret_cast< char * >(
+                       buf.allocateSpace(sizeof(char) * (tmp.length() + 1),
+                                         alignof(char)));
+      std::memcpy(s, tmp.c_str(), tmp.length());
+      materialPaths.emplace(s, tmp.length());
     }
   }
   if (excludeJSONMaterials)

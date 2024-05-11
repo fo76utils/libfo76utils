@@ -87,6 +87,7 @@ class BA2File
       bool (*fileFilterFunc)(void *p, const std::string_view& s) = nullptr,
       void *fileFilterFuncData = nullptr);
   virtual ~BA2File();
+  // returns a list of null-terminated paths with optional sorting and filtering
   void getFileList(std::vector< std::string_view >& fileList,
                    bool disableSorting = false,
                    bool (*fileFilterFunc)(void *p,

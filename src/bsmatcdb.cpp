@@ -12,19 +12,19 @@ BSMaterialsCDB::BSResourceID::BSResourceID(const std::string_view& fileName)
   size_t  baseNamePos = fileName.rfind('/');
   size_t  baseNamePos2 = fileName.rfind('\\');
   size_t  extPos = fileName.rfind('.');
-  if (baseNamePos == std::string::npos ||
-      (baseNamePos2 != std::string::npos && baseNamePos2 > baseNamePos))
+  if (baseNamePos == std::string_view::npos ||
+      (baseNamePos2 != std::string_view::npos && baseNamePos2 > baseNamePos))
   {
     baseNamePos = baseNamePos2;
   }
-  if (extPos == std::string::npos ||
-      (baseNamePos != std::string::npos && extPos < baseNamePos))
+  if (extPos == std::string_view::npos ||
+      (baseNamePos != std::string_view::npos && extPos < baseNamePos))
   {
     extPos = fileName.length();
   }
   size_t  i = 0;
   std::uint32_t crcValue = 0U;
-  if (baseNamePos != std::string::npos)
+  if (baseNamePos != std::string_view::npos)
   {
     // directory name
     for ( ; i < baseNamePos; i++)
