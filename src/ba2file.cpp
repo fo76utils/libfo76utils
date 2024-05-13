@@ -34,13 +34,11 @@ BA2File::FileInfo * BA2File::addPackedFile(const std::string_view& fileName)
   for (n = size_t(h & m); fileMap[n]; n = (n + 1) & m)
   {
     if (fileMap[n]->hashValue == h && fileMap[n]->fileName == fileName)
-      break;
+      return nullptr;
   }
-  FileInfo  *fd = fileMap[n];
-  if (fd) [[unlikely]]
-    return fd;
-  fd = reinterpret_cast< FileInfo * >(
-           fileInfoBufs.allocateSpace(sizeof(FileInfo), alignof(FileInfo)));
+  FileInfo  *fd =
+      reinterpret_cast< FileInfo * >(
+          fileInfoBufs.allocateSpace(sizeof(FileInfo), alignof(FileInfo)));
   fd->fileData = nullptr;
   fd->hashValue = h;
   size_t  nameLen = fileName.length();
@@ -593,16 +591,18 @@ void BA2File::loadArchivesFromDir(const char *pathName, size_t prefixLen)
     closedir(d);
     d = nullptr;
 #endif
-    for (const auto& i : fileList)
+    for (std::set< ArchiveDirListItem >::const_iterator
+             i = fileList.end(); i != fileList.begin(); )
     {
+      i--;
       fullName.resize(dirName.length());
-      fullName += i.baseName;
+      fullName += i->baseName;
 #ifdef NIFSKOPE_VERSION
-      if (i.fileSize >= 0)
+      if (i->fileSize >= 0)
       {
         // create list of loose files without opening them
         (void) loadFile(fullName.c_str(), fullName.length(),
-                        prefixLen, size_t(i.fileSize));
+                        prefixLen, size_t(i->fileSize));
       }
       else
 #endif
@@ -807,28 +807,6 @@ BA2File::BA2File(const char *pathName,
   try
   {
     loadArchiveFile(pathName, 0);
-  }
-  catch (...)
-  {
-    clear();
-    throw;
-  }
-}
-
-BA2File::BA2File(const std::vector< std::string >& pathNames,
-                 bool (*fileFilterFunc)(void *p, const std::string_view& s),
-                 void *fileFilterFuncData)
-  : fileMap(nullptr),
-    fileMapHashMask(0),
-    fileMapFileCnt(0),
-    fileFilterFunction(fileFilterFunc),
-    fileFilterFunctionData(fileFilterFuncData)
-{
-  allocateFileMap();
-  try
-  {
-    for (size_t i = 0; i < pathNames.size(); i++)
-      loadArchiveFile(pathNames[i].c_str(), 0);
   }
   catch (...)
   {

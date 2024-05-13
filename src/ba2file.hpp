@@ -77,13 +77,12 @@ class BA2File
   void clear();
  public:
   BA2File();
+  // pathName can be an archive file, directory, or loose file
   BA2File(const char *pathName,
           bool (*fileFilterFunc)(void *p, const std::string_view& s) = nullptr,
           void *fileFilterFuncData = nullptr);
-  BA2File(const std::vector< std::string >& pathNames,
-          bool (*fileFilterFunc)(void *p, const std::string_view& s) = nullptr,
-          void *fileFilterFuncData = nullptr);
-  // load a single archive file or directory
+  // load additional path(s) after construction
+  // note: files processed first have the highest precedence
   void loadArchivePath(
       const char *pathName,
       bool (*fileFilterFunc)(void *p, const std::string_view& s) = nullptr,
@@ -154,6 +153,11 @@ class BA2File
   inline size_t size() const
   {
     return fileMapFileCnt;
+  }
+  // returns the number of physical files opened
+  inline size_t getArchiveFileCnt() const
+  {
+    return archiveFiles.size();
   }
 };
 
