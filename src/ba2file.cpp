@@ -749,6 +749,13 @@ void BA2File::loadArchiveFile(const char *fileName, size_t prefixLen)
   }
   catch (...)
   {
+    size_t  m = fileMapHashMask;
+    size_t  n = archiveFiles.size();
+    for (size_t i = 0; i <= m; i++)
+    {
+      if (fileMap[i] && fileMap[i]->archiveFile == n)
+        fileMap[i] = nullptr;
+    }
     delete bufp;
     throw;
   }
