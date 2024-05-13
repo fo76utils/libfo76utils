@@ -9,7 +9,7 @@ bool StringDB::archiveFilterFunction(void *p, const std::string_view& s)
       *(reinterpret_cast< std::vector< std::string > * >(p));
   for (const auto& i : fileNames)
   {
-    if (s.find(i) != std::string::npos)
+    if (s.find(i) != std::string_view::npos)
       return true;
   }
   return false;
@@ -50,7 +50,7 @@ bool StringDB::loadFile(const BA2File& ba2File, const char *stringsPrefix)
     tmpName += stringsSuffixTable[k];
     fileNames.push_back(tmpName);
   }
-  std::vector< unsigned char >  buf;
+  BA2File::UCharArray buf;
   std::vector< std::string_view > namesFound;
   ba2File.getFileList(namesFound, true);
   for (int k = 0; k < 3; k++)
@@ -58,7 +58,7 @@ bool StringDB::loadFile(const BA2File& ba2File, const char *stringsPrefix)
     std::string_view  fileName;
     for (size_t i = 0; i < namesFound.size(); i++)
     {
-      if (namesFound[i].find(fileNames[k]) != std::string::npos)
+      if (namesFound[i].find(fileNames[k]) != std::string_view::npos)
       {
         fileName = namesFound[i];
         break;
@@ -67,8 +67,8 @@ bool StringDB::loadFile(const BA2File& ba2File, const char *stringsPrefix)
     if (fileName.empty())
       continue;
     ba2File.extractFile(buf, fileName);
-    fileBuf = buf.data();
-    fileBufSize = buf.size();
+    fileBuf = buf.data;
+    fileBufSize = buf.size;
     filePos = 0;
     size_t  stringCnt = readUInt32();
     size_t  dataSize = readUInt32();

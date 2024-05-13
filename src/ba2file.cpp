@@ -83,14 +83,14 @@ void BA2File::allocateFileMap()
   fileMapHashMask = m;
 }
 
-void BA2File::loadBA2General(
+bool BA2File::loadBA2General(
     FileBuffer& buf, size_t archiveFile, size_t hdrSize)
 {
   size_t  fileCnt = buf.readUInt32();
   size_t  nameOffs = buf.readUInt64();
   if (nameOffs > buf.size() || (fileCnt * 36ULL + hdrSize) > nameOffs)
     errorMessage("invalid BA2 file header");
-  std::vector< FileInfo * > fileList(fileCnt, nullptr);
+  std::vector< FileInfo * > fileList(fileCnt);
   buf.setPosition(nameOffs);
   std::string fileName;
   for (size_t i = 0; i < fileCnt; i++)
@@ -103,33 +103,39 @@ void BA2File::loadBA2General(
       fileName[j] = fixNameCharacter(buf.readUInt8Fast());
     fileList[i] = addPackedFile(fileName);
   }
+  bool    haveFiles = false;
   for (size_t i = 0; i < fileCnt; i++)
   {
     if (!fileList[i])
       continue;
     FileInfo& fd = *(fileList[i]);
-    buf.setPosition(i * 36 + hdrSize);
-    (void) buf.readUInt32Fast();        // unknown
-    (void) buf.readUInt32Fast();        // extension
-    (void) buf.readUInt32Fast();        // unknown
-    (void) buf.readUInt32Fast();        // flags
-    fd.fileData = buf.data() + buf.readUInt64();
-    fd.packedSize = buf.readUInt32Fast();
-    fd.unpackedSize = buf.readUInt32Fast();
+    const unsigned char *p = buf.data() + (i * 36UL + hdrSize);
+    //  0 uint32_t  CRC32 of base name without extension
+    //  4 uint32_t  extension
+    //  8 uint32_t  CRC32 of directory name
+    // 12 uint32_t  flags
+    // 16 uint64_t  data offset
+    // 24 uint32_t  packed size
+    // 28 uint32_t  unpacked size
+    // 32 uint32_t  0xBAADF00D
+    fd.fileData = buf.data() + FileBuffer::readUInt64Fast(p + 16);
+    fd.packedSize = FileBuffer::readUInt32Fast(p + 24);
+    fd.unpackedSize = FileBuffer::readUInt32Fast(p + 28);
     fd.archiveType = 0;
     fd.archiveFile = (unsigned int) archiveFile;
-    (void) buf.readUInt32Fast();        // 0xBAADF00D
+    haveFiles = true;
   }
+  return haveFiles;
 }
 
-void BA2File::loadBA2Textures(
+bool BA2File::loadBA2Textures(
     FileBuffer& buf, size_t archiveFile, size_t hdrSize)
 {
   size_t  fileCnt = buf.readUInt32();
   size_t  nameOffs = buf.readUInt64();
   if (nameOffs > buf.size() || (fileCnt * 48ULL + hdrSize) > nameOffs)
     errorMessage("invalid BA2 file header");
-  std::vector< FileInfo * > fileList(fileCnt, nullptr);
+  std::vector< FileInfo * > fileList(fileCnt);
   buf.setPosition(nameOffs);
   std::string fileName;
   for (size_t i = 0; i < fileCnt; i++)
@@ -143,48 +149,56 @@ void BA2File::loadBA2Textures(
     fileList[i] = addPackedFile(fileName);
   }
   buf.setPosition(hdrSize);
+  bool    haveFiles = false;
   for (size_t i = 0; i < fileCnt; i++)
   {
-    if ((buf.getPosition() + 24) > buf.size())
+    if ((buf.getPosition() + 24UL) > buf.size())
       errorMessage("end of input file");
-    (void) buf.readUInt32Fast();        // unknown
-    (void) buf.readUInt32Fast();        // extension ("dds\0")
-    (void) buf.readUInt32Fast();        // unknown
-    (void) buf.readUInt8Fast();         // unknown
-    const unsigned char *fileData = buf.getReadPtr();
-    size_t  chunkCnt = buf.readUInt8Fast();
-    (void) buf.readUInt16Fast();        // chunk header size
-    (void) buf.readUInt16Fast();        // texture width
-    (void) buf.readUInt16Fast();        // texture height
-    (void) buf.readUInt8Fast();         // number of mipmaps
-    (void) buf.readUInt8Fast();         // format
-    (void) buf.readUInt16Fast();        // 0x0800
+    const unsigned char *p = buf.getReadPtr();
+    //  0 uint32_t  CRC32 of base name without extension
+    //  4 uint32_t  extension ("dds\0")
+    //  8 uint32_t  CRC32 of directory name
+    // 12 uint8_t   unknown, usually 0
+    // 13 uint8_t   number of chunks (FileInfo::fileData points to this)
+    // 14 uint16_t  chunk header size (24)
+    // 16 uint16_t  texture height
+    // 18 uint16_t  texture width
+    // 20 uint8_t   number of mipmaps
+    // 21 uint8_t   DXGI format code
+    // 22 uint16_t  flags, usually 0x0800, bit 0 is set for cube maps
+    const unsigned char *fileData = p + 13;
+    size_t  chunkCnt = fileData[0];
+    if ((buf.getPosition() + std::uint64_t((chunkCnt + 1) * 24)) > buf.size())
+      errorMessage("end of input file");
+    buf.setPosition(buf.getPosition() + ((chunkCnt + 1) * 24));
+    if (!fileList[i])
+      continue;
+    FileInfo& fd = *(fileList[i]);
     unsigned int  packedSize = 0;
     unsigned int  unpackedSize = 148;
-    if ((buf.getPosition() + (chunkCnt * 24)) > buf.size())
-      errorMessage("end of input file");
     for (size_t j = 0; j < chunkCnt; j++)
     {
-      (void) buf.readUInt64();          // file offset of chunk data
-      packedSize = packedSize + buf.readUInt32Fast();
-      unpackedSize = unpackedSize + buf.readUInt32Fast();
-      (void) buf.readUInt16Fast();      // start mipmap
-      (void) buf.readUInt16Fast();      // end mipmap
-      (void) buf.readUInt32Fast();      // 0xBAADF00D
+      p = p + 24;
+      //  0 uint64_t  file offset of chunk data
+      //  8 uint32_t  packed size
+      // 12 uint32_t  unpacked size
+      // 16 uint16_t  start mipmap
+      // 18 uint16_t  end mipmap
+      // 20 uint32_t  0xBAADF00D
+      packedSize = packedSize + FileBuffer::readUInt32Fast(p + 8);
+      unpackedSize = unpackedSize + FileBuffer::readUInt32Fast(p + 12);
     }
-    if (fileList[i])
-    {
-      FileInfo& fd = *(fileList[i]);
-      fd.fileData = fileData;
-      fd.packedSize = packedSize;
-      fd.unpackedSize = unpackedSize;
-      fd.archiveType = (hdrSize != 36 ? 1 : 2);
-      fd.archiveFile = (unsigned int) archiveFile;
-    }
+    fd.fileData = fileData;
+    fd.packedSize = packedSize;
+    fd.unpackedSize = unpackedSize;
+    fd.archiveType = (hdrSize != 36 ? 1 : 2);
+    fd.archiveFile = (unsigned int) archiveFile;
+    haveFiles = true;
   }
+  return haveFiles;
 }
 
-void BA2File::loadBSAFile(FileBuffer& buf, size_t archiveFile, int archiveType)
+bool BA2File::loadBSAFile(FileBuffer& buf, size_t archiveFile, int archiveType)
 {
   unsigned int  flags = buf.readUInt32();
   if (archiveType < 104)
@@ -234,6 +248,7 @@ void BA2File::loadBSAFile(FileBuffer& buf, size_t archiveFile, int archiveType)
     errorMessage("invalid file count in BSA archive");
   n = 0;
   std::string fileName;
+  bool    haveFiles = false;
   for (size_t i = 0; i < folderCnt; i++)
   {
     for (size_t j = 0; j < folderFileCnts[i]; j++, n++)
@@ -256,12 +271,14 @@ void BA2File::loadBSAFile(FileBuffer& buf, size_t archiveFile, int archiveType)
           fd->packedSize = fd->unpackedSize & 0x3FFFFFFFU;
           fd->unpackedSize = 0;
         }
+        haveFiles = true;
       }
     }
   }
+  return haveFiles;
 }
 
-void BA2File::loadTES3Archive(FileBuffer& buf, size_t archiveFile)
+bool BA2File::loadTES3Archive(FileBuffer& buf, size_t archiveFile)
 {
   buf.setPosition(4);
   std::uint64_t fileDataOffs = buf.readUInt32();        // hash table offset
@@ -275,6 +292,7 @@ void BA2File::loadTES3Archive(FileBuffer& buf, size_t archiveFile)
     fileList[i].second = buf.readUInt32();
   size_t  nameTableOffs = buf.getPosition();
   std::string fileName;
+  bool    haveFiles = false;
   for (size_t i = 0; i < fileCnt; i++)
   {
     fileName.clear();
@@ -297,8 +315,10 @@ void BA2File::loadTES3Archive(FileBuffer& buf, size_t archiveFile)
       fd->unpackedSize = dataSize;
       fd->archiveType = 64;
       fd->archiveFile = archiveFile;
+      haveFiles = true;
     }
   }
+  return haveFiles;
 }
 
 #ifndef NIFSKOPE_VERSION
@@ -355,7 +375,8 @@ bool BA2File::loadFile(const char *fileName, size_t nameLen, size_t prefixLen,
 
 #ifdef NIFSKOPE_VERSION
 void BA2File::loadFile(
-    std::vector< unsigned char >& buf, const FileInfo& fd) const
+    void *bufPtr, unsigned char * (*allocFunc)(void *bufPtr, size_t nBytes),
+    const FileInfo& fd) const
 {
   const char  *fileName = reinterpret_cast< const char * >(fd.fileData);
   FileBuffer  f(fileName);
@@ -364,11 +385,9 @@ void BA2File::loadFile(
     throw FO76UtilsError("BA2File: unexpected change to size of loose file %s",
                          fileName);
   }
+  unsigned char *buf = allocFunc(bufPtr, fd.unpackedSize);
   if (fd.unpackedSize) [[likely]]
-  {
-    buf.resize(fd.unpackedSize);
-    std::memcpy(buf.data(), f.data(), fd.unpackedSize);
-  }
+    std::memcpy(buf, f.data(), fd.unpackedSize);
 }
 #endif
 
@@ -694,20 +713,22 @@ void BA2File::loadArchiveFile(const char *fileName, size_t prefixLen)
         archiveType = 128;
       }
     }
+    bool    haveFiles;
     switch (archiveType & 0xC1)
     {
       case 0:
-        loadBA2General(buf, archiveFile, size_t(archiveType));
+        haveFiles = loadBA2General(buf, archiveFile, size_t(archiveType));
         break;
       case 1:
-        loadBA2Textures(buf, archiveFile, size_t(archiveType & 0x3E));
+        haveFiles = loadBA2Textures(buf, archiveFile,
+                                    size_t(archiveType & 0x3E));
         break;
       case 0x40:
       case 0x41:
-        loadBSAFile(buf, archiveFile, archiveType);
+        haveFiles = loadBSAFile(buf, archiveFile, archiveType);
         break;
       case 0x80:
-        loadTES3Archive(buf, archiveFile);
+        haveFiles = loadTES3Archive(buf, archiveFile);
         break;
       default:
 #ifdef NIFSKOPE_VERSION
@@ -715,14 +736,14 @@ void BA2File::loadArchiveFile(const char *fileName, size_t prefixLen)
         (void) loadFile(fileName, nameLen, prefixLen, fileSize);
         return;
 #else
-        if (!loadFile(buf, archiveFile,
-                      fileName, nameLen, prefixLen)) [[unlikely]]
-        {
-          delete bufp;
-          return;
-        }
+        haveFiles = loadFile(buf, archiveFile, fileName, nameLen, prefixLen);
         break;
 #endif
+    }
+    if (!haveFiles)
+    {
+      delete bufp;
+      return;
     }
     archiveFiles.push_back(bufp);
   }
@@ -914,11 +935,10 @@ std::int64_t BA2File::getFileSize(
   return std::int64_t(fd->unpackedSize);
 }
 
-int BA2File::extractBA2Texture(std::vector< unsigned char >& buf,
-                               const FileInfo& fd, int mipOffset) const
+int BA2File::extractBA2Texture(
+    void *bufPtr, unsigned char * (*allocFunc)(void *bufPtr, size_t nBytes),
+    const FileInfo& fd, int mipOffset) const
 {
-  FileBuffer  fileBuf(archiveFiles[fd.archiveFile]->data(),
-                      archiveFiles[fd.archiveFile]->size());
   const unsigned char *p = fd.fileData;
   size_t  chunkCnt = p[0];
   unsigned int  height = FileBuffer::readUInt16Fast(p + 3);
@@ -926,153 +946,132 @@ int BA2File::extractBA2Texture(std::vector< unsigned char >& buf,
   int     mipCnt = p[7];
   unsigned char dxgiFormat = p[8];
   bool    isCubeMap = bool(p[9] & 1);
-  size_t  offs = size_t(p - fileBuf.data()) + 11;
-  buf.resize(148);
-  for ( ; chunkCnt-- > 0; offs = offs + 24)
+  p = p + 11;
+  // skip chunks if mipOffset > 0
+  for ( ; chunkCnt > 1; p = p + 24, chunkCnt--)
   {
-    fileBuf.setPosition(offs);
-    size_t  chunkOffset = fileBuf.readUInt64();
-    size_t  chunkSizePacked = fileBuf.readUInt32Fast();
-    size_t  chunkSizeUnpacked = fileBuf.readUInt32Fast();
-    int     chunkMipCnt = fileBuf.readUInt16Fast();
-    chunkMipCnt = int(fileBuf.readUInt16Fast()) + 1 - chunkMipCnt;
-    if (chunkMipCnt > 0 &&
-        (chunkMipCnt < mipOffset || (chunkMipCnt == mipOffset && chunkCnt > 0)))
-    {
-      do
-      {
-        mipOffset--;
-        width = (width + 1) >> 1;
-        height = (height + 1) >> 1;
-        mipCnt--;
-      }
-      while (--chunkMipCnt > 0);
-    }
-    else
-    {
-      extractBlock(buf, chunkSizeUnpacked, fd,
-                   fileBuf.data() + chunkOffset, chunkSizePacked);
-    }
+    int     chunkMipCnt = FileBuffer::readUInt16Fast(p + 16);
+    chunkMipCnt = int(FileBuffer::readUInt16Fast(p + 18)) + 1 - chunkMipCnt;
+    if (chunkMipCnt <= 0 || chunkMipCnt > mipOffset || chunkMipCnt >= mipCnt)
+      break;
+    mipOffset -= chunkMipCnt;
+    mipCnt -= chunkMipCnt;
+    width = std::max< unsigned int >(width >> std::uint8_t(chunkMipCnt), 1U);
+    height = std::max< unsigned int >(height >> std::uint8_t(chunkMipCnt), 1U);
   }
+  // calculate uncompressed size
+  size_t  unpackedSize = 148;
+  for (size_t i = 0; i < chunkCnt; i++)
+    unpackedSize += size_t(FileBuffer::readUInt32Fast(p + (i * 24 + 12)));
+  unsigned char *buf = allocFunc(bufPtr, unpackedSize);
+
   // write DDS header
-  if (!FileBuffer::writeDDSHeader(buf.data(), dxgiFormat,
+  if (!FileBuffer::writeDDSHeader(buf, dxgiFormat,
                                   int(width), int(height), mipCnt, isCubeMap))
   {
     throw FO76UtilsError("unsupported DXGI_FORMAT 0x%02X",
                          (unsigned int) dxgiFormat);
   }
+  buf = buf + 148;
+
+  const unsigned char *fileBuf = archiveFiles[fd.archiveFile]->data();
+  for ( ; chunkCnt-- > 0; p = p + 24)
+  {
+    std::uint64_t chunkOffset = FileBuffer::readUInt64Fast(p);
+    std::uint32_t chunkSizePacked = FileBuffer::readUInt32Fast(p + 8);
+    std::uint32_t chunkSizeUnpacked = FileBuffer::readUInt32Fast(p + 12);
+    extractBlock(buf, chunkSizeUnpacked,
+                 fd, fileBuf + chunkOffset, chunkSizePacked);
+    buf = buf + chunkSizeUnpacked;
+  }
+
   // return the remaining number of mip levels to be skipped
   return mipOffset;
 }
 
 void BA2File::extractBlock(
-    std::vector< unsigned char >& buf, unsigned int unpackedSize,
-    const FileInfo& fd, const unsigned char *p, unsigned int packedSize) const
+    unsigned char *buf, size_t unpackedSize,
+    const FileInfo& fd, const unsigned char *p, size_t packedSize) const
 {
-  size_t  n = buf.size();
-  buf.resize(n + unpackedSize);
   const FileBuffer& fileBuf = *(archiveFiles[fd.archiveFile]);
-  size_t  offs = size_t(p - fileBuf.data());
+  std::uint64_t offs = std::uint64_t(p - fileBuf.data());
   if (!packedSize)
   {
     if (offs >= fileBuf.size() || (offs + unpackedSize) > fileBuf.size())
       errorMessage("invalid packed data offset or size");
-    std::memcpy(buf.data() + n, p, unpackedSize);
+    std::memcpy(buf, p, unpackedSize);
   }
   else
   {
     if (offs >= fileBuf.size() || (offs + packedSize) > fileBuf.size())
       errorMessage("invalid packed data offset or size");
-    if (fd.archiveType == 2) [[unlikely]]
-    {
-      n = ZLibDecompressor::decompressLZ4Raw(
-              buf.data() + n, unpackedSize, p, packedSize);
-    }
+    size_t  n;
+    if (fd.archiveType == 2)
+      n = ZLibDecompressor::decompressLZ4Raw(buf, unpackedSize, p, packedSize);
     else
-    {
-      n = ZLibDecompressor::decompressData(
-              buf.data() + n, unpackedSize, p, packedSize);
-    }
+      n = ZLibDecompressor::decompressData(buf, unpackedSize, p, packedSize);
     if (n != unpackedSize)
       errorMessage("invalid or corrupt compressed data in archive");
   }
 }
 
-void BA2File::extractFile(std::vector< unsigned char >& buf,
+void BA2File::UCharArray::reserve(size_t nBytes)
+{
+  if (nBytes > capacity)
+  {
+    void    *tmp = std::realloc(data, nBytes);
+    if (!tmp)
+      throw std::bad_alloc();
+    data = reinterpret_cast< unsigned char * >(tmp);
+    capacity = nBytes;
+  }
+}
+
+unsigned char * BA2File::UCharArray::allocFunc(void *bufPtr, size_t nBytes)
+{
+  UCharArray  *p = reinterpret_cast< UCharArray * >(bufPtr);
+  if (nBytes > p->capacity)
+  {
+    void    *tmp = std::malloc(nBytes);
+    if (!tmp)
+      throw std::bad_alloc();
+    std::free(p->data);
+    p->data = reinterpret_cast< unsigned char * >(tmp);
+    p->capacity = nBytes;
+  }
+  p->size = nBytes;
+  return p->data;
+}
+
+void BA2File::extractFile(UCharArray& buf,
                           const std::string_view& fileName) const
 {
   buf.clear();
   const FileInfo  *fdPtr = findFile(fileName);
   if (!fdPtr) [[unlikely]]
     findFileError(fileName);
-  const FileInfo& fd = *fdPtr;
-  const unsigned char *p = fd.fileData;
-  unsigned int  packedSize = fd.packedSize;
-  unsigned int  unpackedSize = fd.unpackedSize;
-  int     archiveType = fd.archiveType;
-#ifdef NIFSKOPE_VERSION
-  if (archiveType < 0) [[unlikely]]
-  {
-    loadFile(buf, fd);
-    return;
-  }
-#endif
-  if (archiveType & 0x40000100)         // BSA with compression or full names
-  {
-    unpackedSize = getBSAUnpackedSize(p, fd);
-    packedSize = packedSize - (unsigned int) (p - fd.fileData);
-  }
-  if (!unpackedSize)
-    return;
-  buf.reserve(unpackedSize);
-
-  if (archiveType == 1 || archiveType == 2)
-  {
-    (void) extractBA2Texture(buf, fd);
-    return;
-  }
-
-  extractBlock(buf, unpackedSize, fd, p, packedSize);
+  extractFile(&buf, &UCharArray::allocFunc, *fdPtr);
 }
 
 int BA2File::extractTexture(
-    std::vector< unsigned char >& buf,
-    const std::string_view& fileName, int mipOffset) const
+    UCharArray& buf, const std::string_view& fileName, int mipOffset) const
 {
   buf.clear();
   const FileInfo  *fdPtr = findFile(fileName);
   if (!fdPtr) [[unlikely]]
     findFileError(fileName);
   const FileInfo& fd = *fdPtr;
-  const unsigned char *p = fd.fileData;
-  unsigned int  packedSize = fd.packedSize;
-  unsigned int  unpackedSize = fd.unpackedSize;
-  int     archiveType = fd.archiveType;
-#ifdef NIFSKOPE_VERSION
-  if (archiveType < 0) [[unlikely]]
+  if ((fd.archiveType - 1) & ~1)
   {
-    loadFile(buf, fd);
+    // not a BA2 texture archive
+    extractFile(&buf, &UCharArray::allocFunc, fd);
     return mipOffset;
   }
-#endif
-  if (archiveType & 0x40000100)         // BSA with compression or full names
-  {
-    unpackedSize = getBSAUnpackedSize(p, fd);
-    packedSize = packedSize - (unsigned int) (p - fd.fileData);
-  }
-  if (!unpackedSize)
-    return mipOffset;
-  buf.reserve(unpackedSize);
-
-  if (archiveType == 1 || archiveType == 2)
-    return extractBA2Texture(buf, fd, mipOffset);
-
-  extractBlock(buf, unpackedSize, fd, p, packedSize);
-  return mipOffset;
+  return extractBA2Texture(&buf, &UCharArray::allocFunc, fd, mipOffset);
 }
 
 size_t BA2File::extractFile(
-    const unsigned char*& fileData, std::vector< unsigned char >& buf,
+    const unsigned char*& fileData, UCharArray& buf,
     const std::string_view& fileName) const
 {
   fileData = nullptr;
@@ -1081,41 +1080,59 @@ size_t BA2File::extractFile(
   if (!fdPtr) [[unlikely]]
     findFileError(fileName);
   const FileInfo& fd = *fdPtr;
-  const unsigned char *p = fd.fileData;
   unsigned int  packedSize = fd.packedSize;
-  unsigned int  unpackedSize = fd.unpackedSize;
   int     archiveType = fd.archiveType;
-#ifdef NIFSKOPE_VERSION
-  if (archiveType < 0) [[unlikely]]
+  if (packedSize || archiveType == 1 || archiveType == 2)
   {
-    loadFile(buf, fd);
-    fileData = buf.data();
-    return buf.size();
+    extractFile(&buf, &UCharArray::allocFunc, fd);
+    size_t  unpackedSize = buf.size;
+    if (unpackedSize) [[likely]]
+      fileData = buf.data;
+    return unpackedSize;
   }
-#endif
-  if (archiveType & 0x40000100)         // BSA with compression or full names
+
+  size_t  unpackedSize = fd.unpackedSize;
+  if (unpackedSize)
   {
-    unpackedSize = getBSAUnpackedSize(p, fd);
-    packedSize = packedSize - (unsigned int) (p - fd.fileData);
-  }
-  if (!unpackedSize)
-    return 0;
-  if (!(packedSize || archiveType == 1 || archiveType == 2))
-  {
+    const unsigned char *p = fd.fileData;
     const FileBuffer& fileBuf = *(archiveFiles[fd.archiveFile]);
     size_t  offs = size_t(p - fileBuf.data());
     if (offs >= fileBuf.size() || (offs + unpackedSize) > fileBuf.size())
       errorMessage("invalid packed data offset or size");
     fileData = p;
-    return unpackedSize;
+  }
+  return unpackedSize;
+}
+
+void BA2File::extractFile(
+    void *bufPtr, unsigned char * (*allocFunc)(void *bufPtr, size_t nBytes),
+    const FileInfo& fd) const
+{
+  int     archiveType = fd.archiveType;
+#ifdef NIFSKOPE_VERSION
+  if (archiveType < 0) [[unlikely]]
+  {
+    loadFile(bufPtr, allocFunc, fd);
+    return;
+  }
+#endif
+  if (!((archiveType - 1) & ~1))
+  {
+    (void) extractBA2Texture(bufPtr, allocFunc, fd);
+    return;
   }
 
-  buf.reserve(unpackedSize);
-  if (archiveType == 1 || archiveType == 2)
-    (void) extractBA2Texture(buf, fd);
-  else
+  const unsigned char *p = fd.fileData;
+  unsigned int  packedSize = fd.packedSize;
+  unsigned int  unpackedSize = fd.unpackedSize;
+  if (archiveType & 0x40000100)         // BSA with compression or full names
+  {
+    unpackedSize = getBSAUnpackedSize(p, fd);
+    packedSize = packedSize - (unsigned int) (p - fd.fileData);
+  }
+
+  unsigned char *buf = allocFunc(bufPtr, unpackedSize);
+  if (unpackedSize) [[likely]]
     extractBlock(buf, unpackedSize, fd, p, packedSize);
-  fileData = buf.data();
-  return buf.size();
 }
 

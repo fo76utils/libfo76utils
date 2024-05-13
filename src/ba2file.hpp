@@ -53,17 +53,19 @@ class BA2File
   static inline std::uint64_t hashFunction(const std::string_view& s);
   FileInfo *addPackedFile(const std::string_view& fileName);
   void allocateFileMap();
-  void loadBA2General(FileBuffer& buf, size_t archiveFile, size_t hdrSize);
-  void loadBA2Textures(FileBuffer& buf, size_t archiveFile, size_t hdrSize);
-  void loadBSAFile(FileBuffer& buf, size_t archiveFile, int archiveType);
-  void loadTES3Archive(FileBuffer& buf, size_t archiveFile);
+  bool loadBA2General(FileBuffer& buf, size_t archiveFile, size_t hdrSize);
+  bool loadBA2Textures(FileBuffer& buf, size_t archiveFile, size_t hdrSize);
+  bool loadBSAFile(FileBuffer& buf, size_t archiveFile, int archiveType);
+  bool loadTES3Archive(FileBuffer& buf, size_t archiveFile);
 #ifndef NIFSKOPE_VERSION
   bool loadFile(FileBuffer& buf, size_t archiveFile,
                 const char *fileName, size_t nameLen, size_t prefixLen);
 #else
   bool loadFile(const char *fileName, size_t nameLen, size_t prefixLen,
                 size_t fileSize);
-  void loadFile(std::vector< unsigned char >& buf, const FileInfo& fd) const;
+  void loadFile(
+      void *bufPtr, unsigned char * (*allocFunc)(void *bufPtr, size_t nBytes),
+      const FileInfo& fd) const;
 #endif
   static bool checkDataDirName(const char *s, size_t len);
   static size_t findPrefixLen(const char *pathName);
@@ -102,22 +104,53 @@ class BA2File
   std::int64_t getFileSize(const std::string_view& fileName,
                            bool packedSize = false) const;
  protected:
-  int extractBA2Texture(std::vector< unsigned char >& buf,
-                        const FileInfo& fd, int mipOffset = 0) const;
-  void extractBlock(std::vector< unsigned char >& buf,
-                    unsigned int unpackedSize, const FileInfo& fd,
-                    const unsigned char *p, unsigned int packedSize) const;
+  int extractBA2Texture(
+      void *bufPtr, unsigned char * (*allocFunc)(void *bufPtr, size_t nBytes),
+      const FileInfo& fd, int mipOffset = 0) const;
+  void extractBlock(
+      unsigned char *buf, size_t unpackedSize,
+      const FileInfo& fd, const unsigned char *p, size_t packedSize) const;
  public:
-  void extractFile(std::vector< unsigned char >& buf,
-                   const std::string_view& fileName) const;
+  struct UCharArray
+  {
+    unsigned char *data;
+    size_t  size;
+    size_t  capacity;
+    inline UCharArray()
+      : data(nullptr),
+        size(0),
+        capacity(0)
+    {
+    }
+    inline ~UCharArray()
+    {
+      std::free(data);
+    }
+    inline const unsigned char& operator[](size_t n) const
+    {
+      return data[n];
+    }
+    inline void clear()
+    {
+      size = 0;
+    }
+    // extend buffer if nBytes > capacity, preserving the original contents
+    void reserve(size_t nBytes);
+    // set new buffer size, and return data pointer (the data is uninitialized)
+    static unsigned char *allocFunc(void *bufPtr, size_t nBytes);
+  };
+  void extractFile(UCharArray& buf, const std::string_view& fileName) const;
   // returns the remaining number of mip levels to be skipped
-  int extractTexture(std::vector< unsigned char >& buf,
+  int extractTexture(UCharArray& buf,
                      const std::string_view& fileName, int mipOffset = 0) const;
   // extract file to buf, or get data pointer only if the file is uncompressed
   // returns the file size
-  size_t extractFile(const unsigned char*& fileData,
-                     std::vector< unsigned char >& buf,
+  size_t extractFile(const unsigned char*& fileData, UCharArray& buf,
                      const std::string_view& fileName) const;
+  // extract file using allocFunc to allocate space for the output buffer
+  void extractFile(void *bufPtr,
+                   unsigned char * (*allocFunc)(void *bufPtr, size_t nBytes),
+                   const FileInfo& fd) const;
   inline size_t size() const
   {
     return fileMapFileCnt;

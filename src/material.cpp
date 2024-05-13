@@ -210,7 +210,7 @@ void CE2MaterialDB::loadArchives(
     ba2File1 = &archive1;
     ba2File2 = archive2;
     std::vector< std::string_view > cdbPaths;
-    std::vector< unsigned char >  cdbBuf;
+    BA2File::UCharArray cdbBuf;
     for (size_t i = 0; i < 2; i++)
     {
       const BA2File *ba2File = (i == 0 ? ba2File1 : ba2File2);
@@ -272,7 +272,7 @@ const CE2Material * CE2MaterialDB::loadMaterial(
     }
     if (!o) [[unlikely]]
     {
-      std::vector< unsigned char >  jsonBuf;
+      BA2File::UCharArray jsonBuf;
       const unsigned char *jsonData = nullptr;
       size_t  jsonSize = 0;
       if (ba2File2 && ba2File2->findFile(materialPath))
