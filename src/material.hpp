@@ -87,8 +87,9 @@ struct CE2Material : public CE2MaterialObject   // object type 1
   struct Material : public CE2MaterialObject    // object type 4
   {
     FloatVector4  color;
-    // MaterialOverrideColorTypeComponent, 0 = "Multiply", 1 = "Lerp"
-    unsigned char colorMode;
+    // bit 0 = MaterialOverrideColorTypeComponent, 0: "Multiply", 1: "Lerp"
+    // bit 1 = ParamBool, 1: use vertex color as tint
+    unsigned char colorModeFlags;
     // bit 0 = is flipbook, bit 1 = loops
     unsigned char flipbookFlags;
     unsigned char flipbookColumns;

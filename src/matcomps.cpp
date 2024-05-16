@@ -937,10 +937,24 @@ void CE2MaterialDB::ComponentInfo::readParamBool(
   if (!readBool(tmp, p, 0))
     return;
   std::uint32_t i = componentData->key & 0xFFFFU;
-  if (o->type == 2 && i < CE2Material::Blender::maxBoolParams)
-    static_cast< CE2Material::Blender * >(o)->boolParams[i] = tmp;
-  else if (o->type == 1 && i == 0U)
+  if (o->type == 2)
+  {
+    if (i < CE2Material::Blender::maxBoolParams)
+      static_cast< CE2Material::Blender * >(o)->boolParams[i] = tmp;
+    return;
+  }
+  if (i != 0U)
+    return;
+  if (o->type == 1)
+  {
     static_cast< CE2Material * >(o)->setFlags(CE2Material::Flag_TwoSided, tmp);
+  }
+  else if (o->type == 4)
+  {
+    static_cast< CE2Material::Material * >(o)->colorModeFlags =
+        (static_cast< CE2Material::Material * >(o)->colorModeFlags & 1)
+        | ((unsigned char) tmp << 1);
+  }
 }
 
 // BSBind::Float3DCurveController
@@ -1985,8 +1999,12 @@ void CE2MaterialDB::ComponentInfo::readMaterialOverrideColorTypeComponent(
 {
   if (o->type != 4) [[unlikely]]
     return;
-  readEnum(static_cast< CE2Material::Material * >(o)->colorMode, p, 0,
-           "\010Multiply\004Lerp");
+  unsigned char tmp;
+  if (readEnum(tmp, p, 0, "\010Multiply\004Lerp"))
+  {
+    static_cast< CE2Material::Material * >(o)->colorModeFlags =
+        (static_cast< CE2Material::Material * >(o)->colorModeFlags & 2) | tmp;
+  }
 }
 
 // BSMaterial::Channel

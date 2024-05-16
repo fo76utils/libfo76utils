@@ -858,11 +858,12 @@ void CE2Material::Material::printObjectInfo(
 {
   CE2MaterialObject::printObjectInfo(buf, indentCnt);
   indentCnt = indentCnt + indentTabSize;
-  printToStringBuf(buf, indentCnt,
-                   "Color: %f, %f, %f, %f\n",
+  printToStringBuf(buf, indentCnt, "Color: %f, %f, %f, %f\n",
                    color[0], color[1], color[2], color[3]);
-  printToStringBuf(buf, indentCnt,
-                   "Color override mode: %s\n", colorModeNames[colorMode & 1]);
+  printToStringBuf(buf, indentCnt, "Color override mode: %s\n",
+                   colorModeNames[colorModeFlags & 1]);
+  if (colorModeFlags & 2)
+    printToStringBuf(buf, indentCnt, "Use vertex color as tint: True\n");
   if (flipbookFlags & 1)
   {
     printToStringBuf(buf, indentCnt, "Flipbook columns: %u\n",
