@@ -1386,7 +1386,6 @@ void CE2MaterialDB::ComponentInfo::readLayeredEdgeFalloffComponent(
   sp->falloffStopOpacities[1] = 0.0f;
   sp->falloffStopOpacities[2] = 0.0f;
   m->layeredEdgeFalloff = sp;
-  m->setFlags(CE2Material::Flag_LayeredEdgeFalloff, true);
   for (size_t i = 0; i < 4; i++)
   {
     if (!(p && p->type > BSReflStream::String_Unknown && i < p->childCnt &&
@@ -1414,7 +1413,11 @@ void CE2MaterialDB::ComponentInfo::readLayeredEdgeFalloffComponent(
   }
   unsigned char tmp;
   if (readUInt8(tmp, p, 4))
-    sp->activeLayersMask = tmp & 7;
+  {
+    tmp = tmp & 7;
+    sp->activeLayersMask = tmp;
+    m->setFlags(CE2Material::Flag_LayeredEdgeFalloff, bool(tmp));
+  }
   readBool(sp->useRGBFalloff, p, 5);
 }
 

@@ -72,7 +72,7 @@ BSMaterialsCDB::BSResourceID::BSResourceID(const std::string_view& fileName)
   ext = ext | ((ext >> 1) & 0x20202020U);
 }
 
-void BSMaterialsCDB::BSResourceID::fromJSONString(const std::string_view& s)
+void BSMaterialsCDB::BSResourceID::fromJSONString(std::string_view s)
 {
   if (s.length() == 30 && s[12] == ':' && s[21] == ':' && s[26] != '.')
   {
@@ -98,6 +98,12 @@ void BSMaterialsCDB::BSResourceID::fromJSONString(const std::string_view& s)
           return;
       }
     }
+  }
+  if (s.length() > 5 && (s[4] == '/' || s[4] == '\\'))
+  {
+    std::uint32_t tmp = FileBuffer::readUInt32Fast(s.data());
+    if ((tmp | 0x20202020U) == 0x61746164U)     // "data"
+      s.remove_prefix(5);
   }
   (void) new(this) BSResourceID(s);
 }
@@ -253,6 +259,8 @@ BSMaterialsCDB::CDBObject * BSMaterialsCDB::allocateObject(
     alignSize = alignof(CDBObject_Compound);
     if (childCnt > 1)
       dataSize += (sizeof(CDBObject *) * (childCnt - 1));
+    if (itemType == BSReflStream::String_BSComponentDB2_ID) [[unlikely]]
+      childCnt = 0;
   }
   else
   {
@@ -446,7 +454,6 @@ void BSMaterialsCDB::loadItem(
           if (!chunkBuf.readUInt32(objectID))
             break;
         }
-        o->childCnt = 0;
         static_cast< CDBObject_Link * >(o)->objectPtr = findObject(objectID);
       }
       return;
@@ -616,6 +623,7 @@ void BSMaterialsCDB::readAllChunks(BSReflStream& cdbFile)
       {
         std::uint32_t dbID = componentInfo[componentID].first;
         std::uint32_t key = componentInfo[componentID].second;
+        key = (key & 0xFFFFU) | (className << 16);
         MaterialObject  *i = findObject(dbID);
         if (i && className > BSReflStream::String_Unknown)
         {

@@ -20,7 +20,7 @@ class BSMaterialsCDB
     }
     BSResourceID(const std::string_view& fileName);
     // convert .mat file path or "res:dir:file:ext" format resource ID
-    void fromJSONString(const std::string_view& s);
+    void fromJSONString(std::string_view s);
     inline bool operator<(const BSResourceID& r) const
     {
       return (file < r.file || (file == r.file && ext < r.ext) ||

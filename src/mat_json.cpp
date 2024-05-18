@@ -121,8 +121,13 @@ void BSMaterialsCDB::loadJSONItem(
         objectID.fromJSONString(itemValue);
         std::map< BSResourceID, MaterialObject * >::iterator  i =
             objectMap.find(objectID);
-        if (i != objectMap.end())
-          p = i->second;
+        if (i == objectMap.end())
+        {
+          static_cast< CDBObject_Link * >(o)->objectPtr =
+              findMatFileObject(objectID);
+          return;
+        }
+        p = i->second;
       }
       static_cast< CDBObject_Link * >(o)->objectPtr = p;
       if (!(p && !p->parent))
@@ -533,8 +538,14 @@ void BSMaterialsCDB::loadJSONFile(
       objectID.fromJSONString(
           static_cast< const JSONReader::JSONString * >(j->second)->value);
     }
+    {
+      const MaterialObject  *o = findMatFileObject(objectID);
+      // only allow redefining top level layered material objects
+      if (o && !(o->persistentID.ext == 0x0074616D && !o->parent))
+        continue;
+    }
     const MaterialObject  *parentPtr = findMatFileObject(parentID);
-    if (!parentPtr)
+    if (!parentPtr || parentPtr->baseObject)
       continue;
     j = jsonObject->children.find("Components");
     if (j == jsonObject->children.end() ||
@@ -551,7 +562,7 @@ void BSMaterialsCDB::loadJSONFile(
         o = reinterpret_cast< MaterialObject * >(
                 allocateSpace(sizeof(MaterialObject), alignof(MaterialObject)));
         o->persistentID = objectID;
-        o->dbID = std::uint32_t(i + 0x01000000);
+        o->dbID = std::uint32_t(objectMap.size() + 0x01000000);
         o->baseObject = parentPtr;
         o->components = nullptr;
         o->parent = nullptr;
