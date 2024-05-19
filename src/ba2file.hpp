@@ -22,9 +22,9 @@ class BA2File
     // >= 103: Oblivion+ BSA (version + flags, 0x40000000: compressed,
     //         0x0100: full name)
     int           archiveType;
-    // NOTE: for loose files, if NIFSKOPE_VERSION is defined, archiveFile
-    // is 0xFFFFFFFF, and fileData and packedSize are the full path on the
-    // file system and its length, respectively
+    // NOTE: for loose files, archiveFile is 0xFFFFFFFF, and fileData and
+    // packedSize are the full path on the file system and its length,
+    // respectively
     unsigned int  archiveFile;          // archiveFiles[] index
     std::uint64_t hashValue;            // hash calculated from fileName
     std::string_view  fileName;         // full path in archive, null-terminated
@@ -57,16 +57,11 @@ class BA2File
   bool loadBA2Textures(FileBuffer& buf, size_t archiveFile, size_t hdrSize);
   bool loadBSAFile(FileBuffer& buf, size_t archiveFile, int archiveType);
   bool loadTES3Archive(FileBuffer& buf, size_t archiveFile);
-#ifndef NIFSKOPE_VERSION
-  bool loadFile(FileBuffer& buf, size_t archiveFile,
-                const char *fileName, size_t nameLen, size_t prefixLen);
-#else
-  bool loadFile(const char *fileName, size_t nameLen, size_t prefixLen,
+  void loadFile(const char *fileName, size_t nameLen, size_t prefixLen,
                 size_t fileSize);
   void loadFile(
       void *bufPtr, unsigned char * (*allocFunc)(void *bufPtr, size_t nBytes),
       const FileInfo& fd) const;
-#endif
   static bool checkDataDirName(const char *s, size_t len);
   static size_t findPrefixLen(const char *pathName);
   void loadArchivesFromDir(const char *pathName, size_t prefixLen);
