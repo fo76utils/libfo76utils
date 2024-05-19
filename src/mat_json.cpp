@@ -60,6 +60,18 @@ std::uint32_t BSMaterialsCDB::findJSONItemType(const std::string& s)
   return itemType;
 }
 
+static inline void addParentLink(
+    BSMaterialsCDB::MaterialObject *o, const BSMaterialsCDB::MaterialObject *p)
+{
+  for (const BSMaterialsCDB::MaterialObject *q = p; q; q = q->parent)
+  {
+    // avoid circular links
+    if (q == o)
+      return;
+  }
+  o->parent = p;
+}
+
 void BSMaterialsCDB::loadJSONItem(
     CDBObject*& o, const JSONReader::JSONItem *jsonItem, std::uint32_t itemType,
     MaterialObject *materialObject,
@@ -114,34 +126,37 @@ void BSMaterialsCDB::loadJSONItem(
         return;
       const std::string&  itemValue =
           static_cast< const JSONReader::JSONString * >(jsonItem)->value;
-      MaterialObject  *p = nullptr;
       if (!itemValue.empty())
       {
         BSResourceID  objectID;
-        objectID.fromJSONString(itemValue);
+        if (itemValue == "<this>")
+        {
+          for (const MaterialObject *p = materialObject; true; p = p->parent)
+          {
+            if (!p->parent)
+            {
+              objectID = p->persistentID;
+              break;
+            }
+          }
+        }
+        else
+        {
+          objectID.fromJSONString(itemValue);
+        }
+        const MaterialObject  *p = findMatFileObject(objectID);
         std::map< BSResourceID, MaterialObject * >::iterator  i =
             objectMap.find(objectID);
-        if (i == objectMap.end())
+        if (i != objectMap.end())
         {
-          static_cast< CDBObject_Link * >(o)->objectPtr =
-              findMatFileObject(objectID);
-          return;
+          static_cast< CDBObject_Link * >(o)->objectPtr = i->second;
+          if (!i->second->parent)
+            addParentLink(i->second, materialObject);
+          if (!p)
+            return;
         }
-        p = i->second;
+        static_cast< CDBObject_Link * >(o)->objectPtr = p;
       }
-      static_cast< CDBObject_Link * >(o)->objectPtr = p;
-      if (!(p && !p->parent))
-        return;
-      for (MaterialObject *q = materialObject; q;
-           q = const_cast< MaterialObject * >(q->parent))
-      {
-        // avoid circular links
-        if (p == q)
-          return;
-      }
-      p->parent = materialObject;
-      p->next = materialObject->children;
-      materialObject->children = p;
       return;
     }
     if (jsonItem->type != JSONReader::JSONItemType_Object)
@@ -508,6 +523,8 @@ void BSMaterialsCDB::loadJSONFile(
   std::map< BSResourceID, MaterialObject * >  objectMap;
   std::vector< MaterialObject * > objects(jsonObjects->children.size(),
                                           nullptr);
+  BSResourceID  matObjectID;
+  matObjectID.fromJSONString(materialPath);
   for (size_t i = 0; i < jsonObjects->children.size(); i++)
   {
     if (!(jsonObjects->children[i] &&
@@ -526,26 +543,20 @@ void BSMaterialsCDB::loadJSONFile(
     BSResourceID  parentID;
     parentID.fromJSONString(
         static_cast< const JSONReader::JSONString * >(j->second)->value);
-    BSResourceID  objectID;
+    BSResourceID  objectID = matObjectID;
     j = jsonObject->children.find("ID");
-    if (j == jsonObject->children.end() ||
-        !j->second || j->second->type != JSONReader::JSONItemType_String)
-    {
-      objectID.fromJSONString(materialPath);
-    }
-    else
+    if (j != jsonObject->children.end() &&
+        j->second && j->second->type == JSONReader::JSONItemType_String &&
+        static_cast< const JSONReader::JSONString * >(j->second)->value
+        != "<this>")
     {
       objectID.fromJSONString(
           static_cast< const JSONReader::JSONString * >(j->second)->value);
     }
-    {
-      const MaterialObject  *o = findMatFileObject(objectID);
-      // only allow redefining top level layered material objects
-      if (o && !(o->persistentID.ext == 0x0074616D && !o->parent))
-        continue;
-    }
+    if (!(objectID.file | objectID.ext | objectID.dir))
+      continue;
     const MaterialObject  *parentPtr = findMatFileObject(parentID);
-    if (!parentPtr || parentPtr->baseObject)
+    if (!parentPtr)
       continue;
     j = jsonObject->children.find("Components");
     if (j == jsonObject->children.end() ||
@@ -638,41 +649,105 @@ void BSMaterialsCDB::loadJSONFile(
     }
   }
 
-  // sort child objects
-  for (auto& i : objectMap)
+  // add materials to database
+  for (std::map< BSResourceID, MaterialObject * >::iterator
+           i = objectMap.begin(); i != objectMap.end(); i++)
   {
-    MaterialObject  *o = i.second;
-    if (!o->children)
-      continue;
-    bool    linksSorted;
-    do
+    MaterialObject  *o = const_cast< MaterialObject * >(
+                             findMatFileObject(i->second->persistentID));
+    if (o)
     {
-      linksSorted = true;
-      const MaterialObject  **prv = &(o->children);
-      MaterialObject  *q = const_cast< MaterialObject * >(o->children);
-      while (q && q->next)
+      if (o->parent)
       {
-        MaterialObject  *next = const_cast< MaterialObject * >(q->next);
-        if (next->dbID < q->dbID)
+        // remove old edges from this object ID
+        MaterialObject  *q = const_cast< MaterialObject * >(o->parent);
+        const MaterialObject  **prvPtr = &(q->children);
+        for (const MaterialObject *r = q->children; r; r = r->next)
         {
-          *prv = next;
-          q->next = next->next;
-          next->next = q;
-          linksSorted = false;
-          break;
+          if (r->persistentID == o->persistentID)
+            *prvPtr = r->next;
+          else
+            prvPtr = const_cast< const MaterialObject ** >(&(r->next));
         }
-        prv = &(q->next);
-        q = next;
       }
+      *o = *(i->second);
+      i->second = o;
     }
-    while (!linksSorted);
+    else
+    {
+      storeMatFileObject(i->second);
+    }
   }
 
-  // add materials to database
-  for (auto& i : objectMap)
+  // load edges
+  for (size_t i = 0; i < objects.size(); i++)
   {
-    if (i.second && !i.second->parent && i.first.ext == 0x0074616DU)
-      storeMatFileObject(i.second);                     // "mat\0"
+    if (!objects[i])
+      continue;
+    const JSONReader::JSONObject  *jsonObject =
+        static_cast< const JSONReader::JSONObject * >(jsonObjects->children[i]);
+    j = jsonObject->children.find("Edges");
+    if (j == jsonObject->children.end() ||
+        !j->second || j->second->type != JSONReader::JSONItemType_Array)
+    {
+      continue;
+    }
+
+    const JSONReader::JSONArray   *jsonEdges =
+        static_cast< const JSONReader::JSONArray * >(j->second);
+    for (size_t l = 0; l < jsonEdges->children.size(); l++)
+    {
+      if (!(jsonEdges->children[l] &&
+            jsonEdges->children[l]->type == JSONReader::JSONItemType_Object))
+      {
+        continue;
+      }
+      const JSONReader::JSONObject  *jsonEdge =
+          static_cast< const JSONReader::JSONObject * >(jsonEdges->children[l]);
+      j = jsonEdge->children.find("Type");
+      if (j == jsonEdge->children.end() ||
+          !j->second || j->second->type != JSONReader::JSONItemType_String ||
+          static_cast< const JSONReader::JSONString * >(j->second)->value
+          != "BSComponentDB2::OuterEdge")
+      {
+        continue;
+      }
+      j = jsonEdge->children.find("To");
+      if (j == jsonEdge->children.end() ||
+          !j->second || j->second->type != JSONReader::JSONItemType_String)
+      {
+        continue;
+      }
+      const std::string&  edgeToStr =
+          static_cast< const JSONReader::JSONString * >(j->second)->value;
+      BSResourceID  edgeID;
+      if (edgeToStr == "<this>")
+        edgeID = matObjectID;
+      else
+        edgeID.fromJSONString(edgeToStr);
+      if (!(edgeID.file | edgeID.ext | edgeID.dir))
+        continue;
+      const MaterialObject  *o = findMatFileObject(objects[i]->persistentID);
+      const MaterialObject  *q = findMatFileObject(edgeID);
+      if (o && q)
+      {
+        addParentLink(const_cast< MaterialObject * >(o), q);
+        break;
+      }
+    }
+  }
+
+  // create edge links
+  for (std::map< BSResourceID, MaterialObject * >::iterator
+           i = objectMap.begin(); i != objectMap.end(); i++)
+  {
+    MaterialObject  *o = i->second;
+    MaterialObject  *q = const_cast< MaterialObject * >(o->parent);
+    if (q)
+    {
+      o->next = q->children;
+      q->children = o;
+    }
   }
 }
 

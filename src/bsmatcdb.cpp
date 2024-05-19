@@ -1111,10 +1111,10 @@ void BSMaterialsCDB::dumpObject(
       printToString(s, "%s", (!o->boolValue() ? "\"false\"" : "\"true\""));
       break;
     case BSReflStream::String_Float:
-      printToString(s, "\"%f\"", o->floatValue());
+      printToString(s, "\"%.7g\"", o->floatValue());
       break;
     case BSReflStream::String_Double:
-      printToString(s, "\"%f\"", o->doubleValue());
+      printToString(s, "\"%.14g\"", o->doubleValue());
       break;
 #else
     case BSReflStream::String_Int8:
@@ -1180,7 +1180,8 @@ void BSMaterialsCDB::getJSONMaterial(
   jsonBuf.clear();
   if (materialPath.empty())
     return;
-  const MaterialObject  *i = getMaterial(materialPath);
+  BSResourceID  matObjectID(materialPath);
+  const MaterialObject  *i = getMaterial(matObjectID);
   if (!i)
     return;
   jsonBuf = "{\n  \"Objects\": [\n";
@@ -1219,14 +1220,35 @@ void BSMaterialsCDB::getJSONMaterial(
       jsonBuf[jsonBuf.length() - 1] = '\n';
     }
     printToString(jsonBuf, "      ],\n");
-    const MaterialObject  *j = i->baseObject;
     if (i->parent)
+    {
+      printToString(jsonBuf, "      \"Edges\": [\n");
+      printToString(jsonBuf, "        {\n");
+      printToString(jsonBuf, "          \"EdgeIndex\": 0,\n");
+      if (i->parent->persistentID == matObjectID)
+      {
+        printToString(jsonBuf, "          \"To\": \"<this>\",\n");
+      }
+      else
+      {
+        printToString(jsonBuf, "          \"To\": \"res:%08X:%08X:%08X\",\n",
+                      (unsigned int) i->parent->persistentID.dir,
+                      (unsigned int) i->parent->persistentID.file,
+                      (unsigned int) i->parent->persistentID.ext);
+      }
+      printToString(jsonBuf,
+                    "          \"Type\": \"BSComponentDB2::OuterEdge\"\n");
+      printToString(jsonBuf, "        }\n");
+      printToString(jsonBuf, "      ],\n");
+    }
+    if (i->persistentID != matObjectID)
     {
       printToString(jsonBuf, "      \"ID\": \"res:%08X:%08X:%08X\",\n",
                     (unsigned int) i->persistentID.dir,
                     (unsigned int) i->persistentID.file,
                     (unsigned int) i->persistentID.ext);
     }
+    const MaterialObject  *j = i->baseObject;
     const char  *parentStr = "";
     if (j)
     {
