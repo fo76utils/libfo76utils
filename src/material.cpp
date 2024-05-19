@@ -275,13 +275,25 @@ const CE2Material * CE2MaterialDB::loadMaterial(
       BA2File::UCharArray jsonBuf;
       const unsigned char *jsonData = nullptr;
       size_t  jsonSize = 0;
-      if (ba2File2 && ba2File2->findFile(materialPath))
+      const BA2File::FileInfo *fd;
+      o = findMaterialObject(BSMaterialsCDB::getMaterial(objectID));
+      // only load JSON materials that replace CDB materials from loose files
+      if (ba2File2 && (fd = ba2File2->findFile(materialPath)) != nullptr &&
+          (fd->archiveType < 0 || !(o && o->type == 1)))
+      {
         jsonSize = ba2File2->extractFile(jsonData, jsonBuf, materialPath);
-      if (jsonSize < 1 && ba2File1 && ba2File1->findFile(materialPath))
+      }
+      if (jsonSize < 1 && ba2File1 &&
+          (fd = ba2File1->findFile(materialPath)) != nullptr &&
+          (fd->archiveType < 0 || !(o && o->type == 1)))
+      {
         jsonSize = ba2File1->extractFile(jsonData, jsonBuf, materialPath);
+      }
       if (jsonSize > 0)
+      {
         BSMaterialsCDB::loadJSONFile(jsonData, jsonSize, materialPath);
-      o = findMaterialObject(BSMaterialsCDB::getMaterial(materialPath));
+        o = findMaterialObject(BSMaterialsCDB::getMaterial(objectID));
+      }
       if (!(o && o->type == 1)) [[unlikely]]
         o = nullptr;
     }
