@@ -323,7 +323,7 @@ void CE2MaterialDB::clear()
     if (!constructFlag)
       BSMaterialsCDB::clear();
     objectNameMap =
-        reinterpret_cast< CE2MaterialObject ** >(
+        reinterpret_cast< const CE2MaterialObject ** >(
             BSMaterialsCDB::allocateSpace(
                 sizeof(CE2MaterialObject *) * (matFileHashMask + 1),
                 alignof(CE2MaterialObject *)));

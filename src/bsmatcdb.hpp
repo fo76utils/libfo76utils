@@ -164,7 +164,7 @@ class BSMaterialsCDB
     classHashMask = 0x000001FF,
     stringHashMask = 0x000FFFFF,
     objectHashMask = 0x001FFFFF,
-    matFileHashMash = 0x0003FFFF
+    matFileHashMask = 0x0003FFFF
   };
   static const std::uint8_t cdbObjectSizeAlignTable[38];
   CDBClassDef     *classes;             // classHashMask + 1 elements
