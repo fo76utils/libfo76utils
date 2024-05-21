@@ -579,7 +579,7 @@ class CE2MaterialDB : public BSMaterialsCDB
     }
   };
   std::mutex  materialDBMutex;
-  // objectHashMask + 1 elements
+  // matFileHashMask + 1 elements
   CE2MaterialObject **objectNameMap;
   // *(storedStdStrings.begin()) is always an empty string
   std::set< std::string > storedStdStrings;

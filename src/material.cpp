@@ -256,7 +256,7 @@ const CE2Material * CE2MaterialDB::loadMaterial(
   hashFunctionCRC32C< std::uint64_t >(
       h, (std::uint64_t(objectID.ext) << 32) | objectID.file);
   hashFunctionCRC32C< std::uint32_t >(h, objectID.dir);
-  std::uint32_t m = objectHashMask;
+  std::uint32_t m = matFileHashMask;
   h = h & m;
   const CE2MaterialObject *o = nullptr;
   materialDBMutex.lock();
@@ -276,26 +276,25 @@ const CE2Material * CE2MaterialDB::loadMaterial(
       const unsigned char *jsonData = nullptr;
       size_t  jsonSize = 0;
       const BA2File::FileInfo *fd;
-      o = findMaterialObject(BSMaterialsCDB::getMaterial(objectID));
+      const MaterialObject  *p = BSMaterialsCDB::getMaterial(objectID);
       // only load JSON materials that replace CDB materials from loose files
       if (ba2File2 && (fd = ba2File2->findFile(materialPath)) != nullptr &&
-          (fd->archiveType < 0 || !(o && o->type == 1)))
+          (fd->archiveType < 0 || !p))
       {
         jsonSize = ba2File2->extractFile(jsonData, jsonBuf, materialPath);
       }
       if (jsonSize < 1 && ba2File1 &&
           (fd = ba2File1->findFile(materialPath)) != nullptr &&
-          (fd->archiveType < 0 || !(o && o->type == 1)))
+          (fd->archiveType < 0 || !p))
       {
         jsonSize = ba2File1->extractFile(jsonData, jsonBuf, materialPath);
       }
       if (jsonSize > 0)
-      {
         BSMaterialsCDB::loadJSONFile(jsonData, jsonSize, materialPath);
-        o = findMaterialObject(BSMaterialsCDB::getMaterial(objectID));
-      }
+      o = findMaterialObject(BSMaterialsCDB::getMaterial(objectID));
       if (!(o && o->type == 1)) [[unlikely]]
         o = nullptr;
+      objectNameMap[h] = o;
     }
   }
   catch (...)
@@ -326,9 +325,9 @@ void CE2MaterialDB::clear()
     objectNameMap =
         reinterpret_cast< CE2MaterialObject ** >(
             BSMaterialsCDB::allocateSpace(
-                sizeof(CE2MaterialObject *) * (objectHashMask + 1),
+                sizeof(CE2MaterialObject *) * (matFileHashMask + 1),
                 alignof(CE2MaterialObject *)));
-    for (size_t i = 0; i <= objectHashMask; i++)
+    for (size_t i = 0; i <= matFileHashMask; i++)
       objectNameMap[i] = nullptr;
   }
   catch (...)
