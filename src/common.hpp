@@ -333,6 +333,14 @@ class AllocBuffers
   ~AllocBuffers();
   void *allocateSpace(size_t nBytes, size_t alignBytes = 16);
   void clear();
+  template< typename T > inline T *allocateObject()
+  {
+    return reinterpret_cast< T * >(allocateSpace(sizeof(T), alignof(T)));
+  }
+  template< typename T > inline T *allocateObjects(size_t n)
+  {
+    return reinterpret_cast< T * >(allocateSpace(sizeof(T) * n, alignof(T)));
+  }
 };
 
 #endif

@@ -36,15 +36,11 @@ BA2File::FileInfo * BA2File::addPackedFile(const std::string_view& fileName)
     if (fileMap[n]->hashValue == h && fileMap[n]->fileName == fileName)
       return nullptr;
   }
-  FileInfo  *fd =
-      reinterpret_cast< FileInfo * >(
-          fileInfoBufs.allocateSpace(sizeof(FileInfo), alignof(FileInfo)));
+  FileInfo  *fd = fileInfoBufs.allocateObject< FileInfo >();
   fd->fileData = nullptr;
   fd->hashValue = h;
   size_t  nameLen = fileName.length();
-  char    *s = reinterpret_cast< char * >(
-                   fileNameBufs.allocateSpace(
-                       sizeof(char) * (nameLen + 1), alignof(char)));
+  char    *s = fileNameBufs.allocateObjects< char >(nameLen + 1);
   if (nameLen) [[likely]]
     std::memcpy(s, fileName.data(), nameLen);
   (void) new(&(fd->fileName)) std::string_view(s, nameLen);
@@ -347,8 +343,7 @@ void BA2File::loadFile(const char *fileName, size_t nameLen, size_t prefixLen,
   if (!fd)
     return;
   unsigned char *fsPath =
-      reinterpret_cast< unsigned char * >(
-          fileNameBufs.allocateSpace(nameLen + 1, alignof(unsigned char)));
+      fileNameBufs.allocateObjects< unsigned char >(nameLen + 1);
   std::memcpy(fsPath, fileName, nameLen + 1);
   fd->fileData = fsPath;
   fd->packedSize = (unsigned int) nameLen;

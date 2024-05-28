@@ -201,9 +201,7 @@ void CE2MaterialDB::ComponentInfo::readLayeredEmissivityComponent(
     return;
   CE2Material *m = static_cast< CE2Material * >(o);
   CE2Material::LayeredEmissiveSettings  *sp =
-      reinterpret_cast< CE2Material::LayeredEmissiveSettings * >(
-          cdb.allocateSpace(sizeof(CE2Material::LayeredEmissiveSettings),
-                            alignof(CE2Material::LayeredEmissiveSettings)));
+      cdb.allocateObjects< CE2Material::LayeredEmissiveSettings >(1);
   sp->layer2Index = 1;                  // "MATERIAL_LAYER_1"
   sp->layer3Index = 2;                  // "MATERIAL_LAYER_2"
   sp->blender2Index = 1;                // "BLEND_LAYER_1"
@@ -317,9 +315,7 @@ void CE2MaterialDB::ComponentInfo::readEmissiveSettingsComponent(
     return;
   CE2Material *m = static_cast< CE2Material * >(o);
   CE2Material::EmissiveSettings *sp =
-      reinterpret_cast< CE2Material::EmissiveSettings * >(
-          cdb.allocateSpace(sizeof(CE2Material::EmissiveSettings),
-                            alignof(CE2Material::EmissiveSettings)));
+      cdb.allocateObjects< CE2Material::EmissiveSettings >(1);
   sp->clipThreshold = 0.0f;
   sp->luminousEmittance = 432.0f;
   sp->emissiveTint = FloatVector4(1.0f);
@@ -502,9 +498,7 @@ void CE2MaterialDB::ComponentInfo::readDecalSettingsComponent(
     return;
   CE2Material *m = static_cast< CE2Material * >(o);
   CE2Material::DecalSettings  *sp =
-      reinterpret_cast< CE2Material::DecalSettings * >(
-          cdb.allocateSpace(sizeof(CE2Material::DecalSettings),
-                            alignof(CE2Material::DecalSettings)));
+      cdb.allocateObjects< CE2Material::DecalSettings >(1);
   sp->decalAlpha = 1.0f;
   sp->writeMask = 0x0737U;
   sp->maxParallaxSteps = 72;
@@ -572,9 +566,7 @@ void CE2MaterialDB::ComponentInfo::readWaterSettingsComponent(
     return;
   CE2Material *m = static_cast< CE2Material * >(o);
   CE2Material::WaterSettings  *sp =
-      reinterpret_cast< CE2Material::WaterSettings * >(
-          cdb.allocateSpace(sizeof(CE2Material::WaterSettings),
-                            alignof(CE2Material::WaterSettings)));
+      cdb.allocateObjects< CE2Material::WaterSettings >(1);
   m->setFlags(CE2Material::Flag_IsWater | CE2Material::Flag_AlphaBlending,
               true);
   // FIXME: find correct default water settings
@@ -697,9 +689,7 @@ void CE2MaterialDB::ComponentInfo::readEffectSettingsComponent(
     return;
   CE2Material *m = static_cast< CE2Material * >(o);
   CE2Material::EffectSettings *sp =
-      reinterpret_cast< CE2Material::EffectSettings * >(
-          cdb.allocateSpace(sizeof(CE2Material::EffectSettings),
-                            alignof(CE2Material::EffectSettings)));
+      cdb.allocateObjects< CE2Material::EffectSettings >(1);
   m->setFlags(CE2Material::Flag_IsEffect | CE2Material::Flag_AlphaBlending,
               true);
   sp->flags = CE2Material::EffectFlag_ZTest;
@@ -807,9 +797,7 @@ void CE2MaterialDB::ComponentInfo::readGlobalLayerDataComponent(
     return;
   CE2Material *m = static_cast< CE2Material * >(o);
   CE2Material::GlobalLayerData  *sp =
-      reinterpret_cast< CE2Material::GlobalLayerData * >(
-          cdb.allocateSpace(sizeof(CE2Material::GlobalLayerData),
-                            alignof(CE2Material::GlobalLayerData)));
+      cdb.allocateObjects< CE2Material::GlobalLayerData >(1);
   sp->texcoordScaleXY = 1.0f;
   sp->texcoordScaleYZ = 1.0f;
   sp->texcoordScaleXZ = 1.0f;
@@ -1370,9 +1358,7 @@ void CE2MaterialDB::ComponentInfo::readLayeredEdgeFalloffComponent(
     return;
   CE2Material *m = static_cast< CE2Material * >(o);
   CE2Material::LayeredEdgeFalloff *sp =
-      reinterpret_cast< CE2Material::LayeredEdgeFalloff * >(
-          cdb.allocateSpace(sizeof(CE2Material::LayeredEdgeFalloff),
-                            alignof(CE2Material::LayeredEdgeFalloff)));
+      cdb.allocateObjects< CE2Material::LayeredEdgeFalloff >(1);
   sp->falloffStartAngles[0] = 0.0f;
   sp->falloffStartAngles[1] = 0.0f;
   sp->falloffStartAngles[2] = 0.0f;
@@ -1437,9 +1423,7 @@ void CE2MaterialDB::ComponentInfo::readVegetationSettingsComponent(
     return;
   CE2Material *m = static_cast< CE2Material * >(o);
   CE2Material::VegetationSettings *sp =
-      reinterpret_cast< CE2Material::VegetationSettings * >(
-          cdb.allocateSpace(sizeof(CE2Material::VegetationSettings),
-                            alignof(CE2Material::VegetationSettings)));
+      cdb.allocateObjects< CE2Material::VegetationSettings >(1);
   sp->leafFrequency = 0.0f;
   sp->leafAmplitude = 0.0f;
   sp->branchFlexibility = 0.0f;
@@ -1707,9 +1691,7 @@ void CE2MaterialDB::ComponentInfo::readDetailBlenderSettingsComponent(
     return;
   CE2Material *m = static_cast< CE2Material * >(o);
   CE2Material::DetailBlenderSettings  *sp =
-      reinterpret_cast< CE2Material::DetailBlenderSettings * >(
-          cdb.allocateSpace(sizeof(CE2Material::DetailBlenderSettings),
-                            alignof(CE2Material::DetailBlenderSettings)));
+      cdb.allocateObjects< CE2Material::DetailBlenderSettings >(1);
   sp->textureReplacement = 0xFFFFFFFFU;
   sp->texturePath = &(*(cdb.storedStdStrings.cbegin()));
   sp->uvStream = nullptr;
@@ -1779,9 +1761,7 @@ void CE2MaterialDB::ComponentInfo::readTranslucencySettingsComponent(
     return;
   CE2Material *m = static_cast< CE2Material * >(o);
   CE2Material::TranslucencySettings *sp =
-      reinterpret_cast< CE2Material::TranslucencySettings * >(
-          cdb.allocateSpace(sizeof(CE2Material::TranslucencySettings),
-                            alignof(CE2Material::TranslucencySettings)));
+      cdb.allocateObjects< CE2Material::TranslucencySettings >(1);
   sp->sssWidth = 0.2f;
   sp->sssStrength = 0.2f;
   sp->transmissiveScale = 1.0f;
