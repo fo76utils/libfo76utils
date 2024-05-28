@@ -30,6 +30,14 @@ class BSMaterialsCDB
     {
       return (file == r.file && ext == r.ext && dir == r.dir);
     }
+    inline std::uint32_t hashFunction() const
+    {
+      std::uint32_t h = 0xFFFFFFFFU;
+      hashFunctionUInt32(h, file);
+      hashFunctionUInt32(h, ext);
+      hashFunctionUInt32(h, dir);
+      return h;
+    }
   };
   struct CDBClassDef
   {
@@ -161,18 +169,39 @@ class BSMaterialsCDB
  protected:
   enum
   {
-    classHashMask = 0x000001FF,
-    stringHashMask = 0x000FFFFF,
-    objectHashMask = 0x001FFFFF,
-    matFileHashMask = 0x0003FFFF
+    classHashMask = 0x000001FF
+  };
+  struct StoredStringHashMap
+  {
+    const char  **buf;
+    size_t  hashMask;
+    size_t  size;
+    StoredStringHashMap();
+    ~StoredStringHashMap();
+    void clear();
+    const char *storeString(BSMaterialsCDB& cdb, const char *s, size_t len);
+    void expandBuffer(size_t minMask = 0x0FFF);
+  };
+  struct MatObjectHashMap
+  {
+    MaterialObject  **buf;
+    size_t  hashMask;
+    size_t  size;
+    MatObjectHashMap();
+    ~MatObjectHashMap();
+    void clear();
+    void storeObject(MaterialObject *o);
+    const MaterialObject *findObject(BSResourceID objectID) const;
+    void expandBuffer();
   };
   static const std::uint8_t cdbObjectSizeAlignTable[38];
   CDBClassDef     *classes;             // classHashMask + 1 elements
   MaterialObject  **objectTablePtr;
   size_t          objectTableSize;
-  const char      **storedStrings;      // stringHashMask + 1 elements
-  MaterialObject  **matFileObjectMap;   // objectHashMask + 1 elements
+  StoredStringHashMap storedStrings;
+  MatObjectHashMap    matFileObjectMap;
   AllocBuffers    objectBuffers[3];     // for align bytes <= 2, 4 and >= 8
+  bool            isCloned = false;     // true if copyFrom() was called
   MaterialComponent& findComponent(MaterialObject& o,
                                    std::uint32_t key, std::uint32_t className);
   inline MaterialObject *findObject(std::uint32_t dbID);
@@ -183,18 +212,38 @@ class BSMaterialsCDB
     n = std::min< size_t >(std::max< size_t >(n, 2), 4) - 2;
     return objectBuffers[n].allocateSpace(nBytes, alignBytes);
   }
+  template< typename T >
+  inline T *allocateObjects(size_t n)
+  {
+    return reinterpret_cast< T * >(allocateSpace(sizeof(T) * n, alignof(T)));
+  }
   CDBObject *allocateObject(std::uint32_t itemType, const CDBClassDef *classDef,
                             size_t elementCnt = 0);
   void copyObject(CDBObject*& o);
   void copyBaseObject(MaterialObject& o);
-  const char *storeString(const char *s, size_t len);
+  void updateLinks(CDBObject& o);
+  void updateLinks(MaterialObject& o);
+  // decrement the reference count of all child objects
+  void deleteObject(CDBObject& o);
+  void deleteObject(MaterialObject& o);
+  inline const char *storeString(const char *s, size_t len)
+  {
+    return storedStrings.storeString(*this, s, len);
+  }
   void loadItem(CDBObject*& o,
                 BSReflStream& cdbFile, BSReflStream::Chunk& chunkBuf,
                 bool isDiff, std::uint32_t itemType);
   void readAllChunks(BSReflStream& cdbFile);
   CDBClassDef& allocateClassDef(std::uint32_t className);
-  void storeMatFileObject(MaterialObject *o);
-  const MaterialObject *findMatFileObject(BSResourceID objectID) const;
+  inline void storeMatFileObject(MaterialObject *o)
+  {
+    matFileObjectMap.storeObject(o);
+  }
+  inline const MaterialObject *findMatFileObject(
+      const BSResourceID& objectID) const
+  {
+    return matFileObjectMap.findObject(objectID);
+  }
   void dumpObject(std::string& s, const CDBObject *o, int indentCnt) const;
   static std::uint32_t findJSONItemType(const std::string& s);
   void loadJSONItem(CDBObject*& o, const JSONReader::JSONItem *jsonItem,
@@ -225,6 +274,14 @@ class BSMaterialsCDB
     clear();
     loadCDBFile(fileName);
   }
+  ~BSMaterialsCDB()
+  {
+    if (isCloned)
+      clear();
+  }
+  // clone an existing material database
+  // clear() must be called to remove references to 'r' before &r is deleted
+  void copyFrom(BSMaterialsCDB& r);
   void loadJSONFile(const JSONReader& matFile,
                     const std::string_view& materialPath);
   void loadJSONFile(const unsigned char *fileData, size_t fileSize,

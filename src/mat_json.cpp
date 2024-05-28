@@ -570,8 +570,7 @@ void BSMaterialsCDB::loadJSONFile(
           objectMap.find(objectID);
       if (k == objectMap.end())
       {
-        o = reinterpret_cast< MaterialObject * >(
-                allocateSpace(sizeof(MaterialObject), alignof(MaterialObject)));
+        o = allocateObjects< MaterialObject >(1);
         o->persistentID = objectID;
         o->dbID = std::uint32_t(objectMap.size() + 0x01000000);
         o->baseObject = parentPtr;
@@ -670,6 +669,7 @@ void BSMaterialsCDB::loadJSONFile(
             prvPtr = const_cast< const MaterialObject ** >(&(r->next));
         }
       }
+      deleteObject(*o);
       *o = *(i->second);
       i->second = o;
     }

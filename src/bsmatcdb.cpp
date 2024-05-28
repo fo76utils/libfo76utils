@@ -2,6 +2,8 @@
 #include "common.hpp"
 #include "bsmatcdb.hpp"
 
+#include <new>
+
 #define CDB_COMPONENTS_SORTED   0
 #define CDB_JSON_QUOTE_NUMBERS  1
 #define CDB_SORT_STRUCT_MEMBERS 1
@@ -182,9 +184,7 @@ BSMaterialsCDB::MaterialComponent& BSMaterialsCDB::findComponent(
     prv = i;
   if (i && i->key == key)
     return *i;
-  MaterialComponent *p =
-      reinterpret_cast< MaterialComponent * >(
-          allocateSpace(sizeof(MaterialComponent), alignof(MaterialComponent)));
+  MaterialComponent *p = allocateObjects< MaterialComponent >(1);
   p->key = key;
   p->className = className;
   p->o = nullptr;
@@ -306,9 +306,7 @@ void BSMaterialsCDB::copyBaseObject(MaterialObject& o)
   MaterialComponent **prv = &(o.components);
   for (MaterialComponent *i = p->components; i; i = i->next)
   {
-    MaterialComponent *tmp = reinterpret_cast< MaterialComponent * >(
-                                 allocateSpace(sizeof(MaterialComponent),
-                                               alignof(MaterialComponent)));
+    MaterialComponent *tmp = allocateObjects< MaterialComponent >(1);
     tmp->key = i->key;
     tmp->className = i->className;
     tmp->o = i->o;
@@ -328,28 +326,130 @@ void BSMaterialsCDB::copyBaseObject(MaterialObject& o)
   }
 }
 
-const char * BSMaterialsCDB::storeString(const char *s, size_t len)
+BSMaterialsCDB::StoredStringHashMap::StoredStringHashMap()
+  : buf(nullptr),
+    hashMask(0),
+    size(0)
+{
+  expandBuffer();
+}
+
+BSMaterialsCDB::StoredStringHashMap::~StoredStringHashMap()
+{
+  std::free(buf);
+}
+
+void BSMaterialsCDB::StoredStringHashMap::clear()
+{
+  size = 0;
+  for (size_t i = 0; i <= hashMask; i++)
+    buf[i] = nullptr;
+}
+
+const char * BSMaterialsCDB::StoredStringHashMap::storeString(
+    BSMaterialsCDB& cdb, const char *s, size_t len)
 {
   static const char *emptyString = "";
   if (len < 1)
     return emptyString;
-  std::uint32_t h = hashFunctionUInt32(s, len) & stringHashMask;
-  size_t  n = stringHashMask + 1;
+  size_t  m = hashMask;
+  size_t  i = hashFunctionUInt32(s, len) & m;
   const char  *t;
-  for ( ; (t = storedStrings[h]) != nullptr; h = (h + 1U) & stringHashMask)
+  for ( ; (t = buf[i]) != nullptr; i = (i + 1) & m)
   {
-    size_t  len2 = std::strlen(t);
-    if (len2 == len && std::memcmp(s, t, len2) == 0)
+    if (FileBuffer::readUInt32Fast(t - 4) == len && std::memcmp(s, t, len) == 0)
       return t;
-    if (--n < 1)
-      errorMessage("BSMaterialsCDB: internal error: stringHashMask is too low");
   }
-  char    *tmp =
-      reinterpret_cast< char * >(allocateSpace(len + 1, alignof(char)));
+  char    *tmp = cdb.allocateObjects< char >(len + 5);
+  FileBuffer::writeUInt32Fast(tmp, std::uint32_t(len));
+  tmp = tmp + 4;
   std::memcpy(tmp, s, len);
   tmp[len] = '\0';
-  storedStrings[h] = tmp;
+  buf[i] = tmp;
+  size++;
+  if ((size * std::uint64_t(3)) > (m * std::uint64_t(2))) [[unlikely]]
+    expandBuffer();
   return tmp;
+}
+
+void BSMaterialsCDB::StoredStringHashMap::expandBuffer(size_t minMask)
+{
+  size_t  m = (hashMask << 1) | minMask;
+  const char  **newBuf =
+      reinterpret_cast< const char ** >(std::calloc(m + 1, sizeof(char *)));
+  if (!newBuf)
+    throw std::bad_alloc();
+#if !(defined(__i386__) || defined(__x86_64__) || defined(__x86_64))
+  for (size_t i = 0; i <= m; i++)
+    newBuf[i] = nullptr;
+#endif
+  if (size)
+  {
+    for (size_t i = 0; i <= hashMask; i++)
+    {
+      const char  *s = buf[i];
+      if (!s)
+        continue;
+      size_t  len = FileBuffer::readUInt32Fast(s - 4);
+      size_t  h = hashFunctionUInt32(s, len) & m;
+      while (newBuf[h])
+        h = (h + 1) & m;
+      newBuf[h] = s;
+    }
+  }
+  std::free(buf);
+  buf = newBuf;
+  hashMask = m;
+}
+
+void BSMaterialsCDB::updateLinks(CDBObject& o)
+{
+  if (o.type == BSReflStream::String_BSComponentDB2_ID)
+  {
+    CDBObject_Link  *p = static_cast< CDBObject_Link * >(&o);
+    if (p->objectPtr)
+      p->objectPtr = matFileObjectMap.findObject(p->objectPtr->persistentID);
+  }
+  for (std::uint32_t i = 0U; i < o.childCnt; i++)
+  {
+    if (o.children()[i])
+      updateLinks(*(o.children()[i]));
+  }
+}
+
+void BSMaterialsCDB::updateLinks(MaterialObject& o)
+{
+  if (o.parent)
+    o.parent = matFileObjectMap.findObject(o.parent->persistentID);
+  if (o.children)
+    o.children = matFileObjectMap.findObject(o.children->persistentID);
+  if (o.next)
+    o.next = matFileObjectMap.findObject(o.next->persistentID);
+  for (MaterialComponent *i = o.components; i; i = i->next)
+  {
+    if (i->o)
+      updateLinks(*(i->o));
+  }
+}
+
+void BSMaterialsCDB::deleteObject(CDBObject& o)
+{
+  for (std::uint32_t i = 0U; i < o.childCnt; i++)
+  {
+    if (o.children()[i])
+      deleteObject(*(o.children()[i]));
+  }
+  if (o.refCnt)
+    o.refCnt--;
+}
+
+void BSMaterialsCDB::deleteObject(MaterialObject& o)
+{
+  for (MaterialComponent *i = o.components; i; i = i->next)
+  {
+    if (i->o)
+      deleteObject(*(i->o));
+  }
 }
 
 void BSMaterialsCDB::loadItem(
@@ -607,6 +707,8 @@ void BSMaterialsCDB::readAllChunks(BSReflStream& cdbFile)
   unsigned int  objectInfoSize = 21;
   size_t  componentID = 0;
   size_t  componentCnt = 0;
+  if (cdbFile.size() > 0x03FFFFFF && storedStrings.hashMask < 0x000FFFFF)
+    storedStrings.expandBuffer(0x000FFFFF);
   while ((chunkType = cdbFile.readChunk(chunkBuf)) != 0U)
   {
     std::uint32_t className = BSReflStream::String_None;
@@ -679,10 +781,7 @@ void BSMaterialsCDB::readAllChunks(BSReflStream& cdbFile)
         classDef.className = className;
         classDef.isUser = bool(classFlags & 4);
         classDef.fieldCnt = fieldCnt;
-        classDef.fields =
-            reinterpret_cast< CDBClassDef::Field * >(
-                allocateSpace(sizeof(CDBClassDef::Field) * fieldCnt,
-                              alignof(CDBClassDef::Field)));
+        classDef.fields = allocateObjects< CDBClassDef::Field >(fieldCnt);
         for (size_t i = 0; i < fieldCnt; i++)
         {
           CDBClassDef::Field& f =
@@ -732,9 +831,7 @@ void BSMaterialsCDB::readAllChunks(BSReflStream& cdbFile)
         bool    hasData = bool(objectInfoPtr[objectInfoSize - 1U]);
         if (findMatFileObject(persistentID) && hasData)
           continue;                     // ignore duplicate objects
-        MaterialObject  *o =
-            reinterpret_cast< MaterialObject * >(
-                allocateSpace(sizeof(MaterialObject), alignof(MaterialObject)));
+        MaterialObject  *o = allocateObjects< MaterialObject >(1);
         if (objectTable[dbID])
           errorMessage("duplicate object ID in material database");
         objectTable[dbID] = o;
@@ -815,30 +912,23 @@ void BSMaterialsCDB::readAllChunks(BSReflStream& cdbFile)
 
 void BSMaterialsCDB::clear()
 {
+  if (isCloned)
+  {
+    for (size_t i = 0; i <= matFileObjectMap.hashMask; i++)
+    {
+      if (matFileObjectMap.buf[i])
+        deleteObject(*(matFileObjectMap.buf[i]));
+    }
+    isCloned = false;
+  }
   classes = nullptr;
   objectTablePtr = nullptr;
   objectTableSize = 0;
-  storedStrings = nullptr;
-  matFileObjectMap = nullptr;
+  storedStrings.clear();
+  matFileObjectMap.clear();
   for (size_t i = 0; i < 3; i++)
     objectBuffers[i].clear();
-  classes = reinterpret_cast< CDBClassDef * >(
-                allocateSpace(sizeof(CDBClassDef) * (classHashMask + 1),
-                              alignof(CDBClassDef)));
-  storedStrings =
-      reinterpret_cast< const char ** >(
-          allocateSpace(sizeof(char *) * (stringHashMask + 1),
-                        alignof(char *)));
-  matFileObjectMap =
-      reinterpret_cast< MaterialObject ** >(
-          allocateSpace(sizeof(MaterialObject *) * (objectHashMask + 1),
-                        alignof(MaterialObject *)));
-#if !(defined(__i386__) || defined(__x86_64__) || defined(__x86_64))
-  for (size_t i = 0; i <= stringHashMask; i++)
-    storedStrings[i] = nullptr;
-  for (size_t i = 0; i <= objectHashMask; i++)
-    matFileObjectMap[i] = nullptr;
-#endif
+  classes = allocateObjects< CDBClassDef >(classHashMask + 1);
 }
 
 BSMaterialsCDB::CDBClassDef& BSMaterialsCDB::allocateClassDef(
@@ -861,44 +951,87 @@ BSMaterialsCDB::CDBClassDef& BSMaterialsCDB::allocateClassDef(
   return classes[h];
 }
 
-void BSMaterialsCDB::storeMatFileObject(MaterialObject *o)
+BSMaterialsCDB::MatObjectHashMap::MatObjectHashMap()
+  : buf(nullptr),
+    hashMask(0),
+    size(0)
 {
-  BSResourceID  objectID(o->persistentID);
-  std::uint32_t h = 0xFFFFFFFFU;
-  hashFunctionUInt32(h, objectID.file);
-  hashFunctionUInt32(h, objectID.ext);
-  hashFunctionUInt32(h, objectID.dir);
-  h = h & objectHashMask;
-  size_t  n = objectHashMask + 1;
-  MaterialObject  *p;
-  for ( ; (p = matFileObjectMap[h]) != nullptr; h = (h + 1U) & objectHashMask)
-  {
-    if (p->persistentID == objectID)
-      break;
-    if (--n < 1)
-      errorMessage("BSMaterialsCDB: internal error: objectHashMask is too low");
-  }
-  matFileObjectMap[h] = o;
+  expandBuffer();
 }
 
-const BSMaterialsCDB::MaterialObject * BSMaterialsCDB::findMatFileObject(
-    BSResourceID objectID) const
+BSMaterialsCDB::MatObjectHashMap::~MatObjectHashMap()
 {
-  std::uint32_t h = 0xFFFFFFFFU;
-  hashFunctionUInt32(h, objectID.file);
-  hashFunctionUInt32(h, objectID.ext);
-  hashFunctionUInt32(h, objectID.dir);
-  h = h & objectHashMask;
-  size_t  n = objectHashMask + 1;
+  std::free(buf);
+}
+
+void BSMaterialsCDB::MatObjectHashMap::clear()
+{
+  size = 0;
+  for (size_t i = 0; i <= hashMask; i++)
+    buf[i] = nullptr;
+}
+
+void BSMaterialsCDB::MatObjectHashMap::storeObject(MaterialObject *o)
+{
+  BSResourceID  objectID(o->persistentID);
+  size_t  m = hashMask;
+  size_t  i = objectID.hashFunction() & m;
+  MaterialObject  *p;
+  for ( ; (p = buf[i]) != nullptr; i = (i + 1) & m)
+  {
+    if (p->persistentID == objectID)
+    {
+      buf[i] = o;
+      return;
+    }
+  }
+  buf[i] = o;
+  size++;
+  if ((size * std::uint64_t(3)) > (m * std::uint64_t(2))) [[unlikely]]
+    expandBuffer();
+}
+
+const BSMaterialsCDB::MaterialObject *
+    BSMaterialsCDB::MatObjectHashMap::findObject(BSResourceID objectID) const
+{
+  size_t  m = hashMask;
+  size_t  i = objectID.hashFunction() & m;
   const MaterialObject  *o;
-  for ( ; (o = matFileObjectMap[h]) != nullptr; h = (h + 1U) & objectHashMask)
+  for ( ; (o = buf[i]) != nullptr; i = (i + 1) & m)
   {
     if (o->persistentID == objectID)
       return o;
-    if (--n < 1)
-      break;
   }
   return nullptr;
+}
+
+void BSMaterialsCDB::MatObjectHashMap::expandBuffer()
+{
+  size_t  m = (hashMask << 1) | 0x001FFFFF;
+  MaterialObject  **newBuf = reinterpret_cast< MaterialObject ** >(
+                                 std::calloc(m + 1, sizeof(MaterialObject *)));
+  if (!newBuf)
+    throw std::bad_alloc();
+#if !(defined(__i386__) || defined(__x86_64__) || defined(__x86_64))
+  for (size_t i = 0; i <= m; i++)
+    newBuf[i] = nullptr;
+#endif
+  if (size)
+  {
+    for (size_t i = 0; i <= hashMask; i++)
+    {
+      MaterialObject  *o = buf[i];
+      if (!o)
+        continue;
+      size_t  h = o->persistentID.hashFunction() & m;
+      while (newBuf[h])
+        h = (h + 1) & m;
+      newBuf[h] = o;
+    }
+  }
+  std::free(buf);
+  buf = newBuf;
+  hashMask = m;
 }
 
 void BSMaterialsCDB::dumpObject(
@@ -1166,9 +1299,9 @@ const BSMaterialsCDB::CDBClassDef *
 void BSMaterialsCDB::getMaterials(
     std::vector< const MaterialObject * >& materials) const
 {
-  for (size_t i = 0; i <= objectHashMask; i++)
+  for (size_t i = 0; i <= matFileObjectMap.hashMask; i++)
   {
-    const MaterialObject  *o = matFileObjectMap[i];
+    const MaterialObject  *o = matFileObjectMap.buf[i];
     if (o && o->persistentID.ext == 0x0074616D && !o->parent)   // "mat\0"
       materials.push_back(o);
   }
@@ -1269,5 +1402,29 @@ void BSMaterialsCDB::getJSONMaterial(
   }
   jsonBuf.resize(jsonBuf.length() - 2);
   jsonBuf += "\n  ],\n  \"Version\": 1\n}";
+}
+
+void BSMaterialsCDB::copyFrom(BSMaterialsCDB& r)
+{
+  clear();
+  isCloned = true;
+  for (size_t i = 0; i <= r.matFileObjectMap.hashMask; i++)
+  {
+    if (!r.matFileObjectMap.buf[i])
+      continue;
+    MaterialObject  *o = allocateObjects< MaterialObject >(1);
+    *o = *(r.matFileObjectMap.buf[i]);
+    o->baseObject = r.matFileObjectMap.buf[i];
+    o->components = nullptr;
+    if (o->baseObject->baseObject)
+      copyBaseObject(*o);
+    matFileObjectMap.storeObject(o);
+  }
+  for (size_t i = 0; i <= matFileObjectMap.hashMask; i++)
+  {
+    MaterialObject  *o = matFileObjectMap.buf[i];
+    if (o)
+      updateLinks(*o);
+  }
 }
 
