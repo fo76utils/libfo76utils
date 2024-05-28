@@ -1240,9 +1240,7 @@ void CE2MaterialDB::getMaterialList(
       tmp += ".mat";
       if (fileFilterFunc && !fileFilterFunc(fileFilterFuncData, tmp))
         continue;
-      char    *s = reinterpret_cast< char * >(
-                       buf.allocateSpace(sizeof(char) * (tmp.length() + 1),
-                                         alignof(char)));
+      char    *s = buf.allocateObjects< char >(tmp.length() + 1);
       std::memcpy(s, tmp.c_str(), tmp.length());
       materialPaths.emplace(s, tmp.length());
     }
@@ -1253,9 +1251,7 @@ void CE2MaterialDB::getMaterialList(
   filterData.materialPaths = &materialPaths;
   filterData.fileFilterFunc = fileFilterFunc;
   filterData.fileFilterFuncData = fileFilterFuncData;
-  if (ba2File1)
-    ba2File1->scanFileList(&matFileScanFunc, &filterData);
-  if (ba2File2)
-    ba2File2->scanFileList(&matFileScanFunc, &filterData);
+  if (ba2File)
+    ba2File->scanFileList(&matFileScanFunc, &filterData);
 }
 

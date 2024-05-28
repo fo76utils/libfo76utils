@@ -578,23 +578,31 @@ class CE2MaterialDB : public BSMaterialsCDB
     {
     }
   };
+  struct CE2MatObjectHashMap
+  {
+    const CE2MaterialObject **buf;
+    size_t  hashMask;
+    size_t  size;
+    CE2MatObjectHashMap();
+    ~CE2MatObjectHashMap();
+    void clear();
+    void storeObject(const CE2MaterialObject *o);
+    inline const CE2MaterialObject *findObject(BSResourceID objectID) const;
+    void expandBuffer();
+  };
   std::mutex  materialDBMutex;
-  // matFileHashMask + 1 elements
-  const CE2MaterialObject **objectNameMap;
+  CE2MatObjectHashMap materialObjectMap;
   // *(storedStdStrings.begin()) is always an empty string
   std::set< std::string > storedStdStrings;
-  std::map< const BSMaterialsCDB::MaterialObject *, CE2MaterialObject * >
-      materialObjectMap;
   std::string stringBuf;
-  const BA2File *ba2File1;
-  const BA2File *ba2File2;
+  const BA2File *ba2File;
   const std::string *storeStdString(const std::string& s);
   CE2MaterialObject *findMaterialObject(
       const BSMaterialsCDB::MaterialObject *p);
  public:
   CE2MaterialDB();
   ~CE2MaterialDB();
-  void loadArchives(const BA2File& archive1, const BA2File *archive2 = nullptr);
+  void loadArchives(const BA2File& archive);
   const CE2Material *loadMaterial(const std::string_view& materialPath);
   void clear();
   // returns a set of null-terminated material paths, using 'buf' for storage
