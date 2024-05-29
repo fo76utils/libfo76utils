@@ -720,7 +720,10 @@ void BA2File::loadArchiveFile(const char *fileName, size_t prefixLen)
     for (size_t i = 0; i <= m; i++)
     {
       if (fileMap[i] && fileMap[i]->archiveFile == n)
+      {
         fileMap[i] = nullptr;
+        fileMapFileCnt--;
+      }
     }
     delete bufp;
     throw;
