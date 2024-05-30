@@ -271,11 +271,11 @@ static bool cdbFileNameFilterFunc(
 
 void CE2MaterialDB::loadArchives(const BA2File& archive)
 {
+  if (ba2File && !parentDB)
+    clear();
   materialDBMutex.lock();
   try
   {
-    if (ba2File)
-      clear();
     ba2File = &archive;
     if (!ba2File) [[unlikely]]
     {
@@ -332,6 +332,17 @@ const CE2Material * CE2MaterialDB::loadMaterial(
           (fd->archiveType < 0 || !p))
       {
         jsonSize = ba2File->extractFile(jsonData, jsonBuf, materialPath);
+      }
+      if (parentDB && jsonSize < 1)
+      {
+        // FIXME: this only works if parentDB is also a CE2MaterialDB
+        const BA2File *ba2File2 =
+            static_cast< CE2MaterialDB * >(parentDB)->ba2File;
+        if (ba2File2 && (fd = ba2File2->findFile(materialPath)) != nullptr &&
+            (fd->archiveType < 0 || !p))
+        {
+          jsonSize = ba2File2->extractFile(jsonData, jsonBuf, materialPath);
+        }
       }
       if (jsonSize > 0)
         BSMaterialsCDB::loadJSONFile(jsonData, jsonSize, materialPath);

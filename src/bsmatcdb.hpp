@@ -201,7 +201,7 @@ class BSMaterialsCDB
   StoredStringHashMap storedStrings;
   MatObjectHashMap    matFileObjectMap;
   AllocBuffers    objectBuffers[3];     // for align bytes <= 2, 4 and >= 8
-  bool            isCloned = false;     // true if copyFrom() was called
+  BSMaterialsCDB  *parentDB = nullptr;  // valid if copyFrom() was called
   MaterialComponent& findComponent(MaterialObject& o,
                                    std::uint32_t key, std::uint32_t className);
   inline MaterialObject *findObject(std::uint32_t dbID);
@@ -276,7 +276,7 @@ class BSMaterialsCDB
   }
   ~BSMaterialsCDB()
   {
-    if (isCloned)
+    if (parentDB)
       clear();
   }
   // clone an existing material database

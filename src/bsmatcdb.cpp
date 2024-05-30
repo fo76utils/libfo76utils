@@ -419,6 +419,8 @@ void BSMaterialsCDB::updateLinks(CDBObject& o)
 
 void BSMaterialsCDB::updateLinks(MaterialObject& o)
 {
+  if (o.baseObject)
+    o.baseObject = matFileObjectMap.findObject(o.baseObject->persistentID);
   if (o.parent)
     o.parent = matFileObjectMap.findObject(o.parent->persistentID);
   if (o.children)
@@ -912,14 +914,14 @@ void BSMaterialsCDB::readAllChunks(BSReflStream& cdbFile)
 
 void BSMaterialsCDB::clear()
 {
-  if (isCloned)
+  if (parentDB)
   {
     for (size_t i = 0; i <= matFileObjectMap.hashMask; i++)
     {
       if (matFileObjectMap.buf[i])
         deleteObject(*(matFileObjectMap.buf[i]));
     }
-    isCloned = false;
+    parentDB = nullptr;
   }
   classes = nullptr;
   objectTablePtr = nullptr;
@@ -1407,17 +1409,29 @@ void BSMaterialsCDB::getJSONMaterial(
 void BSMaterialsCDB::copyFrom(BSMaterialsCDB& r)
 {
   clear();
-  isCloned = true;
+  parentDB = &r;
+  std::memcpy(classes, r.classes, sizeof(CDBClassDef) * (classHashMask + 1));
   for (size_t i = 0; i <= r.matFileObjectMap.hashMask; i++)
   {
-    if (!r.matFileObjectMap.buf[i])
+    MaterialObject  *p = r.matFileObjectMap.buf[i];
+    if (!p)
       continue;
     MaterialObject  *o = allocateObjects< MaterialObject >(1);
-    *o = *(r.matFileObjectMap.buf[i]);
-    o->baseObject = r.matFileObjectMap.buf[i];
+    *o = *p;
     o->components = nullptr;
-    if (o->baseObject->baseObject)
-      copyBaseObject(*o);
+    MaterialComponent **prv = &(o->components);
+    for (MaterialComponent *j = p->components; j; j = j->next)
+    {
+      MaterialComponent *tmp = allocateObjects< MaterialComponent >(1);
+      tmp->key = j->key;
+      tmp->className = j->className;
+      tmp->o = j->o;
+      if (tmp->o) [[likely]]
+        copyObject(tmp->o);
+      tmp->next = nullptr;
+      *prv = tmp;
+      prv = &(tmp->next);
+    }
     matFileObjectMap.storeObject(o);
   }
   for (size_t i = 0; i <= matFileObjectMap.hashMask; i++)
