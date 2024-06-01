@@ -219,10 +219,8 @@ class BSMaterialsCDB
   }
   CDBObject *allocateObject(std::uint32_t itemType, const CDBClassDef *classDef,
                             size_t elementCnt = 0);
-  void copyObject(CDBObject*& o);
+  void copyObject(CDBObject& o);
   void copyBaseObject(MaterialObject& o);
-  void updateLinks(CDBObject& o);
-  void updateLinks(MaterialObject& o);
   // decrement the reference count of all child objects
   void deleteObject(CDBObject& o);
   void deleteObject(MaterialObject& o);

@@ -286,13 +286,14 @@ BSMaterialsCDB::CDBObject * BSMaterialsCDB::allocateObject(
   return o;
 }
 
-void BSMaterialsCDB::copyObject(CDBObject*& o)
+void BSMaterialsCDB::copyObject(CDBObject& o)
 {
-  o->refCnt++;
-  for (std::uint32_t i = 0U; i < o->childCnt; i++)
+  o.refCnt++;
+  CDBObject **p = o.children();
+  for (CDBObject **endp = p + o.childCnt; p < endp; p++)
   {
-    if (o->children()[i])
-      copyObject(o->children()[i]);
+    if (*p)
+      copyObject(**p);
   }
 }
 
@@ -319,7 +320,7 @@ void BSMaterialsCDB::copyBaseObject(MaterialObject& o)
     else
 #endif
     if (tmp->o) [[likely]]
-      copyObject(tmp->o);
+      copyObject(*(tmp->o));
     tmp->next = nullptr;
     *prv = tmp;
     prv = &(tmp->next);
@@ -400,38 +401,6 @@ void BSMaterialsCDB::StoredStringHashMap::expandBuffer(size_t minMask)
   std::free(buf);
   buf = newBuf;
   hashMask = m;
-}
-
-void BSMaterialsCDB::updateLinks(CDBObject& o)
-{
-  if (o.type == BSReflStream::String_BSComponentDB2_ID)
-  {
-    CDBObject_Link  *p = static_cast< CDBObject_Link * >(&o);
-    if (p->objectPtr)
-      p->objectPtr = matFileObjectMap.findObject(p->objectPtr->persistentID);
-  }
-  for (std::uint32_t i = 0U; i < o.childCnt; i++)
-  {
-    if (o.children()[i])
-      updateLinks(*(o.children()[i]));
-  }
-}
-
-void BSMaterialsCDB::updateLinks(MaterialObject& o)
-{
-  if (o.baseObject)
-    o.baseObject = matFileObjectMap.findObject(o.baseObject->persistentID);
-  if (o.parent)
-    o.parent = matFileObjectMap.findObject(o.parent->persistentID);
-  if (o.children)
-    o.children = matFileObjectMap.findObject(o.children->persistentID);
-  if (o.next)
-    o.next = matFileObjectMap.findObject(o.next->persistentID);
-  for (MaterialComponent *i = o.components; i; i = i->next)
-  {
-    if (i->o)
-      updateLinks(*(i->o));
-  }
 }
 
 void BSMaterialsCDB::deleteObject(CDBObject& o)
@@ -1427,7 +1396,7 @@ void BSMaterialsCDB::copyFrom(BSMaterialsCDB& r)
       tmp->className = j->className;
       tmp->o = j->o;
       if (tmp->o) [[likely]]
-        copyObject(tmp->o);
+        copyObject(*(tmp->o));
       tmp->next = nullptr;
       *prv = tmp;
       prv = &(tmp->next);
@@ -1437,8 +1406,16 @@ void BSMaterialsCDB::copyFrom(BSMaterialsCDB& r)
   for (size_t i = 0; i <= matFileObjectMap.hashMask; i++)
   {
     MaterialObject  *o = matFileObjectMap.buf[i];
-    if (o)
-      updateLinks(*o);
+    if (!o)
+      continue;
+    if (o->baseObject)
+      o->baseObject = matFileObjectMap.findObject(o->baseObject->persistentID);
+    if (o->parent)
+      o->parent = matFileObjectMap.findObject(o->parent->persistentID);
+    if (o->children)
+      o->children = matFileObjectMap.findObject(o->children->persistentID);
+    if (o->next)
+      o->next = matFileObjectMap.findObject(o->next->persistentID);
   }
 }
 
