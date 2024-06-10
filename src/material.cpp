@@ -207,6 +207,11 @@ CE2MaterialObject * CE2MaterialDB::findMaterialObject(
         q->floatParams[2] = 0.5f;       // position
         q->floatParams[3] = 0.0f;       // contrast
         q->floatParams[4] = 1.0f;       // mask intensity
+        q->boolParams[0] = true;        // blend color
+        q->boolParams[1] = true;        // blend metalness
+        q->boolParams[2] = true;        // blend roughness
+        q->boolParams[3] = true;        // blend normals
+        q->boolParams[6] = true;        // blend ambient occlusion
       }
       break;
     case 3:
