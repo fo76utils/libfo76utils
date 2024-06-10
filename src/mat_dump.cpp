@@ -888,7 +888,7 @@ void CE2Material::TextureSet::printObjectInfo(
   CE2MaterialObject::printObjectInfo(buf, indentCnt);
   indentCnt = indentCnt + indentTabSize;
   printToStringBuf(buf, indentCnt,
-                   "Float param: %f, mip bias hint disabled: %s\n",
+                   "Normal scale: %f, mip bias hint disabled: %s\n",
                    floatParam, (!disableMipBiasHint ? "False" : "True"));
   printToStringBuf(buf, indentCnt, "Resolution setting: %s\n",
                    resolutionSettingNames[resolutionHint & 3]);

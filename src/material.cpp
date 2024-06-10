@@ -202,8 +202,11 @@ CE2MaterialObject * CE2MaterialDB::findMaterialObject(
         q->uvStream = nullptr;
         q->texturePath = emptyString;
         q->textureReplacement = 0xFFFFFFFFU;
-        for (size_t i = 0; i < CE2Material::Blender::maxFloatParams; i++)
-          q->floatParams[i] = 0.5f;
+        q->floatParams[0] = 0.5f;       // height blend threshold
+        q->floatParams[1] = 0.5f;       // height blend factor
+        q->floatParams[2] = 0.5f;       // position
+        q->floatParams[3] = 0.0f;       // contrast
+        q->floatParams[4] = 1.0f;       // mask intensity
       }
       break;
     case 3:
@@ -227,7 +230,7 @@ CE2MaterialObject * CE2MaterialDB::findMaterialObject(
       {
         CE2Material::TextureSet *q =
             static_cast< CE2Material::TextureSet * >(o);
-        q->floatParam = 0.5f;
+        q->floatParam = 1.0f;           // normal map intensity
         for (size_t i = 0; i < CE2Material::TextureSet::maxTexturePaths; i++)
           q->texturePaths[i] = emptyString;
         for (size_t i = 0; i < CE2Material::TextureSet::maxTexturePaths; i++)

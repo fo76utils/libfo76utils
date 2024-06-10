@@ -60,7 +60,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
       maxTexturePaths = 21
     };
     std::uint32_t texturePathMask;
-    float   floatParam;                 // possibly mip bias
+    float   floatParam;                 // normal map intensity
     // texturePaths[0] =  albedo (_color.dds)
     // texturePaths[1] =  normal map (_normal.dds)
     // texturePaths[2] =  alpha (_opacity.dds)
