@@ -4,9 +4,6 @@
 
 #include "common.hpp"
 #include "fp32vec4.hpp"
-#include "filebuf.hpp"
-#include "ba2file.hpp"
-#include "bsrefl.hpp"
 #include "bsmatcdb.hpp"
 
 #include <mutex>
@@ -74,7 +71,9 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     // texturePaths[10] = _mask.dds
     // texturePaths[12] = _zoffset.dds
     // texturePaths[20] = _id.dds
-    const std::string *texturePaths[maxTexturePaths];
+    // NOTE: string view pointers are always valid and the strings are
+    // null-terminated
+    const std::string_view  *texturePaths[maxTexturePaths];
     // texture replacements are colors in R8G8B8A8 format
     std::uint32_t textureReplacementMask;
     std::uint32_t textureReplacements[maxTexturePaths];
@@ -112,7 +111,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
       maxBoolParams = 8
     };
     const UVStream  *uvStream;
-    const std::string *texturePath;
+    const std::string_view  *texturePath;
     std::uint32_t textureReplacement;
     bool    textureReplacementEnabled;
     // 0 = "Linear" (default), 1 = "Additive", 2 = "PositionContrast",
@@ -305,7 +304,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     bool    useParallaxMapping;
     bool    parallaxOcclusionShadows;
     unsigned char maxParallaxSteps;
-    const std::string *surfaceHeightMap;
+    const std::string_view  *surfaceHeightMap;
     float   parallaxOcclusionScale;
     // 0 = "Top" (default), 1 = "Middle"
     unsigned char renderLayer;
@@ -326,7 +325,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     bool    isEnabled;
     bool    textureReplacementEnabled;
     std::uint32_t textureReplacement;
-    const std::string *texturePath;
+    const std::string_view  *texturePath;
     const UVStream  *uvStream;
   };
   struct LayeredEdgeFalloff
@@ -372,7 +371,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     // GlobalLayerNoiseData
     float   materialMaskIntensityScale;
     std::uint32_t noiseMaskTextureReplacement;
-    const std::string *noiseMaskTexture;
+    const std::string_view  *noiseMaskTexture;
     FloatVector4  texcoordScaleAndBias;
     float   worldspaceScaleFactor;
     float   hurstExponent;
@@ -456,7 +455,7 @@ class CE2MaterialDB : public BSMaterialsCDB
                           bool clampTo0To1 = false);
     inline bool readString(const char*& s,
                            const BSMaterialsCDB::CDBObject *p, size_t fieldNum);
-    bool readPath(const std::string*& s,
+    bool readPath(const std::string_view*& s,
                   const BSMaterialsCDB::CDBObject *p, size_t fieldNum,
                   const char *prefix = nullptr, const char *suffix = nullptr);
     // t = sequence of strings with length prefix (e.g. "\005False\004True")
@@ -499,7 +498,7 @@ class CE2MaterialDB : public BSMaterialsCDB
                         const BSMaterialsCDB::CDBObject *p, size_t fieldNum);
     void readColor(const BSMaterialsCDB::CDBObject *p);
     bool readSourceTextureWithReplacement(
-        const std::string*& texturePath, std::uint32_t& textureReplacement,
+        const std::string_view*& texturePath, std::uint32_t& textureReplacement,
         bool& textureReplacementEnabled,
         const BSMaterialsCDB::CDBObject *p, size_t fieldNum);
     void readFlowSettingsComponent(const BSMaterialsCDB::CDBObject *p);
@@ -578,6 +577,17 @@ class CE2MaterialDB : public BSMaterialsCDB
     {
     }
   };
+  struct StoredStdStringHashMap
+  {
+    const std::string_view  **buf;      // buf[0] is always an empty string
+    size_t  hashMask;
+    size_t  size;
+    StoredStdStringHashMap();
+    ~StoredStdStringHashMap();
+    void clear();
+    const std::string_view *insert(BSMaterialsCDB& cdb, const std::string& s);
+    void expandBuffer();
+  };
   struct CE2MatObjectHashMap
   {
     const CE2MaterialObject **buf;
@@ -592,11 +602,12 @@ class CE2MaterialDB : public BSMaterialsCDB
   };
   std::mutex  materialDBMutex;
   CE2MatObjectHashMap materialObjectMap;
-  // *(storedStdStrings.begin()) is always an empty string
-  std::set< std::string > storedStdStrings;
+  StoredStdStringHashMap  storedStdStrings;
   std::string stringBuf;
-  const BA2File *ba2File;
-  const std::string *storeStdString(const std::string& s);
+  inline const std::string_view *storeStdString(const std::string& s)
+  {
+    return storedStdStrings.insert(*this, s);
+  }
   CE2MaterialObject *findMaterialObject(
       const BSMaterialsCDB::MaterialObject *p);
  public:

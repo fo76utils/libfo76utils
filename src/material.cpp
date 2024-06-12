@@ -19,6 +19,79 @@ static const std::uint32_t
   0xFF808080U
 };
 
+CE2MaterialDB::StoredStdStringHashMap::StoredStdStringHashMap()
+  : buf(nullptr),
+    hashMask(0),
+    size(0)
+{
+}
+
+CE2MaterialDB::StoredStdStringHashMap::~StoredStdStringHashMap()
+{
+  std::free(buf);
+}
+
+void CE2MaterialDB::StoredStdStringHashMap::clear()
+{
+  static const std::string_view emptyString("");
+  hashMask = 0;
+  size = 0;
+  expandBuffer();
+  buf[0] = &emptyString;
+  size = 1;
+}
+
+const std::string_view * CE2MaterialDB::StoredStdStringHashMap::insert(
+    BSMaterialsCDB& cdb, const std::string& s)
+{
+  size_t  m = hashMask;
+  size_t  i = ~(hashFunctionUInt32(s.c_str(), s.length())) & m;
+  const std::string_view  *p;
+  for ( ; (p = buf[i]) != nullptr; i = (i + 1) & m)
+  {
+    if (*p == s)
+      return p;
+  }
+  std::string_view  *v = cdb.allocateObjects< std::string_view >(1);
+  char    *t = cdb.allocateObjects< char >(s.length() + 1);
+  std::memcpy(t, s.c_str(), s.length() + 1);
+  buf[i] = new(v) std::string_view(t, s.length());
+  size++;
+  if ((size * std::uint64_t(3)) > (m * std::uint64_t(2))) [[unlikely]]
+    expandBuffer();
+  return v;
+}
+
+void CE2MaterialDB::StoredStdStringHashMap::expandBuffer()
+{
+  size_t  m = (hashMask << 1) | 0xFF;
+  const std::string_view  **newBuf =
+      reinterpret_cast< const std::string_view ** >(
+          std::calloc(m + 1, sizeof(std::string_view *)));
+  if (!newBuf)
+    throw std::bad_alloc();
+#if !(defined(__i386__) || defined(__x86_64__) || defined(__x86_64))
+  for (size_t i = 0; i <= m; i++)
+    newBuf[i] = nullptr;
+#endif
+  if (size)
+  {
+    for (size_t i = 0; i <= hashMask; i++)
+    {
+      const std::string_view  *s = buf[i];
+      if (!s)
+        continue;
+      size_t  h = ~(hashFunctionUInt32(s->data(), s->length())) & m;
+      while (newBuf[h])
+        h = (h + 1) & m;
+      newBuf[h] = s;
+    }
+  }
+  std::free(buf);
+  buf = newBuf;
+  hashMask = m;
+}
+
 CE2MaterialDB::CE2MatObjectHashMap::CE2MatObjectHashMap()
   : buf(nullptr),
     hashMask(0),
@@ -103,11 +176,6 @@ void CE2MaterialDB::CE2MatObjectHashMap::expandBuffer()
   hashMask = m;
 }
 
-const std::string * CE2MaterialDB::storeStdString(const std::string& s)
-{
-  return &(*(storedStdStrings.insert(s).first));
-}
-
 CE2MaterialObject * CE2MaterialDB::findMaterialObject(
     const BSMaterialsCDB::MaterialObject *p)
 {
@@ -161,7 +229,7 @@ CE2MaterialObject * CE2MaterialDB::findMaterialObject(
   o->cdbObject = p;
   o->name = BSMaterialsCDB::storeString(nullptr, 0);
   // initialize with defaults
-  const std::string *emptyString = &(*(storedStdStrings.cbegin()));
+  const std::string_view  *emptyString = storedStdStrings.buf[0];
   switch (o->type)
   {
     case 1:
@@ -330,30 +398,9 @@ const CE2Material * CE2MaterialDB::loadMaterial(
     o = materialObjectMap.findObject(objectID);
     if (!o) [[unlikely]]
     {
-      BA2File::UCharArray jsonBuf;
-      const unsigned char *jsonData = nullptr;
-      size_t  jsonSize = 0;
-      const BA2File::FileInfo *fd;
-      const MaterialObject  *p = BSMaterialsCDB::getMaterial(objectID);
-      // only load JSON materials that replace CDB materials from loose files
-      if (ba2File && (fd = ba2File->findFile(materialPath)) != nullptr &&
-          (fd->archiveType < 0 || !p))
-      {
-        jsonSize = ba2File->extractFile(jsonData, jsonBuf, materialPath);
-      }
-      if (parentDB && jsonSize < 1)
-      {
-        // FIXME: this only works if parentDB is also a CE2MaterialDB
-        const BA2File *ba2File2 =
-            static_cast< CE2MaterialDB * >(parentDB)->ba2File;
-        if (ba2File2 && (fd = ba2File2->findFile(materialPath)) != nullptr &&
-            (fd->archiveType < 0 || !p))
-        {
-          jsonSize = ba2File2->extractFile(jsonData, jsonBuf, materialPath);
-        }
-      }
-      if (jsonSize > 0)
-        BSMaterialsCDB::loadJSONFile(jsonData, jsonSize, materialPath);
+      const MaterialObject  *p = findMatFileObject(objectID);
+      if (!(p && p->isJSON()))
+        loadJSONFile(materialPath, objectID, 1);
       o = findMaterialObject(BSMaterialsCDB::getMaterial(objectID));
     }
   }
@@ -373,13 +420,10 @@ void CE2MaterialDB::clear()
   materialDBMutex.lock();
   try
   {
-    ba2File = nullptr;
-    bool    constructFlag =
-        (storedStdStrings.begin() == storedStdStrings.end());
+    bool    constructFlag = !storedStdStrings.buf;
     storedStdStrings.clear();
     materialObjectMap.clear();
     stringBuf.clear();
-    storedStdStrings.emplace("");
     if (!constructFlag)
       BSMaterialsCDB::clear();
   }

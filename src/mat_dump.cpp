@@ -582,7 +582,7 @@ void CE2Material::printObjectInfo(
                        int(decalSettings->maxParallaxSteps));
       printToStringBuf(buf, indentCnt,
                        "Projected decal height map file: \"%s\"\n",
-                       decalSettings->surfaceHeightMap->c_str());
+                       decalSettings->surfaceHeightMap->data());
       printToStringBuf(buf, indentCnt,
                        "Projected decal parallax mapping scale: %f\n",
                        decalSettings->parallaxOcclusionScale);

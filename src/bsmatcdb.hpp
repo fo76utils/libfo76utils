@@ -6,9 +6,11 @@
 #include "filebuf.hpp"
 #include "bsrefl.hpp"
 #include "jsonread.hpp"
+#include "ba2file.hpp"
 
 class BSMaterialsCDB
 {
+  friend class CE2MaterialDB;
  public:
   struct BSResourceID
   {
@@ -29,6 +31,10 @@ class BSMaterialsCDB
     inline bool operator==(const BSResourceID& r) const
     {
       return (file == r.file && ext == r.ext && dir == r.dir);
+    }
+    inline operator bool() const
+    {
+      return bool(file | ext | dir);
     }
     inline std::uint32_t hashFunction() const
     {
@@ -194,6 +200,17 @@ class BSMaterialsCDB
     const MaterialObject *findObject(BSResourceID objectID) const;
     void expandBuffer();
   };
+  struct JSONMaterialHashMap
+  {
+    BSResourceID  *buf;
+    size_t  hashMask;
+    size_t  size;
+    JSONMaterialHashMap();
+    ~JSONMaterialHashMap();
+    void clear();
+    bool insert(BSResourceID objectID);
+    void expandBuffer();
+  };
   static const std::uint8_t cdbObjectSizeAlignTable[38];
   CDBClassDef     *classes;             // classHashMask + 1 elements
   MaterialObject  **objectTablePtr;
@@ -202,6 +219,8 @@ class BSMaterialsCDB
   MatObjectHashMap    matFileObjectMap;
   AllocBuffers    objectBuffers[3];     // for align bytes <= 2, 4 and >= 8
   BSMaterialsCDB  *parentDB = nullptr;  // valid if copyFrom() was called
+  const BA2File   *ba2File;
+  JSONMaterialHashMap jsonMaterialsLoaded;
   MaterialComponent& findComponent(MaterialObject& o,
                                    std::uint32_t key, std::uint32_t className);
   inline MaterialObject *findObject(std::uint32_t dbID);
@@ -285,6 +304,12 @@ class BSMaterialsCDB
   void loadJSONFile(const unsigned char *fileData, size_t fileSize,
                     const std::string_view& materialPath);
   void loadJSONFile(const char *fileName, const std::string_view& materialPath);
+  // Load .mat file from archives, the return value is true on success.
+  // flags & 1: ignore missing file
+  // flags & 2: ignore errors
+  // flags & 4: skip file if loading it was previously attempted
+  bool loadJSONFile(const std::string_view& materialPath, BSResourceID objectID,
+                    int flags = 0);
   void clear();
   const CDBClassDef *getClassDef(std::uint32_t type) const;
   const MaterialObject *getMaterial(BSResourceID objectID) const
@@ -298,6 +323,10 @@ class BSMaterialsCDB
   void getMaterials(std::vector< const MaterialObject * >& materials) const;
   void getJSONMaterial(std::string& jsonBuf,
                        const std::string_view& materialPath) const;
+  inline void setArchives(const BA2File *archive)
+  {
+    ba2File = archive;
+  }
 };
 
 inline bool BSMaterialsCDB::CDBObject::boolValue() const

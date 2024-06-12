@@ -84,8 +84,8 @@ inline bool CE2MaterialDB::ComponentInfo::readString(
 }
 
 bool CE2MaterialDB::ComponentInfo::readPath(
-    const std::string*& s, const BSMaterialsCDB::CDBObject *p, size_t fieldNum,
-    const char *prefix, const char *suffix)
+    const std::string_view*& s, const BSMaterialsCDB::CDBObject *p,
+    size_t fieldNum, const char *prefix, const char *suffix)
 {
   if (p && p->type > BSReflStream::String_Unknown && fieldNum < p->childCnt &&
       p->children()[fieldNum] &&
@@ -502,7 +502,7 @@ void CE2MaterialDB::ComponentInfo::readDecalSettingsComponent(
   sp->decalAlpha = 1.0f;
   sp->writeMask = 0x0737U;
   sp->maxParallaxSteps = 72;
-  sp->surfaceHeightMap = &(*(cdb.storedStdStrings.cbegin()));
+  sp->surfaceHeightMap = cdb.storedStdStrings.buf[0];
   sp->parallaxOcclusionScale = 1.0f;
   sp->useGBufferNormals = true;
   m->decalSettings = sp;
@@ -811,7 +811,7 @@ void CE2MaterialDB::ComponentInfo::readGlobalLayerDataComponent(
   sp->blendContrast = 0.5f;
   sp->materialMaskIntensityScale = 1.0f;
   sp->noiseMaskTextureReplacement = 0xFFFFFFFFU;
-  sp->noiseMaskTexture = &(*(cdb.storedStdStrings.cbegin()));
+  sp->noiseMaskTexture = cdb.storedStdStrings.buf[0];
   sp->texcoordScaleAndBias = FloatVector4(1.0f, 1.0f, 0.0f, 0.0f);
   sp->worldspaceScaleFactor = 0.0f;
   sp->hurstExponent = 0.5f;
@@ -1008,7 +1008,7 @@ void CE2MaterialDB::ComponentInfo::readColor(
 //   BSMaterial::TextureReplacement  Replacement
 
 bool CE2MaterialDB::ComponentInfo::readSourceTextureWithReplacement(
-    const std::string*& texturePath, std::uint32_t& textureReplacement,
+    const std::string_view*& texturePath, std::uint32_t& textureReplacement,
     bool& textureReplacementEnabled,
     const BSMaterialsCDB::CDBObject *p, size_t fieldNum)
 {
@@ -1693,7 +1693,7 @@ void CE2MaterialDB::ComponentInfo::readDetailBlenderSettingsComponent(
   CE2Material::DetailBlenderSettings  *sp =
       cdb.allocateObjects< CE2Material::DetailBlenderSettings >(1);
   sp->textureReplacement = 0xFFFFFFFFU;
-  sp->texturePath = &(*(cdb.storedStdStrings.cbegin()));
+  sp->texturePath = cdb.storedStdStrings.buf[0];
   sp->uvStream = nullptr;
   m->detailBlenderSettings = sp;
   if (p && p->type > BSReflStream::String_Unknown && p->childCnt >= 1)
@@ -2087,7 +2087,7 @@ void CE2MaterialDB::ComponentInfo::readControllerComponent(
 void CE2MaterialDB::ComponentInfo::readMRTextureFile(
     const BSMaterialsCDB::CDBObject *p)
 {
-  const std::string **txtPath;
+  const std::string_view  **txtPath;
   std::uint32_t *txtMask;
   std::uint32_t i = componentData->key & 0xFFFFU;
   if (o->type == 5 && i < CE2Material::TextureSet::maxTexturePaths) [[likely]]

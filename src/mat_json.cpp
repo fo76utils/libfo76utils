@@ -502,8 +502,33 @@ void BSMaterialsCDB::loadJSONFile(
     return;
   const JSONReader::JSONObject  *jsonData =
       static_cast< const JSONReader::JSONObject * >(p);
+
   std::map< std::string, const JSONReader::JSONItem * >::const_iterator j =
-      jsonData->children.find("Objects");
+      jsonData->children.find("Import");
+  if (j != jsonData->children.end() &&
+      j->second && j->second->type == JSONReader::JSONItemType_Array)
+  {
+    const JSONReader::JSONArray *jsonImports =
+        static_cast< const JSONReader::JSONArray * >(j->second);
+    for (const JSONReader::JSONItem *i : jsonImports->children)
+    {
+      if (!(i && i->type == JSONReader::JSONItemType_String))
+        continue;
+      const std::string&  importPath =
+          static_cast< const JSONReader::JSONString * >(i)->value;
+      if (importPath.empty())
+        continue;
+      FileBuffer  importPathBuf(reinterpret_cast< const unsigned char * >(
+                                    importPath.c_str()),
+                                importPath.length() + 1, 0);
+      std::string importPathStr;
+      importPathBuf.readPath(importPathStr, std::string::npos,
+                             "materials/", ".mat");
+      loadJSONFile(importPathStr, BSResourceID(importPathStr), 7);
+    }
+  }
+
+  j = jsonData->children.find("Objects");
   if (j == jsonData->children.end() ||
       !j->second || j->second->type != JSONReader::JSONItemType_Array)
   {
@@ -553,7 +578,7 @@ void BSMaterialsCDB::loadJSONFile(
       objectID.fromJSONString(
           static_cast< const JSONReader::JSONString * >(j->second)->value);
     }
-    if (!(objectID.file | objectID.ext | objectID.dir))
+    if (!objectID)
       continue;
     const MaterialObject  *parentPtr = findMatFileObject(parentID);
     if (!parentPtr)
@@ -725,7 +750,7 @@ void BSMaterialsCDB::loadJSONFile(
         edgeID = matObjectID;
       else
         edgeID.fromJSONString(edgeToStr);
-      if (!(edgeID.file | edgeID.ext | edgeID.dir))
+      if (!edgeID)
         continue;
       const MaterialObject  *o = findMatFileObject(objects[i]->persistentID);
       const MaterialObject  *q = findMatFileObject(edgeID);
@@ -766,5 +791,59 @@ void BSMaterialsCDB::loadJSONFile(
   loadJSONFile(
       matFile,
       (!materialPath.empty() ? materialPath : std::string_view(fileName)));
+}
+
+bool BSMaterialsCDB::loadJSONFile(
+    const std::string_view& materialPath, BSResourceID objectID, int flags)
+{
+  if (materialPath.empty() || !objectID)
+  {
+    if (flags & 1)
+      return false;
+    errorMessage("BSMaterialsCDB::loadJSONFile(): empty file name");
+  }
+
+  if (!jsonMaterialsLoaded.insert(objectID) && (flags & 4))
+    return false;
+
+  BA2File::UCharArray jsonBuf;
+  const unsigned char *jsonData = nullptr;
+  size_t  jsonSize = 0;
+  const BA2File::FileInfo *fd;
+  const MaterialObject  *p = getMaterial(objectID);
+  try
+  {
+    // only load JSON materials that replace CDB materials from loose files
+    if (ba2File && (fd = ba2File->findFile(materialPath)) != nullptr &&
+        (fd->archiveType < 0 || !p))
+    {
+      jsonSize = ba2File->extractFile(jsonData, jsonBuf, materialPath);
+    }
+    if (parentDB && jsonSize < 1)
+    {
+      const BA2File *ba2File2 = parentDB->ba2File;
+      if (ba2File2 && (fd = ba2File2->findFile(materialPath)) != nullptr &&
+          (fd->archiveType < 0 || !p))
+      {
+        jsonSize = ba2File2->extractFile(jsonData, jsonBuf, materialPath);
+      }
+    }
+    if (jsonSize > 0)
+      loadJSONFile(jsonData, jsonSize, materialPath);
+  }
+  catch (FO76UtilsError&)
+  {
+    if (flags & 2)
+      return false;
+    throw;
+  }
+  if (jsonSize < 1)
+  {
+    if (flags & 1)
+      return false;
+    throw FO76UtilsError("BSMaterialsCDB::loadJSONFile(): cannot find %s",
+                         std::string(materialPath).c_str());
+  }
+  return true;
 }
 

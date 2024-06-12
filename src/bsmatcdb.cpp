@@ -207,7 +207,7 @@ inline const BSMaterialsCDB::MaterialObject *
 inline BSMaterialsCDB::MaterialObject *
     BSMaterialsCDB::findObject(std::uint32_t dbID)
 {
-  const BSMaterialsCDB *p = this;
+  const BSMaterialsCDB  *p = this;
   return const_cast< MaterialObject * >(p->findObject(dbID));
 }
 
@@ -810,9 +810,9 @@ void BSMaterialsCDB::readAllChunks(BSReflStream& cdbFile)
         o->dbID = dbID;
         o->baseObject =
             findObject(FileBuffer::readUInt32Fast(objectInfoPtr + 16));
-        if (objectInfoSize >= 33U)      // version >= 1.11.33.0
+        if (!o->baseObject) [[unlikely]]
         {
-          if (!o->baseObject) [[unlikely]]
+          if (objectInfoSize >= 33U) [[likely]] // version >= 1.11.33.0
           {
             BSResourceID  parentID;
             parentID.file = FileBuffer::readUInt32Fast(objectInfoPtr + 20);
@@ -876,7 +876,7 @@ void BSMaterialsCDB::readAllChunks(BSReflStream& cdbFile)
       continue;
     if (p->baseObject && p->baseObject->baseObject)
       copyBaseObject(*p);
-    if (p->persistentID.file | p->persistentID.ext | p->persistentID.dir)
+    if (p->persistentID)
       storeMatFileObject(p);
   }
 }
@@ -899,6 +899,8 @@ void BSMaterialsCDB::clear()
   matFileObjectMap.clear();
   for (size_t i = 0; i < 3; i++)
     objectBuffers[i].clear();
+  ba2File = nullptr;
+  jsonMaterialsLoaded.clear();
   classes = allocateObjects< CDBClassDef >(classHashMask + 1);
 }
 
@@ -998,6 +1000,67 @@ void BSMaterialsCDB::MatObjectHashMap::expandBuffer()
       while (newBuf[h])
         h = (h + 1) & m;
       newBuf[h] = o;
+    }
+  }
+  std::free(buf);
+  buf = newBuf;
+  hashMask = m;
+}
+
+BSMaterialsCDB::JSONMaterialHashMap::JSONMaterialHashMap()
+  : buf(nullptr),
+    hashMask(0),
+    size(0)
+{
+  expandBuffer();
+}
+
+BSMaterialsCDB::JSONMaterialHashMap::~JSONMaterialHashMap()
+{
+  std::free(buf);
+}
+
+void BSMaterialsCDB::JSONMaterialHashMap::clear()
+{
+  hashMask = 0;
+  size = 0;
+  expandBuffer();
+}
+
+bool BSMaterialsCDB::JSONMaterialHashMap::insert(BSResourceID objectID)
+{
+  size_t  m = hashMask;
+  BSResourceID  *p = buf + (objectID.hashFunction() & m);
+  BSResourceID  *endp = buf + m;
+  for ( ; *p; p = (p < endp ? p + 1 : buf))
+  {
+    if (*p == objectID)
+      return false;
+  }
+  *p = objectID;
+  size++;
+  if ((size * std::uint64_t(3)) > (m * std::uint64_t(2))) [[unlikely]]
+    expandBuffer();
+  return true;
+}
+
+void BSMaterialsCDB::JSONMaterialHashMap::expandBuffer()
+{
+  size_t  m = (hashMask << 1) | 0xFF;
+  BSResourceID  *newBuf = reinterpret_cast< BSResourceID * >(
+                                 std::calloc(m + 1, sizeof(BSResourceID)));
+  if (!newBuf)
+    throw std::bad_alloc();
+  if (size)
+  {
+    for (size_t i = 0; i <= hashMask; i++)
+    {
+      if (!buf[i])
+        continue;
+      size_t  h = buf[i].hashFunction() & m;
+      while (newBuf[h])
+        h = (h + 1) & m;
+      newBuf[h] = buf[i];
     }
   }
   std::free(buf);
