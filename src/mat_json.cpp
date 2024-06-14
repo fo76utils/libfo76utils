@@ -126,37 +126,39 @@ void BSMaterialsCDB::loadJSONItem(
         return;
       const std::string&  itemValue =
           static_cast< const JSONReader::JSONString * >(jsonItem)->value;
-      if (!itemValue.empty())
+      if (itemValue.empty())
       {
-        BSResourceID  objectID;
-        if (itemValue == "<this>")
+        static_cast< CDBObject_Link * >(o)->objectPtr = nullptr;
+        return;
+      }
+      BSResourceID  objectID;
+      if (itemValue == "<this>")
+      {
+        for (const MaterialObject *p = materialObject; true; p = p->parent)
         {
-          for (const MaterialObject *p = materialObject; true; p = p->parent)
+          if (!p->parent)
           {
-            if (!p->parent)
-            {
-              objectID = p->persistentID;
-              break;
-            }
+            objectID = p->persistentID;
+            break;
           }
         }
-        else
-        {
-          objectID.fromJSONString(itemValue);
-        }
-        const MaterialObject  *p = findMatFileObject(objectID);
-        std::map< BSResourceID, MaterialObject * >::iterator  i =
-            objectMap.find(objectID);
-        if (i != objectMap.end())
-        {
-          static_cast< CDBObject_Link * >(o)->objectPtr = i->second;
-          if (!i->second->parent)
-            addParentLink(i->second, materialObject);
-          if (!p)
-            return;
-        }
-        static_cast< CDBObject_Link * >(o)->objectPtr = p;
       }
+      else
+      {
+        objectID.fromJSONString(itemValue);
+      }
+      const MaterialObject  *p = findMatFileObject(objectID);
+      std::map< BSResourceID, MaterialObject * >::iterator  i =
+          objectMap.find(objectID);
+      if (i != objectMap.end())
+      {
+        static_cast< CDBObject_Link * >(o)->objectPtr = i->second;
+        if (!i->second->parent)
+          addParentLink(i->second, materialObject);
+        if (!p)
+          return;
+      }
+      static_cast< CDBObject_Link * >(o)->objectPtr = p;
       return;
     }
     if (jsonItem->type != JSONReader::JSONItemType_Object)
@@ -580,9 +582,6 @@ void BSMaterialsCDB::loadJSONFile(
     }
     if (!objectID)
       continue;
-    const MaterialObject  *parentPtr = findMatFileObject(parentID);
-    if (!parentPtr)
-      continue;
     j = jsonObject->children.find("Components");
     if (j == jsonObject->children.end() ||
         !j->second || j->second->type != JSONReader::JSONItemType_Array)
@@ -598,7 +597,13 @@ void BSMaterialsCDB::loadJSONFile(
         o = allocateObjects< MaterialObject >(1);
         o->persistentID = objectID;
         o->dbID = std::uint32_t(objectMap.size() + 0x01000000);
-        o->baseObject = parentPtr;
+        o->baseObject = findMatFileObject(parentID);
+        if (!o->baseObject && objectID == matObjectID)
+        {
+          // "materials\\layered\\root\\layeredmaterials.mat"
+          parentID = BSResourceID(0x1D95562FU, 0x7EA3660CU, 0x0074616DU);
+          o->baseObject = findMatFileObject(parentID);
+        }
         o->components = nullptr;
         o->parent = nullptr;
         o->children = nullptr;
@@ -701,6 +706,52 @@ void BSMaterialsCDB::loadJSONFile(
     else
     {
       storeMatFileObject(i->second);
+    }
+  }
+
+  // try to determine the type of objects with no valid parent
+  for (std::map< BSResourceID, MaterialObject * >::iterator
+           i = objectMap.begin(); i != objectMap.end(); i++)
+  {
+    for (const MaterialComponent *q = i->second->components; q; q = q->next)
+    {
+      if (!(q->o && q->o->childCnt == 1 && q->o->children()[0]))
+        continue;
+      if (q->o->children()[0]->type != BSReflStream::String_BSComponentDB2_ID)
+        continue;
+      MaterialObject  *r =
+          const_cast< MaterialObject * >(q->o->children()[0]->linkedObject());
+      if (r && !r->baseObject)
+      {
+        std::uint32_t baseObjectName = 0;
+        switch (q->className)
+        {
+          case BSReflStream::String_BSMaterial_BlenderID:
+            baseObjectName = 0x8EBE84FFU;       // "blenders"
+            break;
+          case BSReflStream::String_BSMaterial_LODMaterialID:
+            baseObjectName = 0x7EA3660CU;       // "layeredmaterials"
+            break;
+          case BSReflStream::String_BSMaterial_LayerID:
+            baseObjectName = 0x574A4CF3U;       // "layers"
+            break;
+          case BSReflStream::String_BSMaterial_MaterialID:
+            baseObjectName = 0x7D1E021BU;       // "materials"
+            break;
+          case BSReflStream::String_BSMaterial_TextureSetID:
+            baseObjectName = 0x06F52154U;       // "texturesets"
+            break;
+          case BSReflStream::String_BSMaterial_UVStreamID:
+            baseObjectName = 0x4298BB09U;       // "uvstreams"
+            break;
+        }
+        if (baseObjectName)
+        {
+          // "materials\\layered\\root", "mat\0"
+          BSResourceID  parentID(0x1D95562FU, baseObjectName, 0x0074616DU);
+          r->baseObject = findMatFileObject(parentID);
+        }
+      }
     }
   }
 

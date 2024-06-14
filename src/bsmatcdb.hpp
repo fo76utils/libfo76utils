@@ -20,6 +20,10 @@ class BSMaterialsCDB
     inline BSResourceID()
     {
     }
+    inline BSResourceID(std::uint32_t d, std::uint32_t f, std::uint32_t e)
+      : file(f), ext(e), dir(d)
+    {
+    }
     BSResourceID(const std::string_view& fileName);
     // convert .mat file path or "res:dir:file:ext" format resource ID
     void fromJSONString(std::string_view s);
