@@ -123,7 +123,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     // 0: height blend threshold
     // 1: height blend factor
     // 2: position
-    // 3: contrast
+    // 3: 1.0 - contrast
     // 4: mask intensity
     float   floatParams[maxFloatParams];
     // 0: blend albedo texture

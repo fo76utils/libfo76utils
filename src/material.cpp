@@ -273,7 +273,7 @@ CE2MaterialObject * CE2MaterialDB::findMaterialObject(
         q->floatParams[0] = 0.5f;       // height blend threshold
         q->floatParams[1] = 0.5f;       // height blend factor
         q->floatParams[2] = 0.5f;       // position
-        q->floatParams[3] = 0.0f;       // contrast
+        q->floatParams[3] = 1.0f;       // 1.0 - contrast
         q->floatParams[4] = 1.0f;       // mask intensity
         q->boolParams[0] = true;        // blend color
         q->boolParams[1] = true;        // blend metalness
