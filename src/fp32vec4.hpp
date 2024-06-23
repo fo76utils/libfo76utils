@@ -161,6 +161,10 @@ struct FloatVector4
   inline std::uint32_t convertToX10Y10Z10() const;
   // decode the output of convertToX10Y10Z10()
   static inline FloatVector4 convertX10Y10Z10(const std::uint32_t& n);
+  // encode vector as a 32-bit integer in X10Y10Z10W2 format
+  inline std::uint32_t convertToX10Y10Z10W2() const;
+  // decode the output of convertToX10Y10Z10W2()
+  static inline FloatVector4 convertX10Y10Z10W2(const std::uint32_t& n);
   inline std::uint32_t getSignMask() const;
   // decode/encode color in R9G9B9E5_SHAREDEXP format
   static inline FloatVector4 convertR9G9B9E5(const std::uint32_t& n);
@@ -1423,11 +1427,7 @@ inline std::uint32_t FloatVector4::convertToX10Y10Z10() const
   static const XMM_UInt32 maxTbl = { 1023U, 1023U, 1023U, 0U };
   XMM_Float   tmp1 = v;
   XMM_UInt32  tmp2;
-#  if ENABLE_X86_64_SIMD >= 4
-  __asm__ ("vfmadd132ps %1, %1, %0" : "+x" (tmp1) : "x" (multTbl));
-#  else
   tmp1 = tmp1 * multTbl + multTbl;
-#  endif
   __asm__ ("vcvtps2dq %1, %0" : "=x" (tmp2) : "x" (tmp1));
   __asm__ ("vpminsd %1, %0, %0" : "+x" (tmp2) : "xm" (maxTbl));
 #  if ENABLE_X86_64_SIMD >= 4
@@ -1446,8 +1446,7 @@ inline std::uint32_t FloatVector4::convertToX10Y10Z10() const
 #else
   FloatVector4  n(*this);
   n = n * 511.5f + 511.5f;
-  n.maxValues(FloatVector4(0.0f));
-  n.minValues(FloatVector4(1023.0f));
+  n.maxValues(FloatVector4(0.0f)).minValues(FloatVector4(1023.0f));
   std::uint32_t tmp0 = std::uint32_t(roundFloat(n[0]));
   std::uint32_t tmp1 = std::uint32_t(roundFloat(n[1]));
   std::uint32_t tmp2 = std::uint32_t(roundFloat(n[2]));
@@ -1471,22 +1470,77 @@ inline FloatVector4 FloatVector4::convertX10Y10Z10(const std::uint32_t& n)
 #  if ENABLE_X86_64_SIMD >= 4
   __asm__ ("vpbroadcastd %1, %0" : "=x" (tmp.v) : "m" (n));
 #  else
-  __asm__ ("vmovd %1, %0" : "=x" (tmp.v) : "m" (n));
+  __asm__ ("vmovd %1, %0" : "=x" (tmp.v) : "rm" (n));
   __asm__ ("vpshufd $0x00, %0, %0" : "+x" (tmp.v));
 #  endif
   __asm__ ("vpand %1, %0, %0" : "+x" (tmp.v) : "xm" (maskTbl));
   __asm__ ("vcvtdq2ps %0, %0" : "+x" (tmp.v));
-#  if ENABLE_X86_64_SIMD >= 4
-  __asm__ ("vfmadd132ps %2, %1, %0"
-           : "+x" (tmp.v) : "x" (offsTbl), "xm" (multTbl));
-#  else
   tmp.v = tmp.v * multTbl + offsTbl;
-#  endif
 #else
   tmp[0] = float(int(n & 0x000003FFU)) * float(2.0 / 1023.0) - 1.0f;
   tmp[1] = float(int(n & 0x000FFC00U)) * float(2.0 / 1047552.0) - 1.0f;
   tmp[2] = float(int(n & 0x3FF00000U)) * float(2.0 / 1072693248.0) - 1.0f;
   tmp[3] = 0.0f;
+#endif
+  return tmp;
+}
+
+inline std::uint32_t FloatVector4::convertToX10Y10Z10W2() const
+{
+#if ENABLE_X86_64_SIMD >= 2
+  static const XMM_Float  multTbl = { 511.5f, 511.5f, 511.5f, 1.5f };
+  static const XMM_UInt32 maxTbl = { 1023U, 1023U, 1023U, 3U };
+  XMM_Float   tmp1 = v;
+  XMM_UInt32  tmp2;
+  tmp1 = tmp1 * multTbl + multTbl;
+  __asm__ ("vcvtps2dq %1, %0" : "=x" (tmp2) : "x" (tmp1));
+  __asm__ ("vpminsd %1, %0, %0" : "+x" (tmp2) : "xm" (maxTbl));
+  __asm__ ("vpslld $0x04, %1, %0" : "=x" (tmp1) : "x" (tmp2));
+  __asm__ ("vpblendw $0xf0, %1, %0, %0" : "+x" (tmp2) : "x" (tmp1));
+  __asm__ ("vpackusdw %0, %0, %0" : "+x" (tmp2));
+  __asm__ ("vpshuflw $0xdf, %1, %0" : "=x" (tmp1) : "x" (tmp2));
+  __asm__ ("vpshuflw $0xd8, %0, %0" : "+x" (tmp2));
+  __asm__ ("vpsrlq $0x16, %0, %0" : "+x" (tmp1));
+  __asm__ ("vpor %1, %0, %0" : "+x" (tmp2) : "x" (tmp1));
+  return tmp2[0];
+#else
+  FloatVector4  n(*this);
+  n = n * FloatVector4(511.5f, 511.5f, 511.5f, 1.5f)
+      + FloatVector4(511.5f, 511.5f, 511.5f, 1.5f);
+  n.maxValues(FloatVector4(0.0f));
+  n.minValues(FloatVector4(1023.0f, 1023.0f, 1023.0f, 3.0f));
+  std::uint32_t tmp0 = std::uint32_t(roundFloat(n[0]));
+  std::uint32_t tmp1 = std::uint32_t(roundFloat(n[1]));
+  std::uint32_t tmp2 = std::uint32_t(roundFloat(n[2]));
+  std::uint32_t tmp3 = std::uint32_t(roundFloat(n[3]));
+  return (tmp0 | (tmp1 << 10) | (tmp2 << 20) | (tmp3 << 30));
+#endif
+}
+
+inline FloatVector4 FloatVector4::convertX10Y10Z10W2(const std::uint32_t& n)
+{
+  FloatVector4  tmp;
+#if ENABLE_X86_64_SIMD >= 2
+  static const XMM_UInt32 maskTbl =
+  {
+    0x000003FFU, 0x000FFC00U, 0x3FF00000U, 0xC0000000U
+  };
+  static const XMM_Float  multTbl =
+  {
+    float(2.0 / 1023.0), float(2.0 / 1047552.0), float(2.0 / 1072693248.0),
+    float(2.0 / 3221225472.0)
+  };
+  static const XMM_Float  offsTbl = { -1.0f, -1.0f, -1.0f, float(1.0 / 3.0) };
+  std::uint32_t m = n ^ 0x80000000U;
+  XMM_UInt32  tmp2 = { m, m, m, m };
+  tmp2 = tmp2 & maskTbl;
+  __asm__ ("vcvtdq2ps %1, %0" : "=x" (tmp.v) : "x" (tmp2));
+  tmp.v = tmp.v * multTbl + offsTbl;
+#else
+  tmp[0] = float(int(n & 0x000003FFU)) * float(2.0 / 1023.0) - 1.0f;
+  tmp[1] = float(int(n & 0x000FFC00U)) * float(2.0 / 1047552.0) - 1.0f;
+  tmp[2] = float(int(n & 0x3FF00000U)) * float(2.0 / 1072693248.0) - 1.0f;
+  tmp[3] = float(int(n >> 30)) * float(2.0 / 3.0) - 1.0f;
 #endif
   return tmp;
 }
