@@ -81,6 +81,10 @@ struct FloatVector4
   // v[N] is converted if mask bit N is set, otherwise the output for v[N]
   // is zero if mask < 15 or undetermined if mask > 15
   inline std::uint64_t convertToFloat16(unsigned int mask = 15U) const;
+  inline void convertToFloats(float *p) const;
+  // construct from 3 floats in p, v[3] = 0.0f
+  static inline FloatVector4 convertVector3(const float *p);
+  inline void convertToVector3(float *p) const;
   inline float& operator[](size_t n)
   {
     return v[n];
@@ -290,6 +294,25 @@ inline std::uint64_t FloatVector4::convertToFloat16(unsigned int mask) const
     r = r | (std::uint64_t(::convertToFloat16(v[3])) << 48);
   return r;
 #endif
+}
+
+inline void FloatVector4::convertToFloats(float *p) const
+{
+  __asm__ ("vmovups %1, %0" : "=m" (*p) : "x" (v));
+}
+
+inline FloatVector4 FloatVector4::convertVector3(const float *p)
+{
+  XMM_Float tmp;
+  __asm__ ("vmovq %1, %0" : "=x" (tmp) : "m" (*p));
+  __asm__ ("vinsertps $0x20, %1, %0, %0" : "+x" (tmp) : "m" (p[2]));
+  return FloatVector4(tmp);
+}
+
+inline void FloatVector4::convertToVector3(float *p) const
+{
+  __asm__ ("vmovq %1, %0" : "=m" (*p) : "x" (v));
+  __asm__ ("vextractps $0x02, %1, %0" : "=m" (p[2]) : "x" (v));
 }
 
 inline FloatVector4& FloatVector4::operator+=(const FloatVector4& r)
@@ -847,6 +870,26 @@ inline std::uint64_t FloatVector4::convertToFloat16(unsigned int mask) const
   if (mask & 8U)
     r = r | (std::uint64_t(::convertToFloat16(v[3])) << 48);
   return r;
+}
+
+inline void FloatVector4::convertToFloats(float *p) const
+{
+  p[0] = v[0];
+  p[1] = v[1];
+  p[2] = v[2];
+  p[3] = v[3];
+}
+
+inline FloatVector4 FloatVector4::convertVector3(const float *p)
+{
+  return FloatVector4(p[0], p[1], p[2], 0.0f);
+}
+
+inline void FloatVector4::convertToVector3(float *p) const
+{
+  p[0] = v[0];
+  p[1] = v[1];
+  p[2] = v[2];
 }
 
 inline FloatVector4& FloatVector4::operator+=(const FloatVector4& r)
