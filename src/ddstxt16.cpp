@@ -4,7 +4,7 @@
 
 #include <new>
 
-const DDSTexture16::DXGIFormatInfo DDSTexture16::dxgiFormatInfoTable[34] =
+const DDSTexture16::DXGIFormatInfo DDSTexture16::dxgiFormatInfoTable[35] =
 {
   {                             //  0: DXGI_FORMAT_UNKNOWN = 0x00
     (size_t (*)(std::uint64_t *, const unsigned char *, unsigned int)) 0,
@@ -110,13 +110,16 @@ const DDSTexture16::DXGIFormatInfo DDSTexture16::dxgiFormatInfoTable[34] =
   },
   {                             // 33: DXGI_FORMAT_R8G8_SNORM = 0x33
     &decodeLine_R8G8S, "R8G8_SNORM", false, false, 2, 2
+  },
+  {                             // 34: DXGI_FORMAT_R8G8B8A8_SNORM = 0x1F
+    &decodeLine_RGBA32S, "R8G8B8A8_SNORM", false, false, 4, 4
   }
 };
 
 const unsigned char DDSTexture16::dxgiFormatMap[128] =
 {
    0,  0,  0,  0,   0,  0,  0,  0,   0,  0,  1,  0,   0,  0,  0,  0,    // 0x00
-   0,  0,  0,  0,   0,  0,  0,  0,  32,  0,  0,  0,   2,  3,  0,  0,    // 0x10
+   0,  0,  0,  0,   0,  0,  0,  0,  32,  0,  0,  0,   2,  3,  0, 34,    // 0x10
    0,  0,  0,  0,   0,  0,  0,  0,   0,  0,  0,  0,   0,  0,  0,  0,    // 0x20
    0,  4,  0, 33,   0,  0,  0,  0,   0,  0,  0,  0,   0,  5,  6,  0,    // 0x30
    0,  0,  0, 31,   0,  0,  0,  7,   8,  0,  9, 10,   0, 11, 12,  0,    // 0x40
@@ -542,6 +545,17 @@ size_t DDSTexture16::decodeLine_R8G8S(
     *dst = (FloatVector4(b) * (1.0f / 127.5f) - 1.0f).convertToFloat16();
   }
   return (size_t(w) << 1);
+}
+
+size_t DDSTexture16::decodeLine_RGBA32S(
+    std::uint64_t *dst, const unsigned char *src, unsigned int w)
+{
+  for (unsigned int x = 0; x < w; x++, dst++, src = src + 4)
+  {
+    std::uint32_t b = FileBuffer::readUInt32Fast(src) ^ 0x80808080U;
+    *dst = (FloatVector4(b) * (1.0f / 127.5f) - 1.0f).convertToFloat16();
+  }
+  return (size_t(w) << 2);
 }
 
 static void srgbExpandBlock(void *buf, int w, int h, int pitch)

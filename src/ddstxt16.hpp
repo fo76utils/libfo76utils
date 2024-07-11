@@ -20,7 +20,7 @@ class DDSTexture16
     unsigned char channelCnt;
     unsigned char blockSize;
   };
-  static const DXGIFormatInfo dxgiFormatInfoTable[34];
+  static const DXGIFormatInfo dxgiFormatInfoTable[35];
   static const unsigned char  dxgiFormatMap[128];
   static const unsigned char  cubeWrapTable[24];
   std::uint32_t xMaskMip0;              // width - 1
@@ -75,6 +75,8 @@ class DDSTexture16
   static size_t decodeLine_R10G10B10A2(
       std::uint64_t *dst, const unsigned char *src, unsigned int w);
   static size_t decodeLine_R8G8S(
+      std::uint64_t *dst, const unsigned char *src, unsigned int w);
+  static size_t decodeLine_RGBA32S(
       std::uint64_t *dst, const unsigned char *src, unsigned int w);
   void loadTextureData(const unsigned char *srcPtr, int n,
                        const DXGIFormatInfo& formatInfo, bool noSRGBExpand);
