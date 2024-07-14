@@ -75,7 +75,6 @@ class ESMFile
     unsigned int  vcInfo2;
   };
  protected:
-  unsigned int  recordCnt;
   unsigned int  recordHdrSize;  // 20 for Oblivion, 24 for Fallout 3 and newer
   // 0x00: Oblivion
   // 0x02: Fallout 3/New Vegas
@@ -90,47 +89,42 @@ class ESMFile
   // 0xC3: Fallout 76 (Steel Dawn and newer)
   // 0xC5: Fallout 76 (The Pitt and newer?)
   // > 0xFF: Starfield
-  unsigned short  esmVersion;
-  unsigned short  esmFlags;     // 0x80: localized strings
+  unsigned int  esmVersion;
+  unsigned int  esmFlags;       // 0x80: localized strings
   unsigned int  zlibBufRecord;
-  std::vector< ESMRecord >    recordBuf;
-  std::vector< unsigned int > formIDMap;
+  std::uint32_t *pluginMap;
+  std::uint32_t *formIDMap;
+  ESMRecord     *recordBuf;
+  size_t        recordBufSize;
   std::vector< std::vector< unsigned char > > zlibBuf;
   std::vector< FileBuffer * > esmFiles;
+  inline ESMRecord& insertFormID(unsigned int formID);
   const unsigned char *uncompressRecord(ESMRecord& r);
-  unsigned int loadRecords(size_t& groupCnt, FileBuffer& buf,
-                           size_t endPos, unsigned int parent);
+  unsigned int loadRecords(size_t& groupCnt, FileBuffer& buf, size_t endPos,
+                           unsigned int parent);
  public:
   // fileNames can be a single ESM file, or a comma separated list
   ESMFile(const char *fileNames, bool enableZLibCache = false);
   virtual ~ESMFile();
-  inline const ESMRecord& operator[](size_t n) const
-  {
-    return *(findRecord(n));
-  }
   const ESMRecord& getRecord(unsigned int formID) const;
   // returns NULL if the record does not exist
-  inline const ESMRecord *findRecord(unsigned int n) const
+  inline const ESMRecord *findRecord(unsigned int formID) const
   {
-    if (n >= 0x80000000U) [[unlikely]]
-    {
-      n = (n & 0x7FFFFFFFU) + recordCnt;
-    }
-    else
-    {
-      std::vector< unsigned int >::const_iterator i = formIDMap.begin() + n;
-      if (i >= formIDMap.end()) [[unlikely]]
-        return nullptr;
-      n = *i;
-    }
-    std::vector< ESMRecord >::const_iterator  i = recordBuf.begin() + n;
-    if (i >= recordBuf.end()) [[unlikely]]
+    const std::uint32_t *p = pluginMap + (((formID >> 24) & 0xFFU) * 3U);
+    if (formID < p[0] || formID > p[1]) [[unlikely]]
       return nullptr;
-    return &(*i);
+    std::uint32_t n = formIDMap[(formID + p[2]) & 0xFFFFFFFFU];
+    if (n & 0x80000000U) [[unlikely]]
+      return nullptr;
+    return recordBuf + n;
   }
   inline ESMRecord *findRecord(unsigned int n)
   {
     return const_cast< ESMRecord * >(((const ESMFile *) this)->findRecord(n));
+  }
+  inline const ESMRecord& operator[](size_t n) const
+  {
+    return *(findRecord(n));
   }
   inline const ESMRecord *getRecordPtr(unsigned int formID) const
   {

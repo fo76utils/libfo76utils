@@ -3,6 +3,22 @@
 #include "zlib.hpp"
 #include "esmfile.hpp"
 
+inline ESMFile::ESMRecord & ESMFile::insertFormID(unsigned int formID)
+{
+  const std::uint32_t *p = pluginMap + (((formID >> 24) & 0xFFU) * 3U);
+  if (formID < p[0] || formID > p[1])
+    errorMessage("internal error: invalid form ID");
+  std::uint32_t&  n = formIDMap[(formID + p[2]) & 0xFFFFFFFFU];
+  if (n & 0x80000000U) [[likely]]
+  {
+    n = std::uint32_t(recordBufSize);
+    return recordBuf[recordBufSize++];
+  }
+  if (n >= recordBufSize)
+    errorMessage("internal error: invalid record index");
+  return recordBuf[n];
+}
+
 const unsigned char * ESMFile::uncompressRecord(ESMRecord& r)
 {
   if (r.formID == zlibBufRecord)
@@ -44,8 +60,8 @@ const unsigned char * ESMFile::uncompressRecord(ESMRecord& r)
   return p;
 }
 
-unsigned int ESMFile::loadRecords(size_t& groupCnt, FileBuffer& buf,
-                                  size_t endPos, unsigned int parent)
+unsigned int ESMFile::loadRecords(
+    size_t& groupCnt, FileBuffer& buf, size_t endPos, unsigned int parent)
 {
   ESMRecord *prv = nullptr;
   unsigned int  r = 0U;
@@ -66,14 +82,28 @@ unsigned int ESMFile::loadRecords(size_t& groupCnt, FileBuffer& buf,
       n = (unsigned int) groupCnt | 0x80000000U;
       groupCnt++;
     }
-    ESMRecord *esmRecord = findRecord(n);
-    if (!esmRecord)
-      errorMessage("internal error: invalid form ID");
+    ESMRecord&  esmRecord = insertFormID(n);
+    if (!esmRecord.fileData) [[likely]]
+    {
+      esmRecord.parent = parent;
+      if (prv)
+        prv->next = n;
+      prv = &esmRecord;
+      if (!r)
+        r = n;
+    }
+    if (n != 0U || !esmRecord.fileData) [[likely]]
+    {
+      esmRecord.type = recordType;
+      esmRecord.flags = flags;
+      esmRecord.formID = formID;
+      esmRecord.fileData = p;
+    }
     if (FileBuffer::checkType(recordType, "GRUP"))
     {
-      esmRecord->children = loadRecords(groupCnt, buf,
-                                        buf.getPosition() + recordSize
-                                        - recordHdrSize, n);
+      esmRecord.children =
+          loadRecords(groupCnt, buf,
+                      buf.getPosition() + recordSize - recordHdrSize, n);
     }
     else if (recordSize > 0)
     {
@@ -81,36 +111,29 @@ unsigned int ESMFile::loadRecords(size_t& groupCnt, FileBuffer& buf,
         errorMessage("invalid ESM record size");
       buf.setPosition(buf.getPosition() + recordSize);
     }
-    if (!esmRecord->fileData) [[likely]]
-    {
-      esmRecord->parent = parent;
-      if (prv)
-        prv->next = n;
-      prv = esmRecord;
-      if (!r)
-        r = n;
-    }
-    else if (n == 0U)
-    {
-      continue;
-    }
-    esmRecord->type = recordType;
-    esmRecord->flags = flags;
-    esmRecord->formID = formID;
-    esmRecord->fileData = p;
   }
   return r;
 }
 
 ESMFile::ESMFile(const char *fileNames, bool enableZLibCache)
-  : recordCnt(0),
-    recordHdrSize(0),
+  : recordHdrSize(0),
     esmVersion(0),
     esmFlags(0),
-    zlibBufRecord(0xFFFFFFFFU)
+    zlibBufRecord(0xFFFFFFFFU),
+    pluginMap(nullptr),
+    formIDMap(nullptr),
+    recordBuf(nullptr),
+    recordBufSize(0)
 {
   try
   {
+    pluginMap = new std::uint32_t[0x0300];
+    for (size_t i = 0; i < 0x0300; i = i + 3)
+    {
+      pluginMap[i] = 0xFFFFFFFFU;       // minimum form ID
+      pluginMap[i + 1] = 0U;            // maximum form ID
+      pluginMap[i + 2] = 0U;            // formIDMap offset
+    }
     std::vector< std::string >  tmpFileNames;
     std::string fileName;
     for (size_t i = 0; fileNames[i] != '\0'; i++)
@@ -141,8 +164,7 @@ ESMFile::ESMFile(const char *fileNames, bool enableZLibCache)
       if (!FileBuffer::checkType(esmFiles[i]->readUInt32(), "TES4"))
         throw FO76UtilsError("input file %s is not in ESM format", fName);
       (void) esmFiles[i]->readUInt32();
-      esmFlags = esmFiles[i]->readUInt16();
-      (void) esmFiles[i]->readUInt16();
+      esmFlags = esmFiles[i]->readUInt32();
       if (esmFiles[i]->readUInt32() != 0U)
         throw FO76UtilsError("%s: invalid ESM file header", fName);
       (void) esmFiles[i]->readUInt32();
@@ -150,7 +172,7 @@ ESMFile::ESMFile(const char *fileNames, bool enableZLibCache)
       if (tmp < 0x1000)
       {
         recordHdrSize = 24;
-        esmVersion = (unsigned short) tmp;
+        esmVersion = tmp;
       }
       else if (tmp == 0x4548)           // "HE"
       {
@@ -164,8 +186,8 @@ ESMFile::ESMFile(const char *fileNames, bool enableZLibCache)
     }
 
     size_t  compressedCnt = 0;
+    size_t  recordCnt = 0;
     size_t  groupCnt = 0;
-    unsigned int  maxFormID = 0;
     for (size_t i = 0; i < esmFiles.size(); i++)
     {
       FileBuffer& buf = *(esmFiles[i]);
@@ -178,6 +200,7 @@ ESMFile::ESMFile(const char *fileNames, bool enableZLibCache)
         unsigned int  recordSize = buf.readUInt32Fast();
         unsigned int  flags = buf.readUInt32Fast();
         unsigned int  formID = buf.readUInt32Fast();
+        std::uint32_t n = std::uint32_t(formID);
         // skip version control info
         buf.setPosition(buf.getPosition() + (recordHdrSize - 16));
         if (FileBuffer::checkType(recordType, "GRUP"))
@@ -188,16 +211,16 @@ ESMFile::ESMFile(const char *fileNames, bool enableZLibCache)
             throw FO76UtilsError("%s: invalid group size",
                                  tmpFileNames[i].c_str());
           }
+          n = std::uint32_t(0x80000000U | groupCnt);
           groupCnt++;
         }
         else
         {
-          if (formID > 0x0FFFFFFFU)
+          if (formID > 0x0FFFFFFFU && ((formID + 0x03000000U) & 0xFE000000U))
           {
             throw FO76UtilsError("%s: invalid form ID",
                                  tmpFileNames[i].c_str());
           }
-          maxFormID = (formID > maxFormID ? formID : maxFormID);
           if ((recordSize < 10 && (flags & 0x00040000) != 0) ||
               (buf.getPosition() + recordSize) > buf.size())
           {
@@ -209,10 +232,23 @@ ESMFile::ESMFile(const char *fileNames, bool enableZLibCache)
             compressedCnt++;
           buf.setPosition(buf.getPosition() + recordSize);
         }
+        std::uint32_t *p = pluginMap + (((n >> 24) & 0xFFU) * 3U);
+        p[0] = std::min(p[0], n);
+        p[1] = std::max(p[1], n);
       }
     }
-    recordBuf.resize(recordCnt + groupCnt);
-    formIDMap.resize(maxFormID + 1U, (unsigned int) recordBuf.size());
+    size_t  formIDMapSize = 0;
+    for (size_t i = 0; i < 0x0300; i = i + 3)
+    {
+      if (pluginMap[i] <= pluginMap[i + 1])
+      {
+        pluginMap[i + 2] = std::uint32_t(formIDMapSize - pluginMap[i]);
+        formIDMapSize = formIDMapSize + size_t(pluginMap[i + 1]) + 1 - size_t(pluginMap[i]);
+      }
+    }
+    formIDMap = new std::uint32_t[formIDMapSize];
+    memsetUInt32(formIDMap, 0xFFFFFFFFU, formIDMapSize);
+    recordBuf = new ESMRecord[recordCnt + groupCnt];
     if (compressedCnt)
     {
       if (!enableZLibCache)
@@ -221,34 +257,12 @@ ESMFile::ESMFile(const char *fileNames, bool enableZLibCache)
       zlibBuf.emplace_back();
     }
 
-    unsigned int  n = 0;
-    for (size_t i = 0; i < esmFiles.size(); i++)
-    {
-      FileBuffer& buf = *(esmFiles[i]);
-      buf.setPosition(0);
-      while (buf.getPosition() < buf.size())
-      {
-        unsigned int  recordType = buf.readUInt32Fast();
-        unsigned int  recordSize = buf.readUInt32Fast();
-        (void) buf.readUInt32Fast();    // flags
-        unsigned int  formID = buf.readUInt32Fast();
-        // skip version control info
-        buf.setPosition(buf.getPosition() + (recordHdrSize - 16));
-        if (!FileBuffer::checkType(recordType, "GRUP") && formID <= maxFormID)
-        {
-          formIDMap[formID] = n;
-          n++;
-          buf.setPosition(buf.getPosition() + recordSize);
-        }
-      }
-    }
-
     groupCnt = 0;
     for (size_t i = 0; i < esmFiles.size(); i++)
     {
       FileBuffer& buf = *(esmFiles[i]);
       buf.setPosition(0);
-      n = loadRecords(groupCnt, buf, buf.size(), 0U);
+      unsigned int  n = loadRecords(groupCnt, buf, buf.size(), 0U);
       ESMRecord *r = findRecord(0U);
       if (n != 0U && r && r->next != n)
       {
@@ -265,6 +279,9 @@ ESMFile::ESMFile(const char *fileNames, bool enableZLibCache)
       if (esmFiles[i])
         delete esmFiles[i];
     }
+    delete[] recordBuf;
+    delete[] formIDMap;
+    delete[] pluginMap;
     throw;
   }
 }
@@ -276,6 +293,9 @@ ESMFile::~ESMFile()
     if (esmFiles[i])
       delete esmFiles[i];
   }
+  delete[] recordBuf;
+  delete[] formIDMap;
+  delete[] pluginMap;
 }
 
 const ESMFile::ESMRecord& ESMFile::getRecord(unsigned int formID) const
@@ -313,7 +333,7 @@ ESMFile::ESMField::ESMField(ESMFile& f, unsigned int formID)
   if (r->type == 0x50555247)            // "GRUP"
     return;
   if (r->flags & 0x00040000)            // compressed record
-    fileBuf = f.uncompressRecord(*(f.findRecord(r->formID)));
+    fileBuf = f.uncompressRecord(*(const_cast< ESMRecord * >(r)));
   else
     fileBuf = r->fileData;
   fileBufSize = f.recordHdrSize;
