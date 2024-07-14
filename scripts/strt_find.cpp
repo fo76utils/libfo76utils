@@ -53,34 +53,41 @@ int main()
     cdbStrings.insert(std::string(BSReflStream::stringTable[i]));
   }
   BA2File ba2File("");
+  static const char *cdbFileNames[4] =
   {
-    std::vector< unsigned char >  tmpBuf;
-    ba2File.extractFile(tmpBuf, std::string("materials/materialsbeta.cdb"));
-    FileBuffer  buf(tmpBuf.data(), tmpBuf.size());
+    "materials/materialsbeta.cdb",
+    "materials/creations/sfbgs003/materialsbeta.cdb",
+    "materials/creations/sfbgs008/materialsbeta.cdb",
+    nullptr
+  };
+  for (size_t i = 0; cdbFileNames[i]; i++)
+  {
+    BA2File::UCharArray tmpBuf;
+    ba2File.extractFile(tmpBuf, cdbFileNames[i]);
+    FileBuffer  buf(tmpBuf.data, tmpBuf.size);
     loadStrings(cdbStrings, buf);
   }
+  static const char *esmFileNames[7] =
   {
-    ESMFile esmFile("Starfield.esm");
-    for (unsigned int i = 0U; i <= 0x0FFFFFFFU; i++)
+    "Starfield.esm", "BlueprintShips-Starfield.esm", "SFBGS003.esm",
+    "SFBGS006.esm", "SFBGS007.esm", "SFBGS008.esm", nullptr
+  };
+  for (size_t j = 0; esmFileNames[j]; j++)
+  {
+    ESMFile esmFile(esmFileNames[j]);
+    for (unsigned int i = 0xFD000000U; i != 0x10000000U; )
     {
       const ESMFile::ESMRecord  *r = esmFile.findRecord(i);
-      if (!r)
-        continue;
-      ESMFile::ESMField f(esmFile, *r);
-      while (f.next())
-        loadStrings(cdbStrings, f);
-    }
-  }
-  {
-    ESMFile esmFile("BlueprintShips-Starfield.esm");
-    for (unsigned int i = 0U; i <= 0x0FFFFFFFU; i++)
-    {
-      const ESMFile::ESMRecord  *r = esmFile.findRecord(i);
-      if (!r)
-        continue;
-      ESMFile::ESMField f(esmFile, *r);
-      while (f.next())
-        loadStrings(cdbStrings, f);
+      if (r)
+      {
+        ESMFile::ESMField f(esmFile, *r);
+        while (f.next())
+          loadStrings(cdbStrings, f);
+      }
+      if (i == 0xFEFFFFFFU)
+        i = 0U;
+      else
+        i++;
     }
   }
   std::set< std::string >::iterator i = cdbStrings.begin();
