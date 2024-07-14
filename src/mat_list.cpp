@@ -3,6 +3,8 @@
 #include "material.hpp"
 #include "zlib.hpp"
 
+#define ENABLE_UNKNOWN_MAT_DIRS 0
+
 static const size_t matDirNamesSize = 92637;
 
 static const unsigned char  matDirNamesZLib[13688] =
@@ -1174,6 +1176,59 @@ static void getStarfieldMaterialDirMap(
   }
 }
 
+#if ENABLE_UNKNOWN_MAT_DIRS
+static std::uint64_t findDirNameForHash(
+    std::uint32_t prefixHash, std::uint32_t dirHash, std::uint64_t prefixStr)
+{
+  int     n = std::bit_width(prefixStr);
+  if (n > 54)
+    return 0U;
+  n = ((n + 5) / 6) * 6;
+  for (int i = 1; i <= 36; i++)
+  {
+    std::uint32_t h = prefixHash;
+    unsigned char c = (unsigned char) (i + (i <= 10 ? 0x2F : 0x56));
+    hashFunctionCRC32(h, c);
+    if (h == dirHash)
+      return prefixStr | (std::uint64_t(i) << n);
+  }
+  for (int i = 1; i <= 36; i++)
+  {
+    std::uint32_t h = prefixHash;
+    unsigned char c = (unsigned char) (i + (i <= 10 ? 0x2F : 0x56));
+    hashFunctionCRC32(h, c);
+    std::uint64_t s1 = prefixStr | (std::uint64_t(i) << n);
+    std::uint64_t s2 = findDirNameForHash(h, dirHash, s1);
+    if (s2)
+      return s2;
+  }
+  return 0U;
+}
+
+static std::map< std::uint32_t, std::string >::const_iterator
+    findUnknownMatDir(std::map< std::uint32_t, std::string >& dirNameMap,
+                      std::uint32_t dirHash, const char *baseName)
+{
+  std::fprintf(stderr, "Unknown directory hash 0x%08X for material '%s'\n",
+               (unsigned int) dirHash, baseName);
+  static const char *unknownDirPrefix = "materials\\unknown\\";
+  std::uint32_t prefixHash = 0U;
+  for (size_t i = 0; unknownDirPrefix[i]; i++)
+    hashFunctionCRC32(prefixHash, (unsigned char) unknownDirPrefix[i]);
+  std::uint64_t s = findDirNameForHash(prefixHash, dirHash, 0U);
+  if (!s)
+    return dirNameMap.end();
+  std::string dirName("materials/unknown/");
+  for ( ; s; s = s >> 6)
+  {
+    int     c = int(s & 0x3FU);
+    dirName += char(c + (c <= 10 ? 0x2F : 0x56));
+  }
+  dirName += '/';
+  return dirNameMap.emplace(dirHash, dirName).first;
+}
+#endif
+
 struct MatFileFilterData
 {
   std::set< std::string_view >  *materialPaths;
@@ -1231,12 +1286,11 @@ void CE2MaterialDB::getMaterialList(
           dirNameMap.find(o->persistentID.dir);
       if (j == dirNameMap.end())
       {
-#if 0
-        std::fprintf(stderr,
-                     "Unknown directory hash 0x%08X for material '%s'\n",
-                     (unsigned int) o->persistentID.dir, baseName);
+#if ENABLE_UNKNOWN_MAT_DIRS
+        j = findUnknownMatDir(dirNameMap, o->persistentID.dir, baseName);
+        if (j == dirNameMap.end())
 #endif
-        continue;
+          continue;
       }
       tmp = baseName;
       std::uint32_t h = 0U;
