@@ -1183,21 +1183,26 @@ static std::uint64_t findDirNameForHash(
   int     n = std::bit_width(prefixStr);
   if (n > 54)
     return 0U;
-  n = ((n + 5) / 6) * 6;
-  for (int i = 1; i <= 36; i++)
+  n = (n + 1) & ~1;
+  for (unsigned char c = 0x30; c <= 0x7A; c++)
   {
+    if (c == 0x3A) [[unlikely]]
+      c = 0x61;
     std::uint32_t h = prefixHash;
-    unsigned char c = (unsigned char) (i + (i <= 10 ? 0x2F : 0x56));
     hashFunctionCRC32(h, c);
-    if (h == dirHash)
-      return prefixStr | (std::uint64_t(i) << n);
+    if (h == dirHash) [[unlikely]]
+      return prefixStr | (std::uint64_t((c & 0x1F) | ((c & 0x40) >> 1)) << n);
   }
-  for (int i = 1; i <= 36; i++)
+  if (n >= 54)
+    return 0U;
+  for (unsigned char c = 0x30; c <= 0x7A; c++)
   {
+    if (c == 0x3A) [[unlikely]]
+      c = 0x61;
     std::uint32_t h = prefixHash;
-    unsigned char c = (unsigned char) (i + (i <= 10 ? 0x2F : 0x56));
     hashFunctionCRC32(h, c);
-    std::uint64_t s1 = prefixStr | (std::uint64_t(i) << n);
+    std::uint64_t s1 =
+        prefixStr | (std::uint64_t((c & 0x1F) | ((c & 0x40) >> 1)) << n);
     std::uint64_t s2 = findDirNameForHash(h, dirHash, s1);
     if (s2)
       return s2;
@@ -1222,7 +1227,7 @@ static std::map< std::uint32_t, std::string >::const_iterator
   for ( ; s; s = s >> 6)
   {
     int     c = int(s & 0x3FU);
-    dirName += char(c + (c <= 10 ? 0x2F : 0x56));
+    dirName += char(c | ((c & 0x20) << 1) | 0x20);
   }
   dirName += '/';
   return dirNameMap.emplace(dirHash, dirName).first;
