@@ -1,6 +1,6 @@
 # libfo76utils
 
-Library of common source code used by [fo76utils](https://github.com/fo76utils/fo76utils), [ce2utils](https://github.com/fo76utils/ce2utils) and [NifSkope](https://github.com/fo76utils/nifskope).
+Library of common source code used by [fo76utils](https://github.com/fo76utils/fo76utils) and [NifSkope](https://github.com/fo76utils/nifskope).
 
 Defining the macro BUILD\_CE2UTILS enables the use of default paths and environment variable names specific to Starfield.
 
