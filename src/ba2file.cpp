@@ -553,6 +553,7 @@ void BA2File::loadArchivesFromDir(const char *pathName, size_t prefixLen)
         case 0x24B33D32A6E9F3ULL:       // "dlstrings"
         case 0x28932000000000ULL:       // "hdr"
         case 0x29B33D32A6E9F3ULL:       // "ilstrings"
+        case 0x2B980000000000ULL:       // "kf"
         case 0x2D874000000000ULL:       // "mat"
         case 0x2D973A00000000ULL:       // "mesh"
         case 0x2EA66000000000ULL:       // "nif"
@@ -574,13 +575,17 @@ void BA2File::loadArchivesFromDir(const char *pathName, size_t prefixLen)
              i = fileList.end(); i != fileList.begin(); )
     {
       i--;
-      fullName.resize(dirName.length());
-      fullName += i->baseName;
+      fullName.replace(fullName.begin() + dirName.length(), fullName.end(),
+                       i->baseName);
       if (i->fileSize >= 0)
       {
         // create list of loose files without opening them
         loadFile(fullName.c_str(), fullName.length(), prefixLen,
                  size_t(i->fileSize));
+      }
+      else if (i->fileSize == -1)
+      {
+        loadArchivesFromDir(fullName.c_str(), prefixLen);
       }
       else
       {
