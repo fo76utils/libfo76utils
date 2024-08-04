@@ -13,8 +13,8 @@ typedef std::uint16_t XMM_UInt16 __attribute__ ((__vector_size__ (16)));
 typedef std::int16_t  XMM_Int16 __attribute__ ((__vector_size__ (16)));
 typedef std::uint32_t XMM_UInt32 __attribute__ ((__vector_size__ (16)));
 typedef std::int32_t  XMM_Int32 __attribute__ ((__vector_size__ (16)));
-typedef std::uint64_t XMM_UInt64 __attribute__ ((__vector_size__ (16)));
-typedef std::int64_t  XMM_Int64 __attribute__ ((__vector_size__ (16)));
+typedef unsigned long long  XMM_UInt64 __attribute__ ((__vector_size__ (16)));
+typedef long long     XMM_Int64 __attribute__ ((__vector_size__ (16)));
 #  if ENABLE_X86_64_SIMD >= 2
 typedef float   YMM_Float __attribute__ ((__vector_size__ (32)));
 typedef double  YMM_Double __attribute__ ((__vector_size__ (32)));
@@ -42,6 +42,7 @@ struct FloatVector4
   {
     floatMinVal, floatMinVal, floatMinVal, floatMinVal
   };
+  typedef char  XMM_Char __attribute__ ((__vector_size__ (16)));
  public:
   XMM_Float v;
   inline FloatVector4(const XMM_Float& r)
@@ -179,10 +180,9 @@ struct FloatVector4
 
 inline FloatVector4::FloatVector4(unsigned int c)
 {
-  XMM_Float tmp;
-  __asm__ ("vmovd %1, %0" : "=x" (tmp) : "rm" (c));
-  __asm__ ("vpmovzxbd %0, %0" : "+x" (tmp));
-  __asm__ ("vcvtdq2ps %1, %0" : "=x" (v) : "x" (tmp));
+  XMM_Int32 tmp = { std::int32_t(c), 0, 0, 0 };
+  tmp = __builtin_ia32_pmovzxbd128(std::bit_cast< XMM_Char >(tmp));
+  v = __builtin_ia32_cvtdq2ps(tmp);
 }
 
 inline FloatVector4::FloatVector4(float x)
@@ -192,19 +192,20 @@ inline FloatVector4::FloatVector4(float x)
 
 inline FloatVector4::FloatVector4(const std::uint32_t *p)
 {
-  XMM_Float tmp;
-  __asm__ ("vpmovzxbd %1, %0" : "=x" (tmp) : "m" (*p));
-  __asm__ ("vcvtdq2ps %1, %0" : "=x" (v) : "x" (tmp));
+  XMM_Int32 tmp = { std::int32_t(*p), 0, 0, 0 };
+  tmp = __builtin_ia32_pmovzxbd128(std::bit_cast< XMM_Char >(tmp));
+  v = __builtin_ia32_cvtdq2ps(tmp);
 }
 
 inline FloatVector4::FloatVector4(const std::uint32_t *p1,
                                   const std::uint32_t *p2)
 {
-  XMM_Float tmp1, tmp2;
-  __asm__ ("vpmovzxbd %1, %0" : "=x" (tmp1) : "m" (*p1));
-  __asm__ ("vpmovzxbd %1, %0" : "=x" (tmp2) : "m" (*p2));
-  __asm__ ("vpunpcklqdq %1, %0, %0" : "+x" (tmp1) : "x" (tmp2));
-  __asm__ ("vcvtdq2ps %1, %0" : "=x" (v) : "x" (tmp1));
+  XMM_Int32 tmp1 = { std::int32_t(*p1), 0, 0, 0 };
+  XMM_Int32 tmp2 = { std::int32_t(*p2), 0, 0, 0 };
+  tmp1 = __builtin_ia32_pmovzxbd128(std::bit_cast< XMM_Char >(tmp1));
+  tmp2 = __builtin_ia32_pmovzxbd128(std::bit_cast< XMM_Char >(tmp2));
+  XMM_Int32 tmp3 = { tmp1[0], tmp1[1], tmp2[0], tmp2[1] };
+  v = __builtin_ia32_cvtdq2ps(tmp3);
 }
 
 inline FloatVector4::FloatVector4(float v0, float v1, float v2, float v3)
@@ -219,48 +220,42 @@ inline FloatVector4::FloatVector4(const float *p)
 
 inline FloatVector4 FloatVector4::convertInt16(const std::uint64_t& n)
 {
-  XMM_Float v;
+  XMM_Int32 v;
   __asm__ ("vpmovsxwd %1, %0" : "=x" (v) : "xm" (n));
-  __asm__ ("vcvtdq2ps %0, %0" : "+x" (v));
-  return FloatVector4(v);
+  return FloatVector4(__builtin_ia32_cvtdq2ps(v));
 }
 
-inline FloatVector4 FloatVector4::convertFloat16(std::uint64_t n, bool noInfNaN)
+inline FloatVector4 FloatVector4::convertFloat16(
+    std::uint64_t n, [[maybe_unused]] bool noInfNaN)
 {
   XMM_Float v;
+  XMM_UInt64  tmp = { n, 0U };
 #if ENABLE_X86_64_SIMD >= 3
-  __asm__ ("vmovq %1, %0" : "=x" (v) : "rm" (n));
   if (noInfNaN)
   {
-    const XMM_UInt16  expMaskTbl =
+    const XMM_UInt64  expMaskTbl =
     {
-      0x7C00, 0x7C00, 0x7C00, 0x7C00, 0, 0, 0, 0
+      0x7C007C007C007C00ULL, 0ULL
     };
-    XMM_UInt16  tmp;
-    __asm__ ("vpand %2, %1, %0" : "=x" (tmp) : "x" (v), "x" (expMaskTbl));
-    __asm__ ("vpcmpeqw %1, %0, %0" : "+x" (tmp) : "x" (expMaskTbl));
-    __asm__ ("vpandn %0, %1, %0" : "+x" (v) : "x" (tmp));
+    XMM_UInt64  tmp2 = tmp & expMaskTbl;
+    tmp2 = std::bit_cast< XMM_UInt64 >(
+               std::bit_cast< XMM_UInt16 >(tmp2)
+               == std::bit_cast< XMM_UInt16 >(expMaskTbl));
+    tmp = tmp & ~tmp2;
   }
-  __asm__ ("vcvtph2ps %0, %0" : "+x" (v));
+  v = __builtin_ia32_vcvtph2ps(std::bit_cast< XMM_Int16 >(tmp));
 #else
-  (void) noInfNaN;
-  XMM_Int32 tmp1;
   XMM_Int32 tmp2 =
   {
     std::int32_t(0x8FFFE000U), 0x38000000, std::int32_t(0xB8000000U), 0
   };
-  __asm__ ("vmovq %1, %0" : "=x" (v) : "rm" (n));
-  __asm__ ("vpmovsxwd %0, %0" : "+x" (v));
-  __asm__ ("vpshufd $0x00, %1, %0" : "=x" (tmp1) : "x" (tmp2));
-  __asm__ ("vpslld $0x0d, %0, %0" : "+x" (v));
-  __asm__ ("vpand %1, %0, %0" : "+x" (v) : "x" (tmp1));
-  __asm__ ("vpshufd $0x55, %1, %0" : "=x" (tmp1) : "x" (tmp2));
-  __asm__ ("vpshufd $0xaa, %0, %0" : "+x" (tmp2));
-  __asm__ ("vpaddd %1, %0, %0" : "+x" (v) : "x" (tmp1));
-  __asm__ ("vpand %1, %0, %0" : "+x" (tmp2) : "x" (v));
-  __asm__ ("vsubps %0, %1, %0" : "+x" (tmp2) : "x" (v));
-  __asm__ ("vaddps %0, %0, %0" : "+x" (tmp2));
-  __asm__ ("vpminud %1, %0, %0" : "+x" (v) : "x" (tmp2));
+  XMM_Int32 tmp3 = __builtin_ia32_pmovsxwd128(std::bit_cast< XMM_Int16 >(tmp));
+  tmp3 = (tmp3 << 13) & __builtin_ia32_pshufd(tmp2, 0x00);
+  tmp3 += __builtin_ia32_pshufd(tmp2, 0x55);
+  v = std::bit_cast< XMM_Float >(__builtin_ia32_pshufd(tmp2, 0xAA) & tmp3);
+  v = std::bit_cast< XMM_Float >(tmp3) - v;
+  v = std::bit_cast< XMM_Float >(
+          __builtin_ia32_pminud128(std::bit_cast< XMM_Int32 >(v + v), tmp3));
 #endif
   return FloatVector4(v);
 }
@@ -539,21 +534,14 @@ inline float FloatVector4::squareRootFast(float x)
 
 inline float FloatVector4::log2Fast(float x)
 {
-  union
-  {
-    float   f;
-    std::uint32_t n;
-  }
-  tmp;
-  tmp.f = x;
-  std::uint32_t n = tmp.n;
+  std::uint32_t n = std::bit_cast< std::uint32_t >(x);
   float   e = float(int(n >> 23));
-  tmp.n = (n & 0x007FFFFFU) | 0x3F800000U;
-  float   m = tmp.f;
+  n = (n & 0x007FFFFFU) | 0x3F800000U;
+  float   m = std::bit_cast< float >(n);
   float   m2 = m * m;
-  FloatVector4  tmp2(m, m2, m * m2, m2 * m2);
-  FloatVector4  tmp3(4.05608897f, -2.10465275f, 0.63728021f, -0.08021013f);
-  return (tmp2.dotProduct(tmp3) + e - (127.0f + 2.50847106f));
+  FloatVector4  tmp1(m, m2, m * m2, m2 * m2);
+  FloatVector4  tmp2(4.05608897f, -2.10465275f, 0.63728021f, -0.08021013f);
+  return (tmp1.dotProduct(tmp2) + e - (127.0f + 2.50847106f));
 }
 
 inline FloatVector4& FloatVector4::log2V()
@@ -1414,16 +1402,11 @@ inline std::uint32_t FloatVector4::normalToUInt32() const
   static const float  int16MultTable[2] = { -32767.0f, 32767.0f };
   size_t  n;
   __asm__ ("vmovmskps %1, %0" : "=r" (n) : "x" (v));
-  union
-  {
-    XMM_Float   f;
-    XMM_UInt32  i;
-  }
-  tmp;
-  tmp.f = v * int16MultTable[(n & 4) >> 2];
-  __asm__ ("vcvtps2dq %0, %0" : "+x" (tmp.i));
-  __asm__ ("vpackssdw %0, %0, %0" : "+x" (tmp.i));
-  return tmp.i[0];
+  XMM_UInt32  tmp =
+      std::bit_cast< XMM_UInt32 >(v * int16MultTable[(n & 4) >> 2]);
+  __asm__ ("vcvtps2dq %0, %0" : "+x" (tmp));
+  __asm__ ("vpackssdw %0, %0, %0" : "+x" (tmp));
+  return tmp[0];
 #else
   int     x, y;
   x = roundFloat(std::min(std::max(v[0], -1.0f), 1.0f) * 32767.0f);
