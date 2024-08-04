@@ -240,7 +240,8 @@ SFCubeMapFilter::SFCubeMapFilter(size_t outputWidth)
   roughnessTable = &(defaultRoughnessTable[0]);
   roughnessTableSize = int(sizeof(defaultRoughnessTable) / sizeof(float));
   normalizeLevel = float(12.5 / 18.0);
-  importanceSampleThreshold = 0.0f;
+  importanceSampleMaxMip = -1;
+  importanceSampleCnt = 1024;
 }
 
 SFCubeMapFilter::~SFCubeMapFilter()
@@ -320,12 +321,12 @@ size_t SFCubeMapFilter::convertImage(
         cubeFilterTable = nullptr;
       importanceSampleTable = nullptr;
 #if ENABLE_X86_64_SIMD < 2
-      if (enableFilter && w > 64 && roughness < importanceSampleThreshold)
+      if (enableFilter && w > 64 && m <= importanceSampleMaxMip)
 #else
-      if (enableFilter && w > 128 && roughness < importanceSampleThreshold)
+      if (enableFilter && w > 128 && m <= importanceSampleMaxMip)
 #endif
       {
-        int     n = 1024;
+        int     n = importanceSampleCnt;
         importanceSampleTable = &importanceSampleBuf;
         importanceSampleBuf.clear();
         importanceSampleBuf.reserve(size_t(n));

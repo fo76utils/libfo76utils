@@ -28,7 +28,8 @@ class SFCubeMapFilter
   float   normalizeScale;
   void (*pixelStoreFunction)(unsigned char *p, FloatVector4 c);
   float   normalizeLevel;
-  float   importanceSampleThreshold;
+  short   importanceSampleMaxMip;
+  short   importanceSampleCnt;
   const std::vector< FloatVector4 > *importanceSampleTable;
  public:
   static inline FloatVector4 convertCoord(int x, int y, int w, int n);
@@ -69,10 +70,15 @@ class SFCubeMapFilter
       errorMessage("SFCubeMapFilter: invalid output dimensions");
     width = std::uint32_t(w);
   }
-  // use importance sampling if roughness < n and output resolution > 128x128
-  inline void setImportanceSamplingThreshold(float n)
+  // use importance sampling if mip level <= n and output resolution > 128x128
+  inline void setImportanceSamplingMipLimit(int n)
   {
-    importanceSampleThreshold = n;
+    importanceSampleMaxMip = short(n);
+  }
+  // set the number of samples to use for importance sampling (default: 1024)
+  inline void setImportanceSamplingQuality(int n)
+  {
+    importanceSampleCnt = short(n);
   }
 };
 
