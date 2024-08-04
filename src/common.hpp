@@ -126,25 +126,20 @@ inline std::int32_t uint32ToSigned(unsigned int x)
 inline float convertFloat16(unsigned short n)
 {
 #if ENABLE_X86_64_SIMD >= 3
-  float   tmp __attribute__ ((__vector_size__ (16)));
-  __asm__ ("vmovq %1, %0" : "=x" (tmp) : "r" (std::uint64_t(n)));
-  __asm__ ("vcvtph2ps %0, %0" : "+x" (tmp));
-  return tmp[0];
+  short   tmp __attribute__ ((__vector_size__ (16))) =
+  {
+    std::int16_t(n), 0, 0, 0, 0, 0, 0, 0
+  };
+  return __builtin_ia32_vcvtph2ps(tmp)[0];
 #elif defined(__i386__) || defined(__x86_64__) || defined(__x86_64)
   std::uint32_t m = (std::uint32_t) int((std::int16_t) n);
-  union
-  {
-    std::uint32_t i;
-    float   f;
-  }
-  tmp;
-  tmp.i = ((m << 13) & 0x8FFFE000U) + 0x38000000U;
-  float   r = tmp.f;
+  std::uint32_t i = ((m << 13) & 0x8FFFE000U) + 0x38000000U;
+  float   r = std::bit_cast< float >(i);
   if (!(m & 0x7C00U)) [[unlikely]]
   {
     // zero or denormal
-    tmp.i = tmp.i & 0xFF800000U;
-    r = r - tmp.f;
+    i = std::bit_cast< std::uint32_t >(r) & 0xFF800000U;
+    r = r - std::bit_cast< float >(i);
     r = r + r;
   }
   return r;

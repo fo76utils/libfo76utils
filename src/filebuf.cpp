@@ -99,21 +99,12 @@ FloatVector4 FileBuffer::readFloatVector4()
 #if ENABLE_X86_64_SIMD >= 2
   if ((filePos + 16) > fileBufSize)
     errorMessage("end of input file");
-  union
-  {
-    XMM_Int32 i;
-    XMM_Float f;
-  }
-  tmp;
   const std::int32_t  *p =
       reinterpret_cast< const std::int32_t * >(fileBuf + filePos);
   filePos = filePos + 16;
-  tmp.i[0] = p[0];
-  tmp.i[1] = p[1];
-  tmp.i[2] = p[2];
-  tmp.i[3] = p[3];
-  tmp.i &= (((tmp.i + 0x00800000) & 0x7F000000) != 0);
-  return FloatVector4(tmp.f);
+  XMM_Int32 tmp = { p[0], p[1], p[2], p[3] };
+  tmp &= (((tmp + 0x00800000) & 0x7F000000) != 0);
+  return FloatVector4(std::bit_cast< XMM_Float >(tmp));
 #else
   float   v0 = readFloat();
   float   v1 = readFloat();
