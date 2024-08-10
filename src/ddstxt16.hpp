@@ -20,13 +20,13 @@ class DDSTexture16
     unsigned char channelCnt;
     unsigned char blockSize;
   };
-  static const DXGIFormatInfo dxgiFormatInfoTable[35];
+  static const DXGIFormatInfo dxgiFormatInfoTable[36];
   static const unsigned char  dxgiFormatMap[128];
   static const unsigned char  cubeWrapTable[24];
   std::uint32_t xMaskMip0;              // width - 1
   std::uint32_t yMaskMip0;              // height - 1
   unsigned char maxMipLevel;
-  unsigned char channelCnt;
+  unsigned char channelCntFlags;        // b0-b2: channels, b7: valid cube map
   unsigned char maxTextureNum;
   unsigned char dxgiFormat;             // 0 if constructed from a color
   std::uint32_t textureDataSize;        // total data size / (maxTextureNum + 1)
@@ -78,6 +78,8 @@ class DDSTexture16
       std::uint64_t *dst, const unsigned char *src, unsigned int w);
   static size_t decodeLine_RGBA32S(
       std::uint64_t *dst, const unsigned char *src, unsigned int w);
+  static size_t decodeLine_RGBA64(
+      std::uint64_t *dst, const unsigned char *src, unsigned int w);
   void loadTextureData(const unsigned char *srcPtr, int n,
                        const DXGIFormatInfo& formatInfo, bool noSRGBExpand);
   void loadTexture(FileBuffer& buf, int mipOffset, bool noSRGBExpand);
@@ -112,6 +114,7 @@ class DDSTexture16
       const std::uint64_t *p, int x0, int y0, int n, size_t faceDataSize,
       float xf, float yf, unsigned int xMask);
  public:
+  // mipOffset < 0: use mip level 0 only, and always generate mipmaps
   DDSTexture16(const char *fileName, int mipOffset = 0,
                bool noSRGBExpand = false);
   DDSTexture16(const unsigned char *buf, size_t bufSize, int mipOffset = 0,
@@ -138,7 +141,7 @@ class DDSTexture16
   }
   inline unsigned char getChannelCount() const
   {
-    return channelCnt;
+    return channelCntFlags & 7;
   }
   inline bool getIsCubeMap() const
   {

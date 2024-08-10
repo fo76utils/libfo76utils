@@ -4,7 +4,7 @@
 
 #include <new>
 
-const DDSTexture16::DXGIFormatInfo DDSTexture16::dxgiFormatInfoTable[35] =
+const DDSTexture16::DXGIFormatInfo DDSTexture16::dxgiFormatInfoTable[36] =
 {
   {                             //  0: DXGI_FORMAT_UNKNOWN = 0x00
     (size_t (*)(std::uint64_t *, const unsigned char *, unsigned int)) 0,
@@ -113,12 +113,15 @@ const DDSTexture16::DXGIFormatInfo DDSTexture16::dxgiFormatInfoTable[35] =
   },
   {                             // 34: DXGI_FORMAT_R8G8B8A8_SNORM = 0x1F
     &decodeLine_RGBA32S, "R8G8B8A8_SNORM", false, false, 4, 4
+  },
+  {                             // 35: DXGI_FORMAT_R16G16B16A16_UNORM = 0x0B
+    &decodeLine_RGBA64, "R16G16B16A16_UNORM", false, false, 4, 8
   }
 };
 
 const unsigned char DDSTexture16::dxgiFormatMap[128] =
 {
-   0,  0,  0,  0,   0,  0,  0,  0,   0,  0,  1,  0,   0,  0,  0,  0,    // 0x00
+   0,  0,  0,  0,   0,  0,  0,  0,   0,  0,  1, 35,   0,  0,  0,  0,    // 0x00
    0,  0,  0,  0,   0,  0,  0,  0,  32,  0,  0,  0,   2,  3,  0, 34,    // 0x10
    0,  0,  0,  0,   0,  0,  0,  0,   0,  0,  0,  0,   0,  0,  0,  0,    // 0x20
    0,  4,  0, 33,   0,  0,  0,  0,   0,  0,  0,  0,   0,  5,  6,  0,    // 0x30
@@ -558,6 +561,18 @@ size_t DDSTexture16::decodeLine_RGBA32S(
   return (size_t(w) << 2);
 }
 
+size_t DDSTexture16::decodeLine_RGBA64(
+    std::uint64_t *dst, const unsigned char *src, unsigned int w)
+{
+  for (unsigned int x = 0; x < w; x++, dst++, src = src + 8)
+  {
+    std::uint64_t b = FileBuffer::readUInt64Fast(src) ^ 0x8000800080008000ULL;
+    FloatVector4  c(FloatVector4::convertInt16(b));
+    *dst = ((c + 32768.0f) * float(1.0 / 65535.0)).convertToFloat16();
+  }
+  return (size_t(w) << 3);
+}
+
 static void srgbExpandBlock(void *buf, int w, int h, int pitch)
 {
 #if ENABLE_X86_64_SIMD >= 3
@@ -656,16 +671,16 @@ void DDSTexture16::loadTextureData(
       size_t  w2 = size_t(xMask + 1U);
       for (unsigned int y = 0; y < h; y++)
       {
-        size_t  offsY2 = size_t((y << 1) & yMask) * w2;
-        size_t  offsY2p1 = size_t(((y << 1) + 1U) & yMask) * w2;
+        const std::uint64_t *p2y2 = p2 + (size_t(y << 1) * w2);
+        const std::uint64_t *p2y2p1 = (yMask >= h ? p2y2 + w2 : p2y2);
         for (unsigned int x = 0; x < w; x++)
         {
-          size_t  offsX2 = (x << 1) & xMask;
-          size_t  offsX2p1 = ((x << 1) + 1U) & xMask;
-          FloatVector4  c(FloatVector4::convertFloat16(p2[offsY2 + offsX2]));
-          c += FloatVector4::convertFloat16(p2[offsY2 + offsX2p1]);
-          c += FloatVector4::convertFloat16(p2[offsY2p1 + offsX2]);
-          c += FloatVector4::convertFloat16(p2[offsY2p1 + offsX2p1]);
+          size_t  offsX2 = x << 1;
+          size_t  offsX2p1 = offsX2 + size_t(w2 > w);
+          FloatVector4  c(FloatVector4::convertFloat16(p2y2[offsX2]));
+          c += FloatVector4::convertFloat16(p2y2[offsX2p1]);
+          c += FloatVector4::convertFloat16(p2y2p1[offsX2]);
+          c += FloatVector4::convertFloat16(p2y2p1[offsX2p1]);
           p[y * w + x] = (c * 0.25f).convertToFloat16();
         }
       }
@@ -685,7 +700,7 @@ void DDSTexture16::loadTexture(FileBuffer& buf, int mipOffset,
   if ((flags & 0x1006) != 0x1006)       // height, width, pixel format required
     errorMessage("unsupported texture file format");
   maxMipLevel = 0U;
-  channelCnt = 0;
+  channelCntFlags = 0;
   maxTextureNum = 0;
   dxgiFormat = 0;
   yMaskMip0 = buf.readUInt32() - 1U;
@@ -784,7 +799,7 @@ void DDSTexture16::loadTexture(FileBuffer& buf, int mipOffset,
   const DXGIFormatInfo& dxgiFmtInfo =
       dxgiFormatInfoTable[dxgiFormatMap[dxgiFormat]];
   bool    isCompressed = dxgiFmtInfo.isCompressed;
-  channelCnt = dxgiFmtInfo.channelCnt;
+  channelCntFlags = dxgiFmtInfo.channelCnt;
   size_t  blockSize = dxgiFmtInfo.blockSize;
   size_t  sizeRequired = 0;
   if (!isCompressed)
@@ -811,12 +826,16 @@ void DDSTexture16::loadTexture(FileBuffer& buf, int mipOffset,
     if (n > 256)
       n = 256;
     maxTextureNum = (unsigned char) (n - 1);
+    if (maxTextureNum >= 5 && xMaskMip0 == yMaskMip0)
+      channelCntFlags = channelCntFlags | 0x80;
   }
   else if (buf.size() < (dataOffs + sizeRequired))
   {
     errorMessage("DDS file is shorter than expected");
   }
   const unsigned char *srcPtr = buf.data() + dataOffs;
+  if (mipOffset < 0)
+    maxMipLevel = 0;
   for ( ; mipOffset > 0 && maxMipLevel; mipOffset--, maxMipLevel--)
   {
     unsigned int  w = xMaskMip0 + 1U;
@@ -901,18 +920,13 @@ DDSTexture16::DDSTexture16(FloatVector4 c, bool srgbColor)
   : xMaskMip0(0U),
     yMaskMip0(0U),
     maxMipLevel(0),
-    channelCnt(4),
+    channelCntFlags(4),
     maxTextureNum(0),
     dxgiFormat(0),
     textureDataSize(0U)
 {
   if (srgbColor)
-  {
-    float   a = c[3];
-    c *= (c * 0.13945550f + 0.86054450f);
-    c *= c;
-    c[3] = a;
-  }
+    c = srgbExpand(c);
   textureColor = c.convertToFloat16();
 #if ENABLE_X86_64_SIMD >= 2
   std::uintptr_t  tmp1 =
@@ -1075,13 +1089,13 @@ inline FloatVector4 DDSTexture16::getPixelB_Cube(
     const std::uint64_t *p, int x0, int y0, int n, size_t faceDataSize,
     float xf, float yf, unsigned int xMask)
 {
-  if ((x0 | y0 | (x0 + 1) | (y0 + 1)) & ~(int(xMask))) [[unlikely]]
+  unsigned int  x0u = std::uint32_t(std::int32_t(x0));
+  unsigned int  y0u = std::uint32_t(std::int32_t(y0));
+  if (std::max< unsigned int >(x0u, y0u) >= xMask) [[unlikely]]
     return getPixelB_CubeWrap(p, x0, y0, n, faceDataSize, xf, yf, xMask);
-  p = p + (size_t(n) * faceDataSize);
   unsigned int  w = xMask + 1U;
-  return getPixelBFloat16(p + ((unsigned int) y0 * w + (unsigned int) x0),
-                          p + ((unsigned int) (y0 + 1) * w + (unsigned int) x0),
-                          xf, yf);
+  p = p + (size_t(n) * faceDataSize) + (y0u * w + x0u);
+  return getPixelBFloat16(p, p + w, xf, yf);
 }
 
 FloatVector4 DDSTexture16::cubeMap(float x, float y, float z,
@@ -1090,47 +1104,46 @@ FloatVector4 DDSTexture16::cubeMap(float x, float y, float z,
   float   xm = float(std::fabs(x));
   float   ym = float(std::fabs(y));
   float   zm = float(std::fabs(z));
+  float   tmp = std::max(xm, std::max(ym, zm));
+  float   d = 0.5f / tmp;
+  mipLevel = std::max(mipLevel, 0.0f);
+  int     m0 = int(mipLevel);
+  float   mf = float(m0);
   size_t  n = 0;
-  if (xm >= ym && xm >= zm)             // +X (0), -X (1)
+  if (!(xm < tmp))                      // +X (0), -X (1)
   {
-    float   tmp = 1.0f / xm;
     if (x < 0.0f)
     {
       z = -z;
       n = 1;
     }
-    x = z * tmp * -0.5f + 0.5f;
-    y = y * tmp * -0.5f + 0.5f;
+    x = 0.5f - z * d;
+    y = 0.5f - y * d;
   }
-  else if (ym >= xm && ym >= zm)        // +Y (2), -Y (3)
+  else if (!(ym < tmp))                 // +Y (2), -Y (3)
   {
-    float   tmp = 1.0f / ym;
     n = 2;
     if (y < 0.0f)
     {
       z = -z;
       n = 3;
     }
-    x = x * tmp * 0.5f + 0.5f;
-    y = z * tmp * 0.5f + 0.5f;
+    x = x * d + 0.5f;
+    y = z * d + 0.5f;
   }
   else                                  // +Z (4), -Z (5)
   {
-    float   tmp = 1.0f / zm;
     n = 4;
     if (z < 0.0f)
     {
       x = -x;
       n = 5;
     }
-    x = x * tmp * 0.5f + 0.5f;
-    y = y * tmp * -0.5f + 0.5f;
+    x = x * d + 0.5f;
+    y = 0.5f - y * d;
   }
-  if (maxTextureNum < 5 || xMaskMip0 != yMaskMip0) [[unlikely]]
+  if (!(channelCntFlags & 0x80)) [[unlikely]]
     return getPixelTC(x, y, mipLevel);
-  mipLevel = std::max(mipLevel, 0.0f);
-  int     m0 = int(mipLevel);
-  float   mf = float(m0);
   int     x0, y0;
   float   xf, yf;
   unsigned int  xMask;
