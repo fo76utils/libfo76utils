@@ -262,7 +262,7 @@ size_t SFCubeMapFilter::convertImage(
     return 0;
   try
   {
-    DDSTexture16  t(buf, bufSize);
+    DDSTexture16  t(buf, bufSize, -1);
     cubeMap = &t;
     if (!(t.getIsCubeMap() && t.getWidth() >= minWidth &&
           t.getWidth() == t.getHeight()))
