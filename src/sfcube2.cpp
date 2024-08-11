@@ -276,7 +276,9 @@ size_t SFCubeMapFilter::convertImage(
       FloatVector4  txSum(0.0f);
       for (int n = 0; n < 6; n++)
         txSum += FloatVector4::convertFloat16(cubeMap->getPixelN(0, 0, 16, n));
-      float   tmp = txSum.dotProduct3(FloatVector4(normalizeLevel));
+      float   tmp =
+          txSum.dotProduct3(FloatVector4(0.2126f, 0.7152f, 0.0722f, 1.0f))
+          * normalizeLevel;
       if (tmp > 1.0f)
         normalizeScale = 1.0f / std::min(tmp, 65536.0f);
     }
