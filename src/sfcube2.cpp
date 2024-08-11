@@ -75,7 +75,6 @@ void SFCubeMapFilter::processImage_Specular(
           if (signMask == 0U) [[likely]]
             continue;
         }
-        if (signMask != 0U)
         {
           FloatVector8  d(lDotR);       // face -X, -Y or -Z: invert dot product
           d.minValues(FloatVector8(0.0f));
@@ -240,8 +239,7 @@ SFCubeMapFilter::SFCubeMapFilter(size_t outputWidth)
   roughnessTable = &(defaultRoughnessTable[0]);
   roughnessTableSize = int(sizeof(defaultRoughnessTable) / sizeof(float));
   normalizeLevel = float(12.5 / 18.0);
-  importanceSampleMaxMip = -1;
-  importanceSampleCnt = 1024;
+  importanceSampleCnt = 0xFFFFFFFFU;
 }
 
 SFCubeMapFilter::~SFCubeMapFilter()
@@ -320,13 +318,19 @@ size_t SFCubeMapFilter::convertImage(
       if (w >= filterMinWidth)
         cubeFilterTable = nullptr;
       importanceSampleTable = nullptr;
-#if ENABLE_X86_64_SIMD < 2
-      if (enableFilter && w > 64 && m <= importanceSampleMaxMip)
+      std::uint32_t importanceSampleLimit = std::uint32_t(m + 16 - mipCnt) << 1;
+#if ENABLE_X86_64_SIMD >= 4
+      importanceSampleLimit = 44739243U >> importanceSampleLimit;
+#elif ENABLE_X86_64_SIMD == 3
+      importanceSampleLimit = 50331648U >> importanceSampleLimit;
+#elif ENABLE_X86_64_SIMD == 2
+      importanceSampleLimit = 33554432U >> importanceSampleLimit;
 #else
-      if (enableFilter && w > 128 && m <= importanceSampleMaxMip)
+      importanceSampleLimit = 134217728U >> importanceSampleLimit;
 #endif
+      if (enableFilter && importanceSampleCnt < importanceSampleLimit)
       {
-        int     n = importanceSampleCnt;
+        int     n = int(importanceSampleCnt);
         importanceSampleTable = &importanceSampleBuf;
         importanceSampleBuf.clear();
         importanceSampleBuf.reserve(size_t(n));
@@ -422,11 +426,16 @@ SFCubeMapCache::~SFCubeMapCache()
 
 size_t SFCubeMapCache::convertImage(
     unsigned char *buf, size_t bufSize, bool outFmtFloat, size_t bufCapacity,
-    size_t outputWidth)
+    int hdrToneMap)
 {
-  if (outputWidth)
-    setOutputWidth(outputWidth);
-  std::uint32_t h1 = width;
+  bool    isHDR = (bufSize >= 11 &&                     // "#?RADIAN"
+                   FileBuffer::readUInt64Fast(buf) == 0x4E41494441523F23ULL);
+  std::uint32_t h1 = width | (importanceSampleCnt << 17);
+  if (isHDR)
+  {
+    hdrToneMap = std::min< int >(std::max< int >(hdrToneMap, 0), 16);
+    h1 = h1 | (std::uint32_t(hdrToneMap) << 12);
+  }
   std::uint32_t h2 = ~h1;
   size_t  i = 0;
   for ( ; (i + 16) <= bufSize; i = i + 16)
@@ -448,13 +457,17 @@ size_t SFCubeMapCache::convertImage(
     std::memcpy(buf, v.data(), v.size());
     return v.size();
   }
-  size_t  newSize =
-      SFCubeMapFilter::convertImage(buf, bufSize, outFmtFloat, bufCapacity);
-  if (!newSize && bufSize >= 11 &&
-      FileBuffer::readUInt64Fast(buf) == 0x4E41494441523F23ULL) // "#?RADIAN"
+  size_t  newSize = 0;
+  if (!isHDR)
+  {
+    newSize =
+        SFCubeMapFilter::convertImage(buf, bufSize, outFmtFloat, bufCapacity);
+  }
+  else
   {
     std::vector< unsigned char >  tmpBuf;
-    if (convertHDRToDDS(tmpBuf, buf, bufSize, 2048, false, 65504.0f, 0x0A))
+    float   maxLevel = float(hdrToneMap > 0 ? (-65536 >> hdrToneMap) : 65504);
+    if (convertHDRToDDS(tmpBuf, buf, bufSize, 2048, false, maxLevel, 0x0A))
     {
       newSize = SFCubeMapFilter::convertImage(tmpBuf.data(), tmpBuf.size(),
                                               outFmtFloat, tmpBuf.size());
@@ -736,5 +749,10 @@ bool SFCubeMapCache::convertHDRToDDS(
     throw;
   }
   return true;
+}
+
+void SFCubeMapCache::clear()
+{
+  cachedTextures.clear();
 }
 

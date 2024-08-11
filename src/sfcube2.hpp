@@ -28,8 +28,7 @@ class SFCubeMapFilter
   float   normalizeScale;
   void (*pixelStoreFunction)(unsigned char *p, FloatVector4 c);
   float   normalizeLevel;
-  short   importanceSampleMaxMip;
-  short   importanceSampleCnt;
+  std::uint32_t importanceSampleCnt;
   const std::vector< FloatVector4 > *importanceSampleTable;
  public:
   static inline FloatVector4 convertCoord(int x, int y, int w, int n);
@@ -70,15 +69,10 @@ class SFCubeMapFilter
       errorMessage("SFCubeMapFilter: invalid output dimensions");
     width = std::uint32_t(w);
   }
-  // use importance sampling if mip level <= n and output resolution > 128x128
-  inline void setImportanceSamplingMipLimit(int n)
+  // set the number of samples to use for importance sampling (-1: disable)
+  inline void setImportanceSamplingQuality(std::int32_t n)
   {
-    importanceSampleMaxMip = short(n);
-  }
-  // set the number of samples to use for importance sampling (default: 1024)
-  inline void setImportanceSamplingQuality(int n)
-  {
-    importanceSampleCnt = short(n);
+    importanceSampleCnt = std::uint32_t(n);
   }
 };
 
@@ -139,9 +133,10 @@ class SFCubeMapCache : public SFCubeMapFilter
  public:
   SFCubeMapCache();
   ~SFCubeMapCache();
+  // if hdrToneMap > 0, convert HDR with maxLevel = -65536 >> hdrToneMap
   size_t convertImage(unsigned char *buf, size_t bufSize,
                       bool outFmtFloat = false, size_t bufCapacity = 0,
-                      size_t outputWidth = 0);
+                      int hdrToneMap = 0);
   // Convert Radiance HDR format image to DDS cube map.
   //   cubeWidth:       output resolution per face
   //   invertCoord:     invert Z axis if true
@@ -153,6 +148,7 @@ class SFCubeMapCache : public SFCubeMapFilter
                               const unsigned char *inBufData, size_t inBufSize,
                               int cubeWidth, bool invertCoord, float maxLevel,
                               unsigned char outFmt);
+  void clear();
 };
 
 #endif
