@@ -61,7 +61,7 @@ class SFCubeMapFilter
   // at most 'n' (default: 1.0 / 12.5)
   inline void setNormalizeLevel(float n)
   {
-    normalizeLevel = 1.0f / ((n > 0.0f ? n : 65536.0f) * 18.0f);
+    normalizeLevel = 1.0f / ((n > 0.0f ? n : 65536.0f) * 6.0f);
   }
   void setOutputWidth(size_t w)
   {

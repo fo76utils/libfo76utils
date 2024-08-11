@@ -238,7 +238,7 @@ SFCubeMapFilter::SFCubeMapFilter(size_t outputWidth)
   setOutputWidth(outputWidth);
   roughnessTable = &(defaultRoughnessTable[0]);
   roughnessTableSize = int(sizeof(defaultRoughnessTable) / sizeof(float));
-  normalizeLevel = float(12.5 / 18.0);
+  normalizeLevel = float(12.5 / 6.0);
   importanceSampleCnt = 0xFFFFFFFFU;
 }
 
