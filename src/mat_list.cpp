@@ -1160,7 +1160,7 @@ static void getStarfieldMaterialDirMap(
                                           matDirNamesZLib,
                                           sizeof(matDirNamesZLib));
   std::string tmp;
-  for (size_t i = 0; i < tmpBuf.size(); i++)
+  for (size_t i = 0; i < matDirNamesSize; i++)
   {
     tmp = reinterpret_cast< char * >(tmpBuf.data() + i);
     std::uint32_t h = 0U;
