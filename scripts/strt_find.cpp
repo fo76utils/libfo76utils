@@ -5,6 +5,13 @@
 #include "esmfile.hpp"
 #include "bsrefl.hpp"
 
+#include "ba2file.cpp"
+#include "bsrefl.cpp"
+#include "common.cpp"
+#include "esmfile.cpp"
+#include "filebuf.cpp"
+#include "zlib.cpp"
+
 static void loadStrings(std::set< std::string >& cdbStrings, FileBuffer& buf)
 {
   if (buf.size() < 24)
