@@ -589,14 +589,14 @@ void SDLDisplay::clearSurface(std::uint32_t c, bool forceTransparent)
     c1 = ((c & 0x00F000U) >> 8) | ((c & 0x0F0000U) >> 4) | (c & 0xF00000U) | a;
 #endif
     unsigned int  gridSize = 8U << (c >> 24);
-#if ENABLE_X86_64_SIMD >= 2
+#if ENABLE_X86_64_SIMD >= 2 && !defined(__clang__)
     const YMM_UInt32  tmp0 = { c0, c0, c0, c0, c0, c0, c0, c0 };
     const YMM_UInt32  tmp1 = { c1, c1, c1, c1, c1, c1, c1, c1 };
 #endif
     for (unsigned int yc = 0U; yc < (unsigned int) imageHeight; yc++)
     {
       unsigned int  xc = 0U;
-#if ENABLE_X86_64_SIMD >= 2
+#if ENABLE_X86_64_SIMD >= 2 && !defined(__clang__)
       for ( ; (xc + 8U) <= (unsigned int) imageWidth; xc = xc + 8U, p = p + 8)
       {
         __asm__ ("vmovdqu %t1, %t0"

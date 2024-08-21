@@ -160,7 +160,7 @@ std::string StringDB::operator[](size_t id) const
   if (i == strings.end())
   {
     char    tmp[16];
-    std::sprintf(tmp, "[0x%08x]", (unsigned int) id);
+    (void) std::snprintf(tmp, 16, "[0x%08x]", (unsigned int) id);
     return std::string(tmp);
   }
   return std::string(i->second);

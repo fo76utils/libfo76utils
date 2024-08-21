@@ -1364,9 +1364,9 @@ void BSMaterialsCDB::getJSONMaterial(
       size_t  n = jsonBuf.rfind("\n          \"Type\"");
       if (n != std::string::npos && n > prvLen)
       {
-        char    tmpBuf[64];
-        std::sprintf(tmpBuf, "\n          \"Index\": %u,",
-                     (unsigned int) (j->key & 0xFFFFU));
+        char    tmpBuf[32];
+        (void) std::snprintf(tmpBuf, 32, "\n          \"Index\": %u,",
+                             (unsigned int) (j->key & 0xFFFFU));
         jsonBuf.insert(n, tmpBuf);
         printToString(jsonBuf, ",\n");
       }
