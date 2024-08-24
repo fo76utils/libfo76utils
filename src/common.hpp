@@ -338,5 +338,8 @@ class AllocBuffers
   }
 };
 
+// NOTE: 'len' should include the terminating null character if there is one
+void convertStringToUInt16(std::uint16_t *dst, const char *src, size_t len);
+
 #endif
 
