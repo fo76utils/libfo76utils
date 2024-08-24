@@ -450,6 +450,21 @@ void AllocBuffers::clear()
   }
 }
 
+#if ENABLE_X86_64_SIMD >= 1
+static inline XMM_UInt8 convert8CharsToXMMUInt16(const void *p)
+{
+  XMM_UInt64  tmp = { FileBuffer::readUInt64Fast(p), 0U };
+  XMM_UInt8 tmp2 = std::bit_cast< XMM_UInt8 >(tmp);
+#  ifndef __clang__
+  XMM_UInt8 m = { 0, 8, 1, 8, 2, 8, 3, 8, 4, 8, 5, 8, 6, 8, 7, 8 };
+  return __builtin_shuffle(tmp2, tmp2, m);
+#  else
+  return __builtin_shufflevector(
+             tmp2, tmp2, 0, 8, 1, 8, 2, 8, 3, 8, 4, 8, 5, 8, 6, 8, 7, 8);
+#  endif
+}
+#endif
+
 void convertStringToUInt16(std::uint16_t *dst, const char *src, size_t len)
 {
 #if ENABLE_X86_64_SIMD >= 1
@@ -458,22 +473,16 @@ void convertStringToUInt16(std::uint16_t *dst, const char *src, size_t len)
     if (len & 7)
     {
       size_t  n = len & 7;
-      XMM_UInt64  tmp = { FileBuffer::readUInt64Fast(src), 0U };
-      XMM_UInt8 tmp2 = std::bit_cast< XMM_UInt8 >(tmp);
-      tmp2 = __builtin_shufflevector(
-                 tmp2, tmp2, 0, 8, 1, 8, 2, 8, 3, 8, 4, 8, 5, 8, 6, 8, 7, 8);
-      std::memcpy(dst, &tmp2, 16);
+      XMM_UInt8 tmp = convert8CharsToXMMUInt16(src);
+      std::memcpy(dst, &tmp, 16);
       src = src + n;
       dst = dst + n;
       len = len - n;
     }
     do
     {
-      XMM_UInt64  tmp = { FileBuffer::readUInt64Fast(src), 0U };
-      XMM_UInt8 tmp2 = std::bit_cast< XMM_UInt8 >(tmp);
-      tmp2 = __builtin_shufflevector(
-                 tmp2, tmp2, 0, 8, 1, 8, 2, 8, 3, 8, 4, 8, 5, 8, 6, 8, 7, 8);
-      std::memcpy(dst, &tmp2, 16);
+      XMM_UInt8 tmp = convert8CharsToXMMUInt16(src);
+      std::memcpy(dst, &tmp, 16);
       src = src + 8;
       dst = dst + 8;
       len = len - 8;
