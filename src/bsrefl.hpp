@@ -263,7 +263,7 @@ inline bool BSReflStream::Chunk::readFloat(float& n)
     tmp = 0U;
   n = std::bit_cast< float, std::uint32_t >(tmp);
 #else
-  n = readFloat();
+  n = FileBuffer::readFloat();
 #endif
   return true;
 }
@@ -281,7 +281,7 @@ inline bool BSReflStream::Chunk::readFloat0To1(float& n)
     tmp = 0U;
   n = std::bit_cast< float, std::uint32_t >(tmp);
 #else
-  n = readFloat();
+  n = FileBuffer::readFloat();
 #endif
   n = std::min(std::max(n, 0.0f), 1.0f);
   return true;
