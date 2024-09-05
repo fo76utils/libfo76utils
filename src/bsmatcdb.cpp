@@ -904,6 +904,20 @@ void BSMaterialsCDB::clear()
   classes = allocateObjects< CDBClassDef >(classHashMask + 1);
 }
 
+const BSMaterialsCDB::CDBClassDef *
+    BSMaterialsCDB::getClassDef(std::uint32_t type) const
+{
+  std::uint32_t h = 0xFFFFFFFFU;
+  hashFunctionCRC32C< std::uint32_t >(h, type);
+  std::uint32_t m = classHashMask;
+  for (h = h & m; classes[h].className; h = (h + 1U) & m)
+  {
+    if (classes[h].className == type)
+      return &(classes[h]);
+  }
+  return nullptr;
+}
+
 BSMaterialsCDB::CDBClassDef& BSMaterialsCDB::allocateClassDef(
     std::uint32_t className)
 {
@@ -1316,18 +1330,88 @@ void BSMaterialsCDB::dumpObject(
   }
 }
 
-const BSMaterialsCDB::CDBClassDef *
-    BSMaterialsCDB::getClassDef(std::uint32_t type) const
+void BSMaterialsCDB::dumpObject(std::string& jsonBuf, const MaterialObject *o,
+                                BSResourceID matObjectID) const
 {
-  std::uint32_t h = 0xFFFFFFFFU;
-  hashFunctionCRC32C< std::uint32_t >(h, type);
-  std::uint32_t m = classHashMask;
-  for (h = h & m; classes[h].className; h = (h + 1U) & m)
+  printToString(jsonBuf, "    {\n      \"Components\": [\n");
+  for (const MaterialComponent *i = o->components; i; i = i->next)
   {
-    if (classes[h].className == type)
-      return &(classes[h]);
+    jsonBuf += "        ";
+#if CDB_SORT_STRUCT_MEMBERS
+    size_t  prvLen = jsonBuf.length();
+    dumpObject(jsonBuf, i->o, 8);
+    size_t  n = jsonBuf.rfind("\n          \"Type\"");
+    if (n != std::string::npos && n > prvLen)
+    {
+      char    tmpBuf[32];
+      (void) std::snprintf(tmpBuf, 32, "\n          \"Index\": %u,",
+                           (unsigned int) (i->key & 0xFFFFU));
+      jsonBuf.insert(n, tmpBuf);
+      printToString(jsonBuf, ",\n");
+    }
+#else
+    dumpObject(jsonBuf, i->o, 8);
+    if (jsonBuf.ends_with("\n        }"))
+    {
+      jsonBuf.resize(jsonBuf.length() - 10);
+      printToString(jsonBuf, ",\n          \"Index\": %u\n",
+                    (unsigned int) (i->key & 0xFFFFU));
+      printToString(jsonBuf, "        },\n");
+    }
+#endif
   }
-  return nullptr;
+  if (jsonBuf.ends_with(",\n"))
+  {
+    jsonBuf.resize(jsonBuf.length() - 1);
+    jsonBuf[jsonBuf.length() - 1] = '\n';
+  }
+  printToString(jsonBuf, "      ],\n");
+  if (o->parent)
+  {
+    printToString(jsonBuf, "      \"Edges\": [\n");
+    printToString(jsonBuf, "        {\n");
+    printToString(jsonBuf, "          \"EdgeIndex\": 0,\n");
+    if (o->parent->persistentID == matObjectID)
+    {
+      printToString(jsonBuf, "          \"To\": \"<this>\",\n");
+    }
+    else
+    {
+      printToString(jsonBuf, "          \"To\": \"res:%08X:%08X:%08X\",\n",
+                    (unsigned int) o->parent->persistentID.dir,
+                    (unsigned int) o->parent->persistentID.file,
+                    (unsigned int) o->parent->persistentID.ext);
+    }
+    printToString(jsonBuf,
+                  "          \"Type\": \"BSComponentDB2::OuterEdge\"\n");
+    printToString(jsonBuf, "        }\n");
+    printToString(jsonBuf, "      ],\n");
+  }
+  if (o->persistentID != matObjectID)
+  {
+    printToString(jsonBuf, "      \"ID\": \"res:%08X:%08X:%08X\",\n",
+                  (unsigned int) o->persistentID.dir,
+                  (unsigned int) o->persistentID.file,
+                  (unsigned int) o->persistentID.ext);
+  }
+  const MaterialObject  *p = o->baseObject;
+  const char  *parentStr = "";
+  if (p)
+  {
+    if (p->persistentID.file == 0x7EA3660CU)
+      parentStr = "materials\\\\layered\\\\root\\\\layeredmaterials.mat";
+    else if (p->persistentID.file == 0x8EBE84FFU)
+      parentStr = "materials\\\\layered\\\\root\\\\blenders.mat";
+    else if (p->persistentID.file == 0x574A4CF3U)
+      parentStr = "materials\\\\layered\\\\root\\\\layers.mat";
+    else if (p->persistentID.file == 0x7D1E021BU)
+      parentStr = "materials\\\\layered\\\\root\\\\materials.mat";
+    else if (p->persistentID.file == 0x06F52154U)
+      parentStr = "materials\\\\layered\\\\root\\\\texturesets.mat";
+    else if (p->persistentID.file == 0x4298BB09U)
+      parentStr = "materials\\\\layered\\\\root\\\\uvstreams.mat";
+  }
+  printToString(jsonBuf, "      \"Parent\": \"%s\"\n    },\n", parentStr);
 }
 
 void BSMaterialsCDB::getMaterials(
@@ -1351,88 +1435,36 @@ void BSMaterialsCDB::getJSONMaterial(
   const MaterialObject  *i = getMaterial(matObjectID);
   if (!i)
     return;
+  std::map< BSResourceID, const MaterialObject * >  jsonObjects;
   jsonBuf = "{\n  \"Objects\": [\n";
   for ( ; i; i = i->getNextChildObject())
   {
-    printToString(jsonBuf, "    {\n      \"Components\": [\n");
+    dumpObject(jsonBuf, i, matObjectID);
+    jsonObjects[i->persistentID] = nullptr;
     for (const MaterialComponent *j = i->components; j; j = j->next)
     {
-      jsonBuf += "        ";
-#if CDB_SORT_STRUCT_MEMBERS
-      size_t  prvLen = jsonBuf.length();
-      dumpObject(jsonBuf, j->o, 8);
-      size_t  n = jsonBuf.rfind("\n          \"Type\"");
-      if (n != std::string::npos && n > prvLen)
+      if (j->className == BSReflStream::String_BSMaterial_BlenderID ||
+          j->className == BSReflStream::String_BSMaterial_LODMaterialID ||
+          j->className == BSReflStream::String_BSMaterial_LayerID ||
+          j->className == BSReflStream::String_BSMaterial_MaterialID ||
+          j->className == BSReflStream::String_BSMaterial_TextureSetID ||
+          j->className == BSReflStream::String_BSMaterial_UVStreamID)
       {
-        char    tmpBuf[32];
-        (void) std::snprintf(tmpBuf, 32, "\n          \"Index\": %u,",
-                             (unsigned int) (j->key & 0xFFFFU));
-        jsonBuf.insert(n, tmpBuf);
-        printToString(jsonBuf, ",\n");
+        if (j->o && j->o->children()[0] &&
+            j->o->children()[0]->type == BSReflStream::String_BSComponentDB2_ID)
+        {
+          const MaterialObject  *p = j->o->children()[0]->linkedObject();
+          if (p)
+            jsonObjects.emplace(p->persistentID, p);
+        }
       }
-#else
-      dumpObject(jsonBuf, j->o, 8);
-      if (jsonBuf.ends_with("\n        }"))
-      {
-        jsonBuf.resize(jsonBuf.length() - 10);
-        printToString(jsonBuf, ",\n          \"Index\": %u\n",
-                      (unsigned int) (j->key & 0xFFFFU));
-        printToString(jsonBuf, "        },\n");
-      }
-#endif
     }
-    if (jsonBuf.ends_with(",\n"))
-    {
-      jsonBuf.resize(jsonBuf.length() - 1);
-      jsonBuf[jsonBuf.length() - 1] = '\n';
-    }
-    printToString(jsonBuf, "      ],\n");
-    if (i->parent)
-    {
-      printToString(jsonBuf, "      \"Edges\": [\n");
-      printToString(jsonBuf, "        {\n");
-      printToString(jsonBuf, "          \"EdgeIndex\": 0,\n");
-      if (i->parent->persistentID == matObjectID)
-      {
-        printToString(jsonBuf, "          \"To\": \"<this>\",\n");
-      }
-      else
-      {
-        printToString(jsonBuf, "          \"To\": \"res:%08X:%08X:%08X\",\n",
-                      (unsigned int) i->parent->persistentID.dir,
-                      (unsigned int) i->parent->persistentID.file,
-                      (unsigned int) i->parent->persistentID.ext);
-      }
-      printToString(jsonBuf,
-                    "          \"Type\": \"BSComponentDB2::OuterEdge\"\n");
-      printToString(jsonBuf, "        }\n");
-      printToString(jsonBuf, "      ],\n");
-    }
-    if (i->persistentID != matObjectID)
-    {
-      printToString(jsonBuf, "      \"ID\": \"res:%08X:%08X:%08X\",\n",
-                    (unsigned int) i->persistentID.dir,
-                    (unsigned int) i->persistentID.file,
-                    (unsigned int) i->persistentID.ext);
-    }
-    const MaterialObject  *j = i->baseObject;
-    const char  *parentStr = "";
-    if (j)
-    {
-      if (j->persistentID.file == 0x7EA3660CU)
-        parentStr = "materials\\\\layered\\\\root\\\\layeredmaterials.mat";
-      else if (j->persistentID.file == 0x8EBE84FFU)
-        parentStr = "materials\\\\layered\\\\root\\\\blenders.mat";
-      else if (j->persistentID.file == 0x574A4CF3U)
-        parentStr = "materials\\\\layered\\\\root\\\\layers.mat";
-      else if (j->persistentID.file == 0x7D1E021BU)
-        parentStr = "materials\\\\layered\\\\root\\\\materials.mat";
-      else if (j->persistentID.file == 0x06F52154U)
-        parentStr = "materials\\\\layered\\\\root\\\\texturesets.mat";
-      else if (j->persistentID.file == 0x4298BB09U)
-        parentStr = "materials\\\\layered\\\\root\\\\uvstreams.mat";
-    }
-    printToString(jsonBuf, "      \"Parent\": \"%s\"\n    },\n", parentStr);
+  }
+  // dump objects that have been referenced but have no edges to this material
+  for (auto j : jsonObjects)
+  {
+    if (j.second)
+      dumpObject(jsonBuf, j.second, matObjectID);
   }
   jsonBuf.resize(jsonBuf.length() - 2);
   jsonBuf += "\n  ],\n  \"Version\": 1\n}";

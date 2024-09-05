@@ -266,6 +266,8 @@ class BSMaterialsCDB
     return matFileObjectMap.findObject(objectID);
   }
   void dumpObject(std::string& s, const CDBObject *o, int indentCnt) const;
+  void dumpObject(std::string& jsonBuf, const MaterialObject *o,
+                  BSResourceID matObjectID) const;
   static std::uint32_t findJSONItemType(const std::string& s);
   void loadJSONItem(CDBObject*& o, const JSONReader::JSONItem *jsonItem,
                     std::uint32_t itemType, MaterialObject *materialObject,
