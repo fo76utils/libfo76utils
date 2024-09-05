@@ -293,7 +293,6 @@ CE2MaterialObject * CE2MaterialDB::findMaterialObject(
       {
         CE2Material::Material *q = static_cast< CE2Material::Material * >(o);
         q->color = FloatVector4(1.0f);
-        q->colorModeFlags = 1;          // "Lerp"
         q->flipbookColumns = 1;
         q->flipbookRows = 1;
         q->flipbookFPS = 30.0f;
