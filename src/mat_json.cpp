@@ -128,6 +128,17 @@ void BSMaterialsCDB::loadJSONItem(
           static_cast< const JSONReader::JSONString * >(jsonItem)->value;
       if (itemValue.empty())
       {
+        const MaterialObject  *prvLink = o->linkedObject();
+        if (prvLink)
+        {
+          while (prvLink->baseObject)
+            prvLink = prvLink->baseObject;
+          if (prvLink->persistentID.file == 0x7D1E021BU ||      // "materials"
+              prvLink->persistentID.file == 0x06F52154U)        // "texturesets"
+          {
+            return;
+          }
+        }
         static_cast< CDBObject_Link * >(o)->objectPtr = nullptr;
         return;
       }
@@ -150,14 +161,8 @@ void BSMaterialsCDB::loadJSONItem(
       const MaterialObject  *p = findMatFileObject(objectID);
       std::map< BSResourceID, MaterialObject * >::iterator  i =
           objectMap.find(objectID);
-      if (i != objectMap.end())
-      {
-        static_cast< CDBObject_Link * >(o)->objectPtr = i->second;
-        if (!i->second->parent)
-          addParentLink(i->second, materialObject);
-        if (!p)
-          return;
-      }
+      if (i != objectMap.end() && !i->second->parent)
+        addParentLink(i->second, materialObject);
       static_cast< CDBObject_Link * >(o)->objectPtr = p;
       return;
     }
@@ -588,15 +593,28 @@ void BSMaterialsCDB::loadJSONFile(
     {
       continue;
     }
-    MaterialObject  *o = nullptr;
+    MaterialObject  *o =
+        const_cast< MaterialObject * >(findMatFileObject(objectID));
+    if (o && o->parent)
     {
-      std::map< BSResourceID, MaterialObject * >::iterator  k =
-          objectMap.find(objectID);
-      if (k == objectMap.end())
+      // remove old edges from this object ID
+      MaterialObject  *q = const_cast< MaterialObject * >(o->parent);
+      const MaterialObject  **prvPtr = &(q->children);
+      for (const MaterialObject *r = q->children; r; r = r->next)
       {
+        if (r->persistentID == o->persistentID)
+          *prvPtr = r->next;
+        else
+          prvPtr = const_cast< const MaterialObject ** >(&(r->next));
+      }
+    }
+    for (auto k = objectMap.emplace(objectID, o); k.second; )
+    {
+      if (!o)
+      {
+        // create new object
         o = allocateObjects< MaterialObject >(1);
         o->persistentID = objectID;
-        o->dbID = std::uint32_t(objectMap.size() + 0x01000000);
         o->baseObject = findMatFileObject(parentID);
         if (!o->baseObject && objectID == matObjectID)
         {
@@ -605,15 +623,14 @@ void BSMaterialsCDB::loadJSONFile(
           o->baseObject = findMatFileObject(parentID);
         }
         o->components = nullptr;
-        o->parent = nullptr;
-        o->children = nullptr;
-        o->next = nullptr;
-        objectMap[objectID] = o;
+        storeMatFileObject(o);
       }
-      else
-      {
-        o = k->second;
-      }
+      o->dbID = std::uint32_t(objectMap.size() + 0x01000000);
+      o->parent = nullptr;
+      o->children = nullptr;
+      o->next = nullptr;
+      k.first->second = o;
+      break;
     }
     if (o->baseObject && o->baseObject->baseObject)
       copyBaseObject(*o);
@@ -675,37 +692,6 @@ void BSMaterialsCDB::loadJSONFile(
       std::uint32_t key = (itemType << 16) | std::uint32_t(itemIndex);
       loadJSONItem(findComponent(*o, key, itemType).o,
                    jsonComponent, itemType, o, objectMap);
-    }
-  }
-
-  // add materials to database
-  for (std::map< BSResourceID, MaterialObject * >::iterator
-           i = objectMap.begin(); i != objectMap.end(); i++)
-  {
-    MaterialObject  *o = const_cast< MaterialObject * >(
-                             findMatFileObject(i->second->persistentID));
-    if (o)
-    {
-      if (o->parent)
-      {
-        // remove old edges from this object ID
-        MaterialObject  *q = const_cast< MaterialObject * >(o->parent);
-        const MaterialObject  **prvPtr = &(q->children);
-        for (const MaterialObject *r = q->children; r; r = r->next)
-        {
-          if (r->persistentID == o->persistentID)
-            *prvPtr = r->next;
-          else
-            prvPtr = const_cast< const MaterialObject ** >(&(r->next));
-        }
-      }
-      deleteObject(*o);
-      *o = *(i->second);
-      i->second = o;
-    }
-    else
-    {
-      storeMatFileObject(i->second);
     }
   }
 
@@ -864,12 +850,8 @@ bool BSMaterialsCDB::loadJSONFile(
   const MaterialObject  *p = getMaterial(objectID);
   try
   {
-    // only load JSON materials that replace CDB materials from loose files
-    if (ba2File && (fd = ba2File->findFile(materialPath)) != nullptr &&
-        (fd->archiveType < 0 || !p))
-    {
+    if (ba2File && (fd = ba2File->findFile(materialPath)) != nullptr)
       jsonSize = ba2File->extractFile(jsonData, jsonBuf, materialPath);
-    }
     if (parentDB && jsonSize < 1)
     {
       const BA2File *ba2File2 = parentDB->ba2File;
