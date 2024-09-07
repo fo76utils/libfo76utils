@@ -279,7 +279,10 @@ CE2MaterialObject * CE2MaterialDB::findMaterialObject(
         q->boolParams[1] = true;        // blend metalness
         q->boolParams[2] = true;        // blend roughness
         q->boolParams[3] = true;        // blend normals
+        q->boolParams[4] = true;        // blend normals additively
+        q->boolParams[5] = false;       // use vertex color
         q->boolParams[6] = true;        // blend ambient occlusion
+        q->boolParams[7] = false;       // use detail blend mask
       }
       break;
     case 3:
