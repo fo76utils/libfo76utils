@@ -43,8 +43,12 @@ class BSMaterialsCDB
     inline std::uint32_t hashFunction() const
     {
       std::uint32_t h = 0xFFFFFFFFU;
+#if ENABLE_X86_64_SIMD
+      hashFunctionCRC32C< std::uint64_t >(h, (std::uint64_t(ext) << 32) | file);
+#else
       hashFunctionUInt32(h, file);
       hashFunctionUInt32(h, ext);
+#endif
       hashFunctionUInt32(h, dir);
       return h;
     }
