@@ -317,7 +317,7 @@ void CE2MaterialDB::ComponentInfo::readEmissiveSettingsComponent(
   CE2Material::EmissiveSettings *sp =
       cdb.allocateObjects< CE2Material::EmissiveSettings >(1);
   sp->clipThreshold = 0.0f;
-  sp->luminousEmittance = 432.0f;
+  sp->luminousEmittance = 100.0f;
   sp->emissiveTint = FloatVector4(1.0f);
   sp->exposureOffset = 0.0f;
   sp->maxOffset = 9999.0f;
@@ -569,15 +569,14 @@ void CE2MaterialDB::ComponentInfo::readWaterSettingsComponent(
       cdb.allocateObjects< CE2Material::WaterSettings >(1);
   m->setFlags(CE2Material::Flag_IsWater | CE2Material::Flag_AlphaBlending,
               true);
-  // FIXME: find correct default water settings
-  sp->waterEdgeFalloff = 0.0f;
-  sp->waterWetnessMaxDepth = 0.0f;
-  sp->waterEdgeNormalFalloff = 0.0f;
+  sp->waterEdgeFalloff = 0.1f;
+  sp->waterWetnessMaxDepth = 0.05f;
+  sp->waterEdgeNormalFalloff = 3.0f;
   sp->waterDepthBlur = 0.0f;
-  sp->reflectance = FloatVector4(0.0f, 0.0f, 0.0f, 0.0f);
-  sp->phytoplanktonReflectance = FloatVector4(0.0f, 0.0f, 0.0f, 0.0f);
-  sp->sedimentReflectance = FloatVector4(0.0f, 0.0f, 0.0f, 0.0f);
-  sp->yellowMatterReflectance = FloatVector4(0.0f, 0.0f, 0.0f, 0.0f);
+  sp->reflectance = FloatVector4(0.0f, 0.003f, 0.004f, 0.1199f);
+  sp->phytoplanktonReflectance = FloatVector4(-0.0001f, 0.002f, 0.0003f, 0.04f);
+  sp->sedimentReflectance = FloatVector4(0.0001f, 0.0001f, 0.0f, 0.14f);
+  sp->yellowMatterReflectance = FloatVector4(0.0007f, 0.0f, -0.0001f, 0.04f);
   m->waterSettings = sp;
   readFloat(sp->waterEdgeFalloff, p, 0);
   readFloat(sp->waterWetnessMaxDepth, p, 1);
@@ -798,25 +797,25 @@ void CE2MaterialDB::ComponentInfo::readGlobalLayerDataComponent(
   CE2Material *m = static_cast< CE2Material * >(o);
   CE2Material::GlobalLayerData  *sp =
       cdb.allocateObjects< CE2Material::GlobalLayerData >(1);
-  sp->texcoordScaleXY = 1.0f;
-  sp->texcoordScaleYZ = 1.0f;
-  sp->texcoordScaleXZ = 1.0f;
+  sp->texcoordScaleXY = 0.25f;
+  sp->texcoordScaleYZ = 0.25f;
+  sp->texcoordScaleXZ = 0.25f;
   sp->usesDirectionality = true;
   sp->blendNormalsAdditively = true;
   sp->albedoTintColor = FloatVector4(1.0f);
-  sp->sourceDirection = FloatVector4(0.0f, 0.0f, 1.0f, 1.0f);
-  sp->directionalityScale = 1.0f;
-  sp->directionalitySaturation = 1.0f;
+  sp->sourceDirection = FloatVector4(0.0f, 0.0f, 1.0f, 0.85f);
+  sp->directionalityScale = 2.0f;
+  sp->directionalitySaturation = 1.3f;
   sp->blendPosition = 0.5f;
   sp->blendContrast = 0.5f;
   sp->materialMaskIntensityScale = 1.0f;
   sp->noiseMaskTextureReplacement = 0xFFFFFFFFU;
   sp->noiseMaskTexture = cdb.storedStdStrings.buf[0];
   sp->texcoordScaleAndBias = FloatVector4(1.0f, 1.0f, 0.0f, 0.0f);
-  sp->worldspaceScaleFactor = 0.0f;
-  sp->hurstExponent = 0.5f;
-  sp->baseFrequency = 0.0f;
-  sp->frequencyMultiplier = 1.0f;
+  sp->worldspaceScaleFactor = 0.25f;
+  sp->hurstExponent = 1.0f;
+  sp->baseFrequency = 32.0f;
+  sp->frequencyMultiplier = 2.0f;
   sp->maskIntensityMin = 0.0f;
   sp->maskIntensityMax = 1.0f;
   m->globalLayerData = sp;
@@ -1424,10 +1423,10 @@ void CE2MaterialDB::ComponentInfo::readVegetationSettingsComponent(
   CE2Material *m = static_cast< CE2Material * >(o);
   CE2Material::VegetationSettings *sp =
       cdb.allocateObjects< CE2Material::VegetationSettings >(1);
-  sp->leafFrequency = 0.0f;
-  sp->leafAmplitude = 0.0f;
-  sp->branchFlexibility = 0.0f;
-  sp->trunkFlexibility = 0.0f;
+  sp->leafFrequency = 3.69f;
+  sp->leafAmplitude = 0.068f;
+  sp->branchFlexibility = 0.03f;
+  sp->trunkFlexibility = 4.0f;
   sp->terrainBlendStrength = 0.0f;
   sp->terrainBlendGradientFactor = 0.0f;
   m->vegetationSettings = sp;
@@ -1762,9 +1761,9 @@ void CE2MaterialDB::ComponentInfo::readTranslucencySettingsComponent(
   CE2Material *m = static_cast< CE2Material * >(o);
   CE2Material::TranslucencySettings *sp =
       cdb.allocateObjects< CE2Material::TranslucencySettings >(1);
-  sp->sssWidth = 0.2f;
-  sp->sssStrength = 0.2f;
-  sp->transmissiveScale = 1.0f;
+  sp->sssWidth = 0.025f;
+  sp->sssStrength = 0.5f;
+  sp->transmissiveScale = 0.05f;
   sp->transmittanceWidth = 0.03f;
   sp->specLobe0RoughnessScale = 0.55f;
   sp->specLobe1RoughnessScale = 1.2f;
