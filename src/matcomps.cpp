@@ -679,6 +679,7 @@ bool CE2MaterialDB::ComponentInfo::readXMFLOAT4(
 //   Bool  DepthMVFixup
 //   Bool  DepthMVFixupEdgesOnly
 //   Bool  ForceRenderBeforeOIT
+//   Bool  ForceRenderBeforeClouds (new in version 1.14.68.0)
 //   UInt16  DepthBiasInUlp
 
 void CE2MaterialDB::ComponentInfo::readEffectSettingsComponent(
@@ -760,8 +761,11 @@ void CE2MaterialDB::ComponentInfo::readEffectSettingsComponent(
     sp->setFlags(CE2Material::EffectFlag_MVFixupEdgesOnly, tmp);
   if (readBool(tmp, p, 31))
     sp->setFlags(CE2Material::EffectFlag_RenderBeforeOIT, tmp);
+  bool    isNewVersion = (p->childCnt >= 34);
+  if (isNewVersion && readBool(tmp, p, 32))
+    sp->setFlags(CE2Material::EffectFlag_RenderBeforeClouds, tmp);
   std::uint16_t tmp2;
-  if (readUInt16(tmp2, p, 32))
+  if (readUInt16(tmp2, p, size_t(isNewVersion) + 32))
     sp->depthBias = tmp2;
 }
 

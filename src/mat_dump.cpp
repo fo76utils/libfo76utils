@@ -169,7 +169,7 @@ static const char *effectFlagNames[32] =
   "ZWrite", "",
   "BackLightingEnable", "",
   "", "",
-  "", "DepthMVFixup",
+  "ForceRenderBeforeClouds", "DepthMVFixup",
   "DepthMVFixupEdgesOnly", "ForceRenderBeforeOIT"
 };
 

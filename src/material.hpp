@@ -198,6 +198,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     EffectFlag_ZTest = 0x00200000,
     EffectFlag_ZWrite = 0x00400000,
     EffectFlag_BacklightEnable = 0x01000000,
+    EffectFlag_RenderBeforeClouds = 0x10000000,
     EffectFlag_MVFixup = 0x20000000,
     EffectFlag_MVFixupEdgesOnly = 0x40000000,
     EffectFlag_RenderBeforeOIT = 0x80000000U
