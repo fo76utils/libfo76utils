@@ -321,16 +321,25 @@ class AllocBuffers
       return (reinterpret_cast< unsigned char * >(this) + sizeof(DataBuf));
     }
   };
+  static const DataBuf  emptyBuf;
   DataBuf *lastBuf;
   DataBuf *allocateBuffer(size_t nBytes);
  public:
-  AllocBuffers();
+  AllocBuffers()
+    : lastBuf(const_cast< DataBuf * >(&emptyBuf))
+  {
+  }
+  AllocBuffers(size_t capacity);
   ~AllocBuffers();
   void *allocateSpace(size_t nBytes, size_t alignBytes = 16);
   void clear();
   template< typename T > inline T *allocateObject()
   {
     return reinterpret_cast< T * >(allocateSpace(sizeof(T), alignof(T)));
+  }
+  template< typename T > inline T *constructObject()
+  {
+    return new(allocateObject< T >()) T();
   }
   template< typename T > inline T *allocateObjects(size_t n)
   {

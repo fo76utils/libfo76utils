@@ -380,6 +380,11 @@ const std::uint32_t crc32Table_82F63B78[256] =
 };
 #endif
 
+const AllocBuffers::DataBuf AllocBuffers::emptyBuf =
+{
+  0, 0, nullptr
+};
+
 AllocBuffers::DataBuf * AllocBuffers::allocateBuffer(size_t nBytes)
 {
   DataBuf *prv = lastBuf;
@@ -397,20 +402,22 @@ AllocBuffers::DataBuf * AllocBuffers::allocateBuffer(size_t nBytes)
   return lastBuf;
 }
 
-AllocBuffers::AllocBuffers()
+AllocBuffers::AllocBuffers(size_t capacity)
 {
-  void    *tmp = std::malloc(sizeof(DataBuf));
+  void    *tmp = nullptr;
+  if (capacity <= 0x7FFFFF00U) [[likely]]
+    tmp = std::calloc(sizeof(DataBuf) + capacity, sizeof(unsigned char));
   if (!tmp)
     throw std::bad_alloc();
   lastBuf = reinterpret_cast< DataBuf * >(tmp);
   lastBuf->bytesUsed = 0;
-  lastBuf->minCapacity = 0;
-  lastBuf->prv = nullptr;
+  lastBuf->minCapacity = std::uint32_t(capacity);
+  lastBuf->prv = const_cast< DataBuf * >(&emptyBuf);
 }
 
 AllocBuffers::~AllocBuffers()
 {
-  for (DataBuf *p = lastBuf; p; )
+  for (DataBuf *p = lastBuf; p->prv; )
   {
     DataBuf *prv = p->prv;
     std::free(p);
