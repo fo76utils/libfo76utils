@@ -2,6 +2,181 @@
 #include "common.hpp"
 #include "material.hpp"
 
+CE2Material::EffectSettings::EffectSettings()
+  : flags(CE2Material::EffectFlag_ZTest),
+    blendMode(0),               // "AlphaBlend"
+    falloffStartAngle(0.0f),
+    falloffStopAngle(0.0f),
+    falloffStartOpacity(0.0f),
+    falloffStopOpacity(0.0f),
+    alphaThreshold(0.5f),
+    softFalloffDepth(2.0f),
+    frostingBgndBlend(0.98f),
+    frostingBlurBias(0.0f),
+    materialAlpha(1.0f),
+    backlightScale(0.0f),
+    backlightSharpness(8.0f),
+    backlightTransparency(0.0f),
+    backlightTintColor(FloatVector4(1.0f)),
+    depthBias(0)
+{
+}
+
+CE2Material::EmissiveSettings::EmissiveSettings()
+  : isEnabled(false),
+    sourceLayer(0),             // "MATERIAL_LAYER_0"
+    maskSourceBlender(0),       // "None"
+    adaptiveEmittance(false),
+    enableAdaptiveLimits(false),
+    clipThreshold(0.0f),
+    luminousEmittance(100.0f),
+    emissiveTint(FloatVector4(1.0f)),
+    exposureOffset(0.0f),
+    maxOffset(9999.0f),
+    minOffset(0.0f)
+{
+}
+
+CE2Material::LayeredEmissiveSettings::LayeredEmissiveSettings()
+  : isEnabled(false),
+    layer1Index(0),             // "MATERIAL_LAYER_0"
+    layer1MaskIndex(0),         // "None"
+    layer2Active(false),
+    layer2Index(1),             // "MATERIAL_LAYER_1"
+    layer2MaskIndex(0),         // "None"
+    blender1Index(0),           // "BLEND_LAYER_0"
+    blender1Mode(0),            // "Lerp"
+    layer3Active(false),
+    layer3Index(2),             // "MATERIAL_LAYER_2"
+    layer3MaskIndex(0),         // "None"
+    blender2Index(1),           // "BLEND_LAYER_1"
+    blender2Mode(0),            // "Lerp"
+    adaptiveEmittance(false),
+    enableAdaptiveLimits(false),
+    ignoresFog(false),
+    layer1Tint(0xFFFFFFFFU),
+    layer2Tint(0xFFFFFFFFU),
+    layer3Tint(0xFFFFFFFFU),
+    clipThreshold(0.0f),
+    luminousEmittance(100.0f),
+    exposureOffset(0.0f),
+    maxOffset(1.0f),
+    minOffset(0.0f)
+{
+}
+
+CE2Material::TranslucencySettings::TranslucencySettings()
+  : isEnabled(false),
+    isThin(false),
+    flipBackFaceNormalsInVS(false),
+    useSSS(false),
+    sssWidth(0.025f),
+    sssStrength(0.5f),
+    transmissiveScale(0.05f),
+    transmittanceWidth(0.03f),
+    specLobe0RoughnessScale(0.55f),
+    specLobe1RoughnessScale(1.2f),
+    sourceLayer(0)              // "MATERIAL_LAYER_0"
+{
+}
+
+CE2Material::DecalSettings::DecalSettings()
+  : isDecal(false),
+    isPlanet(false),
+    blendMode(0),               // "None"
+    animatedDecalIgnoresTAA(false),
+    decalAlpha(1.0f),
+    writeMask(0x0737U),
+    isProjected(false),
+    useParallaxMapping(false),
+    parallaxOcclusionShadows(false),
+    maxParallaxSteps(72),
+    surfaceHeightMap(&emptyStringView),
+    parallaxOcclusionScale(1.0f),
+    renderLayer(0),             // "Top"
+    useGBufferNormals(true)
+{
+}
+
+CE2Material::VegetationSettings::VegetationSettings()
+  : isEnabled(false),
+    leafFrequency(3.69f),
+    leafAmplitude(0.068f),
+    branchFlexibility(0.03f),
+    trunkFlexibility(4.0f),
+    terrainBlendStrength(0.0f),
+    terrainBlendGradientFactor(0.0f)
+{
+}
+
+CE2Material::DetailBlenderSettings::DetailBlenderSettings()
+  : isEnabled(false),
+    textureReplacementEnabled(false),
+    textureReplacement(0xFFFFFFFFU),
+    texturePath(&emptyStringView),
+    uvStream(nullptr)
+{
+}
+
+CE2Material::LayeredEdgeFalloff::LayeredEdgeFalloff()
+  : activeLayersMask(0),
+    useRGBFalloff(false)
+{
+  falloffStartAngles[0] = 0.0f;
+  falloffStartAngles[1] = 0.0f;
+  falloffStartAngles[2] = 0.0f;
+  falloffStopAngles[0] = 0.0f;
+  falloffStopAngles[1] = 0.0f;
+  falloffStopAngles[2] = 0.0f;
+  falloffStartOpacities[0] = 0.0f;
+  falloffStartOpacities[1] = 0.0f;
+  falloffStartOpacities[2] = 0.0f;
+  falloffStopOpacities[0] = 0.0f;
+  falloffStopOpacities[1] = 0.0f;
+  falloffStopOpacities[2] = 0.0f;
+}
+
+CE2Material::WaterSettings::WaterSettings()
+  : waterEdgeFalloff(0.1f),
+    waterWetnessMaxDepth(0.05f),
+    waterEdgeNormalFalloff(3.0f),
+    waterDepthBlur(0.0f),
+    reflectance(FloatVector4(0.0f, 0.003f, 0.004f, 0.1199f)),
+    phytoplanktonReflectance(FloatVector4(-0.0001f, 0.002f, 0.0003f, 0.04f)),
+    sedimentReflectance(FloatVector4(0.0001f, 0.0001f, 0.0f, 0.14f)),
+    yellowMatterReflectance(FloatVector4(0.0007f, 0.0f, -0.0001f, 0.04f)),
+    lowLOD(false),
+    placedWater(false)
+{
+}
+
+CE2Material::GlobalLayerData::GlobalLayerData()
+  : texcoordScaleXY(0.25f),
+    texcoordScaleYZ(0.25f),
+    texcoordScaleXZ(0.25f),
+    usesDirectionality(true),
+    blendNormalsAdditively(true),
+    useNoiseMaskTexture(false),
+    noiseMaskTxtReplacementEnabled(false),
+    albedoTintColor(FloatVector4(1.0f)),
+    sourceDirection(FloatVector4(0.0f, 0.0f, 1.0f, 0.85f)),
+    directionalityScale(2.0f),
+    directionalitySaturation(1.3f),
+    blendPosition(0.5f),
+    blendContrast(0.5f),
+    materialMaskIntensityScale(1.0f),
+    noiseMaskTextureReplacement(0xFFFFFFFFU),
+    noiseMaskTexture(&emptyStringView),
+    texcoordScaleAndBias(FloatVector4(1.0f, 1.0f, 0.0f, 0.0f)),
+    worldspaceScaleFactor(0.25f),
+    hurstExponent(1.0f),
+    baseFrequency(32.0f),
+    frequencyMultiplier(2.0f),
+    maskIntensityMin(0.0f),
+    maskIntensityMax(1.0f)
+{
+}
+
 inline bool CE2MaterialDB::ComponentInfo::readBool(
     bool& n, const BSMaterialsCDB::CDBObject *p, size_t fieldNum)
 {
@@ -201,18 +376,7 @@ void CE2MaterialDB::ComponentInfo::readLayeredEmissivityComponent(
     return;
   CE2Material *m = static_cast< CE2Material * >(o);
   CE2Material::LayeredEmissiveSettings  *sp =
-      cdb.allocateObjects< CE2Material::LayeredEmissiveSettings >(1);
-  sp->layer2Index = 1;                  // "MATERIAL_LAYER_1"
-  sp->layer3Index = 2;                  // "MATERIAL_LAYER_2"
-  sp->blender2Index = 1;                // "BLEND_LAYER_1"
-  sp->layer1Tint = 0xFFFFFFFFU;
-  sp->layer2Tint = 0xFFFFFFFFU;
-  sp->layer3Tint = 0xFFFFFFFFU;
-  sp->clipThreshold = 0.0f;
-  sp->luminousEmittance = 100.0f;
-  sp->exposureOffset = 0.0f;
-  sp->maxOffset = 1.0f;
-  sp->minOffset = 0.0f;
+      cdb.constructObject< CE2Material::LayeredEmissiveSettings >();
   m->layeredEmissiveSettings = sp;
   bool    tmp;
   if (readBool(tmp, p, 0))
@@ -315,13 +479,7 @@ void CE2MaterialDB::ComponentInfo::readEmissiveSettingsComponent(
     return;
   CE2Material *m = static_cast< CE2Material * >(o);
   CE2Material::EmissiveSettings *sp =
-      cdb.allocateObjects< CE2Material::EmissiveSettings >(1);
-  sp->clipThreshold = 0.0f;
-  sp->luminousEmittance = 100.0f;
-  sp->emissiveTint = FloatVector4(1.0f);
-  sp->exposureOffset = 0.0f;
-  sp->maxOffset = 9999.0f;
-  sp->minOffset = 0.0f;
+      cdb.constructObject< CE2Material::EmissiveSettings >();
   m->emissiveSettings = sp;
   bool    tmp;
   if (readBool(tmp, p, 0))
@@ -498,13 +656,7 @@ void CE2MaterialDB::ComponentInfo::readDecalSettingsComponent(
     return;
   CE2Material *m = static_cast< CE2Material * >(o);
   CE2Material::DecalSettings  *sp =
-      cdb.allocateObjects< CE2Material::DecalSettings >(1);
-  sp->decalAlpha = 1.0f;
-  sp->writeMask = 0x0737U;
-  sp->maxParallaxSteps = 72;
-  sp->surfaceHeightMap = cdb.storedStdStrings.buf[0];
-  sp->parallaxOcclusionScale = 1.0f;
-  sp->useGBufferNormals = true;
+      cdb.constructObject< CE2Material::DecalSettings >();
   m->decalSettings = sp;
   bool    tmp;
   if (readBool(tmp, p, 0))
@@ -566,17 +718,9 @@ void CE2MaterialDB::ComponentInfo::readWaterSettingsComponent(
     return;
   CE2Material *m = static_cast< CE2Material * >(o);
   CE2Material::WaterSettings  *sp =
-      cdb.allocateObjects< CE2Material::WaterSettings >(1);
+      cdb.constructObject< CE2Material::WaterSettings >();
   m->setFlags(CE2Material::Flag_IsWater | CE2Material::Flag_AlphaBlending,
               true);
-  sp->waterEdgeFalloff = 0.1f;
-  sp->waterWetnessMaxDepth = 0.05f;
-  sp->waterEdgeNormalFalloff = 3.0f;
-  sp->waterDepthBlur = 0.0f;
-  sp->reflectance = FloatVector4(0.0f, 0.003f, 0.004f, 0.1199f);
-  sp->phytoplanktonReflectance = FloatVector4(-0.0001f, 0.002f, 0.0003f, 0.04f);
-  sp->sedimentReflectance = FloatVector4(0.0001f, 0.0001f, 0.0f, 0.14f);
-  sp->yellowMatterReflectance = FloatVector4(0.0007f, 0.0f, -0.0001f, 0.04f);
   m->waterSettings = sp;
   readFloat(sp->waterEdgeFalloff, p, 0);
   readFloat(sp->waterWetnessMaxDepth, p, 1);
@@ -689,23 +833,9 @@ void CE2MaterialDB::ComponentInfo::readEffectSettingsComponent(
     return;
   CE2Material *m = static_cast< CE2Material * >(o);
   CE2Material::EffectSettings *sp =
-      cdb.allocateObjects< CE2Material::EffectSettings >(1);
+      cdb.constructObject< CE2Material::EffectSettings >();
   m->setFlags(CE2Material::Flag_IsEffect | CE2Material::Flag_AlphaBlending,
               true);
-  sp->flags = CE2Material::EffectFlag_ZTest;
-  sp->falloffStartAngle = 0.0f;
-  sp->falloffStopAngle = 0.0f;
-  sp->falloffStartOpacity = 0.0f;
-  sp->falloffStopOpacity = 0.0f;
-  sp->alphaThreshold = 0.5f;
-  sp->softFalloffDepth = 2.0f;
-  sp->frostingBgndBlend = 0.98f;
-  sp->frostingBlurBias = 0.0f;
-  sp->materialAlpha = 1.0f;
-  sp->backlightScale = 0.0f;
-  sp->backlightSharpness = 8.0f;
-  sp->backlightTransparency = 0.0f;
-  sp->backlightTintColor = FloatVector4(1.0f);
   m->effectSettings = sp;
   bool    tmp;
   if (readBool(tmp, p, 0))
@@ -800,28 +930,7 @@ void CE2MaterialDB::ComponentInfo::readGlobalLayerDataComponent(
     return;
   CE2Material *m = static_cast< CE2Material * >(o);
   CE2Material::GlobalLayerData  *sp =
-      cdb.allocateObjects< CE2Material::GlobalLayerData >(1);
-  sp->texcoordScaleXY = 0.25f;
-  sp->texcoordScaleYZ = 0.25f;
-  sp->texcoordScaleXZ = 0.25f;
-  sp->usesDirectionality = true;
-  sp->blendNormalsAdditively = true;
-  sp->albedoTintColor = FloatVector4(1.0f);
-  sp->sourceDirection = FloatVector4(0.0f, 0.0f, 1.0f, 0.85f);
-  sp->directionalityScale = 2.0f;
-  sp->directionalitySaturation = 1.3f;
-  sp->blendPosition = 0.5f;
-  sp->blendContrast = 0.5f;
-  sp->materialMaskIntensityScale = 1.0f;
-  sp->noiseMaskTextureReplacement = 0xFFFFFFFFU;
-  sp->noiseMaskTexture = cdb.storedStdStrings.buf[0];
-  sp->texcoordScaleAndBias = FloatVector4(1.0f, 1.0f, 0.0f, 0.0f);
-  sp->worldspaceScaleFactor = 0.25f;
-  sp->hurstExponent = 1.0f;
-  sp->baseFrequency = 32.0f;
-  sp->frequencyMultiplier = 2.0f;
-  sp->maskIntensityMin = 0.0f;
-  sp->maskIntensityMax = 1.0f;
+      cdb.constructObject< CE2Material::GlobalLayerData >();
   m->globalLayerData = sp;
   m->setFlags(CE2Material::Flag_GlobalLayerData, true);
   readFloat(sp->texcoordScaleXY, p, 0);
@@ -1361,19 +1470,7 @@ void CE2MaterialDB::ComponentInfo::readLayeredEdgeFalloffComponent(
     return;
   CE2Material *m = static_cast< CE2Material * >(o);
   CE2Material::LayeredEdgeFalloff *sp =
-      cdb.allocateObjects< CE2Material::LayeredEdgeFalloff >(1);
-  sp->falloffStartAngles[0] = 0.0f;
-  sp->falloffStartAngles[1] = 0.0f;
-  sp->falloffStartAngles[2] = 0.0f;
-  sp->falloffStopAngles[0] = 0.0f;
-  sp->falloffStopAngles[1] = 0.0f;
-  sp->falloffStopAngles[2] = 0.0f;
-  sp->falloffStartOpacities[0] = 0.0f;
-  sp->falloffStartOpacities[1] = 0.0f;
-  sp->falloffStartOpacities[2] = 0.0f;
-  sp->falloffStopOpacities[0] = 0.0f;
-  sp->falloffStopOpacities[1] = 0.0f;
-  sp->falloffStopOpacities[2] = 0.0f;
+      cdb.constructObject< CE2Material::LayeredEdgeFalloff >();
   m->layeredEdgeFalloff = sp;
   for (size_t i = 0; i < 4; i++)
   {
@@ -1426,13 +1523,7 @@ void CE2MaterialDB::ComponentInfo::readVegetationSettingsComponent(
     return;
   CE2Material *m = static_cast< CE2Material * >(o);
   CE2Material::VegetationSettings *sp =
-      cdb.allocateObjects< CE2Material::VegetationSettings >(1);
-  sp->leafFrequency = 3.69f;
-  sp->leafAmplitude = 0.068f;
-  sp->branchFlexibility = 0.03f;
-  sp->trunkFlexibility = 4.0f;
-  sp->terrainBlendStrength = 0.0f;
-  sp->terrainBlendGradientFactor = 0.0f;
+      cdb.constructObject< CE2Material::VegetationSettings >();
   m->vegetationSettings = sp;
   bool    tmp;
   if (readBool(tmp, p, 0))
@@ -1694,10 +1785,7 @@ void CE2MaterialDB::ComponentInfo::readDetailBlenderSettingsComponent(
     return;
   CE2Material *m = static_cast< CE2Material * >(o);
   CE2Material::DetailBlenderSettings  *sp =
-      cdb.allocateObjects< CE2Material::DetailBlenderSettings >(1);
-  sp->textureReplacement = 0xFFFFFFFFU;
-  sp->texturePath = cdb.storedStdStrings.buf[0];
-  sp->uvStream = nullptr;
+      cdb.constructObject< CE2Material::DetailBlenderSettings >();
   m->detailBlenderSettings = sp;
   if (p && p->type > BSReflStream::String_Unknown && p->childCnt >= 1)
     readDetailBlenderSettings(p->children()[0]);
@@ -1764,13 +1852,7 @@ void CE2MaterialDB::ComponentInfo::readTranslucencySettingsComponent(
     return;
   CE2Material *m = static_cast< CE2Material * >(o);
   CE2Material::TranslucencySettings *sp =
-      cdb.allocateObjects< CE2Material::TranslucencySettings >(1);
-  sp->sssWidth = 0.025f;
-  sp->sssStrength = 0.5f;
-  sp->transmissiveScale = 0.05f;
-  sp->transmittanceWidth = 0.03f;
-  sp->specLobe0RoughnessScale = 0.55f;
-  sp->specLobe1RoughnessScale = 1.2f;
+      cdb.constructObject< CE2Material::TranslucencySettings >();
   m->translucencySettings = sp;
   bool    tmp;
   if (readBool(tmp, p, 0))

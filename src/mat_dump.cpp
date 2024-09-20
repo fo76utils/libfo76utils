@@ -4,7 +4,7 @@
 
 static const size_t indentTabSize = 2;
 
-static const char *objectTypeStrings[7] =
+const char * CE2Material::objectTypeStrings[7] =
 {
   "", "LayeredMaterial", "Blender", "Layer",
   "Material", "TextureSet", "UVStream"
@@ -114,46 +114,46 @@ const char * CE2Material::shaderModelNames[64] =
   "Water1Layer"                         // 63
 };
 
-static const char *shaderRouteNames[8] =
+const char * CE2Material::shaderRouteNames[8] =
 {
   "Deferred", "Effect", "PlanetaryRing", "PrecomputedScattering",
   "Water", "Unknown", "Unknown", "Unknown"
 };
 
-static const char *colorChannelNames[4] =
+const char * CE2Material::colorChannelNames[4] =
 {
   "Red", "Green", "Blue", "Alpha"
 };
 
-static const char *alphaBlendModeNames[8] =
+const char * CE2Material::alphaBlendModeNames[8] =
 {
   "Linear", "Additive", "PositionContrast", "None",
   "CharacterCombine", "Skin", "Unknown", "Unknown"
 };
 
-static const char *blenderModeNames[4] =
+const char * CE2Material::blenderModeNames[4] =
 {
   "Lerp", "Additive", "Subtractive", "Multiplicative"
 };
 
-static const char *textureAddressModeNames[4] =
+const char * CE2Material::textureAddressModeNames[4] =
 {
   "Wrap", "Clamp", "Mirror", "Border"
 };
 
-static const char *colorModeNames[2] =
+const char * CE2Material::colorModeNames[2] =
 {
   "Multiply", "Lerp"
 };
 
-static const char *effectBlendModeNames[8] =
+const char * CE2Material::effectBlendModeNames[8] =
 {
   "AlphaBlend", "Additive", "SourceSoftAdditive", "Multiply",
   "DestinationSoftAdditive", "DestinationInvertedSoftAdditive", "TakeSmaller",
   "None"
 };
 
-static const char *effectFlagNames[32] =
+const char * CE2Material::effectFlagNames[32] =
 {
   "UseFallOff", "UseRGBFallOff",
   "", "",
@@ -173,32 +173,32 @@ static const char *effectFlagNames[32] =
   "DepthMVFixupEdgesOnly", "ForceRenderBeforeOIT"
 };
 
-static const char *decalBlendModeNames[2] =
+const char * CE2Material::decalBlendModeNames[2] =
 {
   "None", "Additive"
 };
 
-static const char *decalRenderLayerNames[2] =
+const char * CE2Material::decalRenderLayerNames[2] =
 {
   "Top", "Middle"
 };
 
-static const char *maskSourceBlenderNames[4] =
+const char * CE2Material::maskSourceBlenderNames[4] =
 {
   "None", "Blender1", "Blender2", "Blender3"
 };
 
-static const char *channelNames[4] =
+const char * CE2Material::channelNames[4] =
 {
   "Zero", "One", "Two", "Three"
 };
 
-static const char *resolutionSettingNames[4] =
+const char * CE2Material::resolutionSettingNames[4] =
 {
   "Tiling", "UniqueMap", "DetailMapTiling", "HighResUniqueMap"
 };
 
-static const char *physicsMaterialNames[8] =
+const char * CE2Material::physicsMaterialNames[8] =
 {
   "None", "Carpet", "Mat", "MaterialGroundTileVinyl",
   "MaterialMat", "MaterialPHYIceDebrisLarge", "Metal", "Wood"
@@ -238,7 +238,7 @@ void CE2MaterialObject::printObjectInfo(
     const char  *parentType = "Unknown";
     int     t = parent->type & 0xFF;
     if (t >= 0 && t <= 6)
-      parentType = objectTypeStrings[t];
+      parentType = CE2Material::objectTypeStrings[t];
     printToStringBuf(buf, indentCnt,
                      "Parent: %s \"%s\"\n", parentType, parent->name);
   }

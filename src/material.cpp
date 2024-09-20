@@ -12,12 +12,125 @@ static const std::uint32_t
   0xFF000000U, 0xFFFF8080U, 0xFFFFFFFFU, 0xFF000000U,
   // metal, ao, height, emissive
   0xFF000000U, 0xFFFFFFFFU, 0xFF000000U, 0xFF000000U,
-  // transmissive, curvature, mask
+  // transmissive, curvature, mask, unknown
   0xFF000000U, 0xFF808080U, 0xFF000000U, 0xFF808080U,
+  // Z offset, unknown, overlay color, overlay roughness
   0xFF000000U, 0xFF000000U, 0xFF808080U, 0xFF808080U,
+  // overlay metalness, unknown, unknown, unknown
   0xFF808080U, 0xFF000000U, 0xFF000000U, 0xFFFFFFFFU,
+  // ID
   0xFF808080U
 };
+
+const std::string_view  CE2Material::emptyStringView("", 0);
+
+CE2Material::CE2Material()
+  : CE2MaterialObject(1),
+    flags(0U),
+    layerMask(0U),
+    alphaThreshold(1.0f / 3.0f),
+    shaderModel(31),            // "BaseMaterial"
+    alphaSourceLayer(0),
+    alphaBlendMode(0),          // "Linear"
+    alphaVertexColorChannel(0), // "Red"
+    alphaHeightBlendThreshold(0.0f),
+    alphaHeightBlendFactor(0.05f),
+    alphaPosition(0.5f),
+    alphaContrast(0.0f),
+    alphaUVStream(nullptr),
+    shaderRoute(0),             // "Deferred"
+    opacityLayer1(0),           // "MATERIAL_LAYER_0"
+    opacityLayer2(1),           // "MATERIAL_LAYER_1"
+    opacityBlender1(0),         // "BLEND_LAYER_0"
+    opacityBlender1Mode(0),     // "Lerp"
+    opacityLayer3(2),           // "MATERIAL_LAYER_2"
+    opacityBlender2(1),         // "BLEND_LAYER_1"
+    opacityBlender2Mode(0),     // "Lerp"
+    specularOpacityOverride(0.0f),
+    physicsMaterialType(0),     // "None"
+    effectSettings(nullptr),
+    emissiveSettings(nullptr),
+    layeredEmissiveSettings(nullptr),
+    translucencySettings(nullptr),
+    decalSettings(nullptr),
+    vegetationSettings(nullptr),
+    detailBlenderSettings(nullptr),
+    layeredEdgeFalloff(nullptr),
+    waterSettings(nullptr),
+    globalLayerData(nullptr)
+{
+  for (size_t i = 0; i < maxLayers; i++)
+    layers[i] = nullptr;
+  for (size_t i = 0; i < maxBlenders; i++)
+    blenders[i] = nullptr;
+  for (size_t i = 0; i < maxLODMaterials; i++)
+    lodMaterials[i] = nullptr;
+}
+
+CE2Material::Blender::Blender()
+  : CE2MaterialObject(2),
+    uvStream(nullptr),
+    texturePath(&emptyStringView),
+    textureReplacement(0xFFFFFFFFU),
+    textureReplacementEnabled(false),
+    blendMode(0),               // "Linear"
+    colorChannel(0)             // "Red"
+{
+  floatParams[0] = 0.5f;        // height blend threshold
+  floatParams[1] = 0.5f;        // height blend factor
+  floatParams[2] = 0.5f;        // position
+  floatParams[3] = 1.0f;        // 1.0 - contrast
+  floatParams[4] = 1.0f;        // mask intensity
+  boolParams[0] = true;         // blend color
+  boolParams[1] = true;         // blend metalness
+  boolParams[2] = true;         // blend roughness
+  boolParams[3] = true;         // blend normals
+  boolParams[4] = true;         // blend normals additively
+  boolParams[5] = false;        // use vertex color
+  boolParams[6] = true;         // blend ambient occlusion
+  boolParams[7] = false;        // use detail blend mask
+}
+
+CE2Material::Layer::Layer()
+  : CE2MaterialObject(3),
+    material(nullptr),
+    uvStream(nullptr)
+{
+}
+
+CE2Material::Material::Material()
+  : CE2MaterialObject(4),
+    color(FloatVector4(1.0f, 1.0f, 1.0f, 0.0f)),
+    colorModeFlags(1),          // "Lerp"
+    flipbookFlags(0),
+    flipbookColumns(1),
+    flipbookRows(1),
+    flipbookFPS(30.0f),
+    textureSet(nullptr)
+{
+}
+
+CE2Material::TextureSet::TextureSet()
+  : CE2MaterialObject(5),
+    texturePathMask(0U),
+    floatParam(1.0f),           // normal map intensity
+    textureReplacementMask(0U),
+    resolutionHint(0),          // "Tiling"
+    disableMipBiasHint(false)
+{
+  for (size_t i = 0; i < maxTexturePaths; i++)
+    texturePaths[i] = &emptyStringView;
+  for (size_t i = 0; i < maxTexturePaths; i++)
+    textureReplacements[i] = defaultTextureRepl[i];
+}
+
+CE2Material::UVStream::UVStream()
+  : CE2MaterialObject(6),
+    scaleAndOffset(FloatVector4(1.0f, 1.0f, 0.0f, 0.0f)),
+    textureAddressMode(0),      // "Wrap"
+    channel(1)                  // "One"
+{
+}
 
 CE2MaterialDB::StoredStdStringHashMap::StoredStdStringHashMap()
   : buf(nullptr),
@@ -196,31 +309,26 @@ CE2MaterialObject * CE2MaterialDB::findMaterialObject(
     {
       return nullptr;
     }
+    // allocate object and initialize with defaults
     switch (q->persistentID.file)
     {
       case 0x7EA3660C:                  // "layeredmaterials"
-        o = BSMaterialsCDB::allocateObjects< CE2Material >(1);
-        o->type = 1;
+        o = BSMaterialsCDB::constructObject< CE2Material >();
         break;
       case 0x8EBE84FF:                  // "blenders"
-        o = BSMaterialsCDB::allocateObjects< CE2Material::Blender >(1);
-        o->type = 2;
+        o = BSMaterialsCDB::constructObject< CE2Material::Blender >();
         break;
       case 0x574A4CF3:                  // "layers"
-        o = BSMaterialsCDB::allocateObjects< CE2Material::Layer >(1);
-        o->type = 3;
+        o = BSMaterialsCDB::constructObject< CE2Material::Layer >();
         break;
       case 0x7D1E021B:                  // "materials"
-        o = BSMaterialsCDB::allocateObjects< CE2Material::Material >(1);
-        o->type = 4;
+        o = BSMaterialsCDB::constructObject< CE2Material::Material >();
         break;
       case 0x06F52154:                  // "texturesets"
-        o = BSMaterialsCDB::allocateObjects< CE2Material::TextureSet >(1);
-        o->type = 5;
+        o = BSMaterialsCDB::constructObject< CE2Material::TextureSet >();
         break;
       case 0x4298BB09:                  // "uvstreams"
-        o = BSMaterialsCDB::allocateObjects< CE2Material::UVStream >(1);
-        o->type = 6;
+        o = BSMaterialsCDB::constructObject< CE2Material::UVStream >();
         break;
     }
   }
@@ -228,100 +336,6 @@ CE2MaterialObject * CE2MaterialDB::findMaterialObject(
     return nullptr;
   o->cdbObject = p;
   o->name = BSMaterialsCDB::storeString(nullptr, 0);
-  // initialize with defaults
-  const std::string_view  *emptyString = storedStdStrings.buf[0];
-  switch (o->type)
-  {
-    case 1:
-      {
-        CE2Material *q = static_cast< CE2Material * >(o);
-        for (size_t i = 0; i < CE2Material::maxLayers; i++)
-          q->layers[i] = nullptr;
-        q->alphaThreshold = 1.0f / 3.0f;
-        q->shaderModel = 31;            // "BaseMaterial"
-        q->alphaHeightBlendThreshold = 0.0f;
-        q->alphaHeightBlendFactor = 0.05f;
-        q->alphaPosition = 0.5f;
-        q->alphaContrast = 0.0f;
-        q->alphaUVStream = nullptr;
-        q->opacityLayer2 = 1;           // "MATERIAL_LAYER_1"
-        q->opacityLayer3 = 2;           // "MATERIAL_LAYER_2"
-        q->opacityBlender2 = 1;         // "BLEND_LAYER_1"
-        q->specularOpacityOverride = 0.0f;
-        for (size_t i = 0; i < CE2Material::maxBlenders; i++)
-          q->blenders[i] = nullptr;
-        for (size_t i = 0; i < CE2Material::maxLODMaterials; i++)
-          q->lodMaterials[i] = nullptr;
-        q->effectSettings = nullptr;
-        q->emissiveSettings = nullptr;
-        q->layeredEmissiveSettings = nullptr;
-        q->translucencySettings = nullptr;
-        q->decalSettings = nullptr;
-        q->vegetationSettings = nullptr;
-        q->detailBlenderSettings = nullptr;
-        q->layeredEdgeFalloff = nullptr;
-        q->waterSettings = nullptr;
-        q->globalLayerData = nullptr;
-      }
-      break;
-    case 2:
-      {
-        CE2Material::Blender  *q = static_cast< CE2Material::Blender * >(o);
-        q->uvStream = nullptr;
-        q->texturePath = emptyString;
-        q->textureReplacement = 0xFFFFFFFFU;
-        q->floatParams[0] = 0.5f;       // height blend threshold
-        q->floatParams[1] = 0.5f;       // height blend factor
-        q->floatParams[2] = 0.5f;       // position
-        q->floatParams[3] = 1.0f;       // 1.0 - contrast
-        q->floatParams[4] = 1.0f;       // mask intensity
-        q->boolParams[0] = true;        // blend color
-        q->boolParams[1] = true;        // blend metalness
-        q->boolParams[2] = true;        // blend roughness
-        q->boolParams[3] = true;        // blend normals
-        q->boolParams[4] = true;        // blend normals additively
-        q->boolParams[5] = false;       // use vertex color
-        q->boolParams[6] = true;        // blend ambient occlusion
-        q->boolParams[7] = false;       // use detail blend mask
-      }
-      break;
-    case 3:
-      {
-        CE2Material::Layer  *q = static_cast< CE2Material::Layer * >(o);
-        q->material = nullptr;
-        q->uvStream = nullptr;
-      }
-      break;
-    case 4:
-      {
-        CE2Material::Material *q = static_cast< CE2Material::Material * >(o);
-        q->color = FloatVector4(1.0f, 1.0f, 1.0f, 0.0f);
-        q->colorModeFlags = 1;          // "Lerp"
-        q->flipbookColumns = 1;
-        q->flipbookRows = 1;
-        q->flipbookFPS = 30.0f;
-        q->textureSet = nullptr;
-      }
-      break;
-    case 5:
-      {
-        CE2Material::TextureSet *q =
-            static_cast< CE2Material::TextureSet * >(o);
-        q->floatParam = 1.0f;           // normal map intensity
-        for (size_t i = 0; i < CE2Material::TextureSet::maxTexturePaths; i++)
-          q->texturePaths[i] = emptyString;
-        for (size_t i = 0; i < CE2Material::TextureSet::maxTexturePaths; i++)
-          q->textureReplacements[i] = defaultTextureRepl[i];
-      }
-      break;
-    case 6:
-      {
-        CE2Material::UVStream *q = static_cast< CE2Material::UVStream * >(o);
-        q->scaleAndOffset = FloatVector4(1.0f, 1.0f, 0.0f, 0.0f);
-        q->channel = 1;                 // "One"
-      }
-      break;
-  }
   materialObjectMap.storeObject(o);
   o->parent = findMaterialObject(p->parent);
   // load components

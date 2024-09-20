@@ -244,6 +244,11 @@ class BSMaterialsCDB
   {
     return reinterpret_cast< T * >(allocateSpace(sizeof(T) * n, alignof(T)));
   }
+  template< typename T >
+  inline T *constructObject()
+  {
+    return new(allocateObjects< T >(1)) T();
+  }
   CDBObject *allocateObject(std::uint32_t itemType, const CDBClassDef *classDef,
                             size_t elementCnt = 0);
   void copyObject(CDBObject& o);

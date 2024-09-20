@@ -35,6 +35,13 @@ struct CE2MaterialObject
   const BSMaterialsCDB::MaterialObject  *cdbObject;     // valid if type > 0
   const char  *name;
   const CE2MaterialObject *parent;
+  CE2MaterialObject(unsigned char t = 0)
+    : type(t),
+      cdbObject(nullptr),
+      name(""),
+      parent(nullptr)
+  {
+  }
   void printObjectInfo(std::string& buf, size_t indentCnt) const;
 };
 
@@ -48,6 +55,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     unsigned char textureAddressMode;
     // 1 = "One" (default), 2 = "Two"
     unsigned char channel;
+    UVStream();
     void printObjectInfo(std::string& buf, size_t indentCnt) const;
   };
   struct TextureSet : public CE2MaterialObject  // object type 5
@@ -81,6 +89,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     // 3 = "HighResUniqueMap"
     unsigned char resolutionHint;
     bool    disableMipBiasHint;
+    TextureSet();
     void printObjectInfo(std::string& buf, size_t indentCnt) const;
   };
   struct Material : public CE2MaterialObject    // object type 4
@@ -95,12 +104,14 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     unsigned char flipbookRows;
     float   flipbookFPS;
     const TextureSet  *textureSet;
+    Material();
     void printObjectInfo(std::string& buf, size_t indentCnt) const;
   };
   struct Layer : public CE2MaterialObject       // object type 3
   {
     const Material  *material;
     const UVStream  *uvStream;
+    Layer();
     void printObjectInfo(std::string& buf, size_t indentCnt) const;
   };
   struct Blender : public CE2MaterialObject     // object type 2
@@ -135,6 +146,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     // 6: blend ambient occlusion texture
     // 7: use dual blend mask
     bool    boolParams[maxBoolParams];
+    Blender();
     void printObjectInfo(std::string& buf, size_t indentCnt) const;
   };
   enum
@@ -230,6 +242,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     float   backlightTransparency;
     FloatVector4  backlightTintColor;
     int     depthBias;
+    EffectSettings();
     inline void setFlags(std::uint32_t m, bool n)
     {
       flags = (flags & ~m) | ((0U - std::uint32_t(n)) & m);
@@ -248,6 +261,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     float   exposureOffset;
     float   maxOffset;
     float   minOffset;
+    EmissiveSettings();
   };
   struct LayeredEmissiveSettings
   {
@@ -276,6 +290,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     float   exposureOffset;
     float   maxOffset;
     float   minOffset;
+    LayeredEmissiveSettings();
   };
   struct TranslucencySettings
   {
@@ -290,6 +305,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     float   specLobe0RoughnessScale;
     float   specLobe1RoughnessScale;
     unsigned char sourceLayer;          // default: 0 ("MATERIAL_LAYER_0")
+    TranslucencySettings();
   };
   struct DecalSettings
   {
@@ -310,6 +326,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     // 0 = "Top" (default), 1 = "Middle"
     unsigned char renderLayer;
     bool    useGBufferNormals;
+    DecalSettings();
   };
   struct VegetationSettings
   {
@@ -320,6 +337,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     float   trunkFlexibility;
     float   terrainBlendStrength;       // the last two variables are deprecated
     float   terrainBlendGradientFactor;
+    VegetationSettings();
   };
   struct DetailBlenderSettings
   {
@@ -328,6 +346,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     std::uint32_t textureReplacement;
     const std::string_view  *texturePath;
     const UVStream  *uvStream;
+    DetailBlenderSettings();
   };
   struct LayeredEdgeFalloff
   {
@@ -337,6 +356,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     float   falloffStopOpacities[3];
     unsigned char activeLayersMask;
     bool    useRGBFalloff;
+    LayeredEdgeFalloff();
   };
   struct WaterSettings
   {
@@ -352,6 +372,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     FloatVector4  yellowMatterReflectance;
     bool    lowLOD;
     bool    placedWater;
+    WaterSettings();
   };
   struct GlobalLayerData
   {
@@ -380,14 +401,32 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     float   frequencyMultiplier;
     float   maskIntensityMin;
     float   maskIntensityMax;
+    GlobalLayerData();
   };
+  // defined in mat_dump.cpp
+  static const char *objectTypeStrings[7];
   static const char *materialFlagNames[32];
   static const char *shaderModelNames[64];
+  static const char *shaderRouteNames[8];
+  static const char *colorChannelNames[4];
+  static const char *alphaBlendModeNames[8];
+  static const char *blenderModeNames[4];
+  static const char *textureAddressModeNames[4];
+  static const char *colorModeNames[2];
+  static const char *effectBlendModeNames[8];
+  static const char *effectFlagNames[32];
+  static const char *decalBlendModeNames[2];
+  static const char *decalRenderLayerNames[2];
+  static const char *maskSourceBlenderNames[4];
+  static const char *channelNames[4];
+  static const char *resolutionSettingNames[4];
+  static const char *physicsMaterialNames[8];
+  static const std::string_view emptyStringView;
   std::uint32_t flags;
   std::uint32_t layerMask;
   const Layer   *layers[maxLayers];
   float   alphaThreshold;
-  // index to shaderModelNames defined in mat_dump.cpp, default: "BaseMaterial"
+  // index to shaderModelNames, default: 31 ("BaseMaterial")
   unsigned char shaderModel;
   unsigned char alphaSourceLayer;
   // 0 = "Linear" (default), 1 = "Additive", 2 = "PositionContrast", 3 = "None"
@@ -427,6 +466,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
   const LayeredEdgeFalloff  *layeredEdgeFalloff;
   const WaterSettings   *waterSettings;
   const GlobalLayerData *globalLayerData;
+  CE2Material();
   inline void setFlags(std::uint32_t m, bool n)
   {
     flags = (flags & ~m) | ((0U - std::uint32_t(n)) & m);
