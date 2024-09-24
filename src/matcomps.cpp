@@ -93,7 +93,7 @@ CE2Material::DecalSettings::DecalSettings()
     maxParallaxSteps(72),
     surfaceHeightMap(&emptyStringView),
     parallaxOcclusionScale(1.0f),
-    renderLayer(0),             // "Top"
+    renderLayer(2),             // "Bottom"
     useGBufferNormals(true)
 {
 }
@@ -174,6 +174,35 @@ CE2Material::GlobalLayerData::GlobalLayerData()
     frequencyMultiplier(2.0f),
     maskIntensityMin(0.0f),
     maskIntensityMax(1.0f)
+{
+}
+
+CE2Material::HairSettings::HairSettings()
+  : isEnabled(false),
+    isSpikyHair(false),
+    depthOffsetMaskVertexColorChannel(0),       // "Red"
+    aoVertexColorChannel(1),                    // "Green"
+    specScale(1.0f),
+    specularTransmissionScale(0.5f),
+    directTransmissionScale(0.33f),
+    diffuseTransmissionScale(0.2f),
+    roughness(0.38f),
+    contactShadowSoftening(0.25f),
+    backscatterStrength(0.5f),
+    backscatterWrap(0.5f),
+    variationStrength(0.2f),
+    indirectSpecularScale(1.0f),
+    indirectSpecularTransmissionScale(0.5f),
+    indirectSpecRoughness(0.2f),
+    edgeMaskContrast(0.7f),
+    edgeMaskMin(0.75f),
+    edgeMaskDistanceMin(0.5f),
+    edgeMaskDistanceMax(5.0f),
+    ditherScale(0.5f),
+    ditherDistanceMin(0.5f),
+    ditherDistanceMax(1.5f),
+    tangent(0.0f, -1.0f, 0.0f, 0.3f),
+    maxDepthOffset(0.075f)
 {
 }
 
@@ -1023,7 +1052,7 @@ void CE2MaterialDB::ComponentInfo::readProjectedDecalSettings(
   readFloat(sp->parallaxOcclusionScale, p, 2);
   readBool(sp->parallaxOcclusionShadows, p, 3);
   readUInt8(sp->maxParallaxSteps, p, 4);
-  readEnum(sp->renderLayer, p, 5, "\003Top\006Middle");
+  readEnum(sp->renderLayer, p, 5, "\003Top\006Middle\006Bottom");
   readBool(sp->useGBufferNormals, p, 6);
 }
 
@@ -2142,7 +2171,46 @@ void CE2MaterialDB::ComponentInfo::readHairSettingsComponent(
   if (o->type != 1) [[unlikely]]
     return;
   CE2Material *m = static_cast< CE2Material * >(o);
-  m->setFlags(CE2Material::Flag_IsHair, true);
+  CE2Material::HairSettings *sp =
+      cdb.constructObject< CE2Material::HairSettings >();
+  m->hairSettings = sp;
+  bool    tmp;
+  if (readBool(tmp, p, 0))
+  {
+    sp->isEnabled = tmp;
+    m->setFlags(CE2Material::Flag_IsHair, tmp);
+  }
+  if (readBool(tmp, p, 1))
+    sp->isSpikyHair = tmp;
+  readFloat(sp->specScale, p, 2);
+  readFloat(sp->specularTransmissionScale, p, 3);
+  readFloat(sp->directTransmissionScale, p, 4);
+  readFloat(sp->diffuseTransmissionScale, p, 5);
+  readFloat(sp->roughness, p, 6);
+  readFloat(sp->contactShadowSoftening, p, 7);
+  readFloat(sp->backscatterStrength, p, 8);
+  readFloat(sp->backscatterWrap, p, 9);
+  readFloat(sp->variationStrength, p, 10);
+  readFloat(sp->indirectSpecularScale, p, 11);
+  readFloat(sp->indirectSpecularTransmissionScale, p, 12);
+  readFloat(sp->indirectSpecRoughness, p, 13);
+  size_t  n = 0;
+  if (p->childCnt >= 29)
+    n = 3;              // skip deprecated fields
+  readFloat(sp->edgeMaskContrast, p, n + 14);
+  readFloat(sp->edgeMaskMin, p, n + 15);
+  readFloat(sp->edgeMaskDistanceMin, p, n + 16);
+  readFloat(sp->edgeMaskDistanceMax, p, n + 17);
+  readFloat(sp->maxDepthOffset, p, n + 18);
+  readFloat(sp->ditherScale, p, n + 19);
+  readFloat(sp->ditherDistanceMin, p, n + 20);
+  readFloat(sp->ditherDistanceMax, p, n + 21);
+  readXMFLOAT3(sp->tangent, p, n + 22);
+  readFloat(sp->tangent[3], p, n + 23);
+  readEnum(sp->depthOffsetMaskVertexColorChannel, p, n + 24,
+           "\003Red\005Green\004Blue\005Alpha");
+  readEnum(sp->aoVertexColorChannel, p, n + 25,
+           "\003Red\005Green\004Blue\005Alpha");
 }
 
 // BSColorCurve

@@ -178,9 +178,9 @@ const char * CE2Material::decalBlendModeNames[2] =
   "None", "Additive"
 };
 
-const char * CE2Material::decalRenderLayerNames[2] =
+const char * CE2Material::decalRenderLayerNames[3] =
 {
-  "Top", "Middle"
+  "Top", "Middle", "Bottom"
 };
 
 const char * CE2Material::maskSourceBlenderNames[4] =
@@ -586,8 +586,10 @@ void CE2Material::printObjectInfo(
       printToStringBuf(buf, indentCnt,
                        "Projected decal parallax mapping scale: %f\n",
                        decalSettings->parallaxOcclusionScale);
+      unsigned char renderLayer =
+          std::min< unsigned char >(decalSettings->renderLayer, 2);
       printToStringBuf(buf, indentCnt, "Projected decal render layer: %s\n",
-                       decalRenderLayerNames[decalSettings->renderLayer & 1]);
+                       decalRenderLayerNames[renderLayer]);
       printToStringBuf(buf, indentCnt,
                        "Projected decal uses G buffer normals: %s\n",
                        (!decalSettings->useGBufferNormals ? "False" : "True"));
@@ -769,6 +771,61 @@ void CE2Material::printObjectInfo(
     printToStringBuf(buf, indentCnt,
                      "Global layer noise mask intensity maximum: %f\n",
                      sp->maskIntensityMax);
+  }
+  if ((flags & Flag_IsHair) && hairSettings && hairSettings->isEnabled)
+  {
+    const HairSettings  *sp = hairSettings;
+    printToStringBuf(buf, indentCnt, "Hair: is spiky: %s\n",
+                     (!sp->isSpikyHair ? "False" : "True"));
+    printToStringBuf(buf, indentCnt, "Hair specular scale: %f\n",
+                     sp->specScale);
+    printToStringBuf(buf, indentCnt, "Hair specular transmission scale: %f\n",
+                     sp->specularTransmissionScale);
+    printToStringBuf(buf, indentCnt, "Hair direct transmission scale: %f\n",
+                     sp->directTransmissionScale);
+    printToStringBuf(buf, indentCnt, "Hair diffuse transmission scale: %f\n",
+                     sp->diffuseTransmissionScale);
+    printToStringBuf(buf, indentCnt, "Hair roughness: %f\n", sp->roughness);
+    printToStringBuf(buf, indentCnt, "Hair contact shadow softening: %f\n",
+                     sp->contactShadowSoftening);
+    printToStringBuf(buf, indentCnt, "Hair backscatter strength: %f\n",
+                     sp->backscatterStrength);
+    printToStringBuf(buf, indentCnt, "Hair backscatter wrap: %f\n",
+                     sp->backscatterWrap);
+    printToStringBuf(buf, indentCnt, "Hair variation strength: %f\n",
+                     sp->variationStrength);
+    printToStringBuf(buf, indentCnt, "Hair indirect specular scale: %f\n",
+                     sp->indirectSpecularScale);
+    printToStringBuf(buf, indentCnt,
+                     "Hair indirect specular transmission scale: %f\n",
+                     sp->indirectSpecularTransmissionScale);
+    printToStringBuf(buf, indentCnt, "Hair indirect roughness: %f\n",
+                     sp->indirectSpecRoughness);
+    printToStringBuf(buf, indentCnt, "Hair edge mask contrast: %f\n",
+                     sp->edgeMaskContrast);
+    printToStringBuf(buf, indentCnt, "Hair edge mask minimum value: %f\n",
+                     sp->edgeMaskMin);
+    printToStringBuf(buf, indentCnt, "Hair edge mask minimum range: %f\n",
+                     sp->edgeMaskDistanceMin);
+    printToStringBuf(buf, indentCnt, "Hair edge mask maximum range: %f\n",
+                     sp->edgeMaskDistanceMax);
+    printToStringBuf(buf, indentCnt, "Hair pixel depth offset: %f\n",
+                     sp->maxDepthOffset);
+    printToStringBuf(buf, indentCnt, "Hair dither scale: %f\n",
+                     sp->ditherScale);
+    printToStringBuf(buf, indentCnt, "Hair dithering minimum range: %f\n",
+                     sp->ditherDistanceMin);
+    printToStringBuf(buf, indentCnt, "Hair dithering maximum range: %f\n",
+                     sp->ditherDistanceMax);
+    printToStringBuf(buf, indentCnt, "Hair tangent: %f, %f, %f\n",
+                     sp->tangent[0], sp->tangent[1], sp->tangent[2]);
+    printToStringBuf(buf, indentCnt, "Hair tangent bend: %f\n",
+                     sp->tangent[3]);
+    printToStringBuf(
+        buf, indentCnt, "Hair Z offset mask vertex color channel: %s\n",
+        colorChannelNames[sp->depthOffsetMaskVertexColorChannel & 3]);
+    printToStringBuf(buf, indentCnt, "Hair AO vertex color channel: %s\n",
+                     colorChannelNames[sp->aoVertexColorChannel & 3]);
   }
   for (unsigned int i = 0U; i < maxLayers && layerMask >= (1U << i); i++)
   {

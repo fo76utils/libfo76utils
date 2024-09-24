@@ -57,7 +57,8 @@ CE2Material::CE2Material()
     detailBlenderSettings(nullptr),
     layeredEdgeFalloff(nullptr),
     waterSettings(nullptr),
-    globalLayerData(nullptr)
+    globalLayerData(nullptr),
+    hairSettings(nullptr)
 {
   for (size_t i = 0; i < maxLayers; i++)
     layers[i] = nullptr;

@@ -78,6 +78,9 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     // texturePaths[9] =  _curvature.dds
     // texturePaths[10] = _mask.dds
     // texturePaths[12] = _zoffset.dds
+    // texturePaths[14] = overlay color
+    // texturePaths[15] = overlay roughness
+    // texturePaths[16] = overlay metalness
     // texturePaths[20] = _id.dds
     // NOTE: string view pointers are always valid and the strings are
     // null-terminated
@@ -315,6 +318,12 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     unsigned char blendMode;
     bool    animatedDecalIgnoresTAA;
     float   decalAlpha;
+    // bits 0-2: output albedo R, G, B
+    // bits 4-5: output normal X, Y
+    // bit 8:    output ambient occlusion
+    // bit 9:    output roughness
+    // bit 10:   output metalness
+    // defaults to 0x0737 (all channels enabled)
     std::uint32_t writeMask;
     bool    isProjected;
     // projected decal settings
@@ -323,7 +332,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     unsigned char maxParallaxSteps;
     const std::string_view  *surfaceHeightMap;
     float   parallaxOcclusionScale;
-    // 0 = "Top" (default), 1 = "Middle"
+    // 0 = "Top", 1 = "Middle", 2 = "Bottom" (default)
     unsigned char renderLayer;
     bool    useGBufferNormals;
     DecalSettings();
@@ -403,6 +412,36 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     float   maskIntensityMax;
     GlobalLayerData();
   };
+  struct HairSettings
+  {
+    bool    isEnabled;
+    bool    isSpikyHair;
+    unsigned char depthOffsetMaskVertexColorChannel;
+    unsigned char aoVertexColorChannel;
+    float   specScale;
+    float   specularTransmissionScale;
+    float   directTransmissionScale;
+    float   diffuseTransmissionScale;
+    float   roughness;
+    float   contactShadowSoftening;
+    float   backscatterStrength;
+    float   backscatterWrap;
+    float   variationStrength;
+    float   indirectSpecularScale;
+    float   indirectSpecularTransmissionScale;
+    float   indirectSpecRoughness;
+    float   edgeMaskContrast;
+    float   edgeMaskMin;
+    float   edgeMaskDistanceMin;
+    float   edgeMaskDistanceMax;
+    float   ditherScale;
+    float   ditherDistanceMin;
+    float   ditherDistanceMax;
+    // tangent[3] = TangentBend
+    FloatVector4  tangent;
+    float   maxDepthOffset;
+    HairSettings();
+  };
   // defined in mat_dump.cpp
   static const char *objectTypeStrings[7];
   static const char *materialFlagNames[32];
@@ -416,7 +455,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
   static const char *effectBlendModeNames[8];
   static const char *effectFlagNames[32];
   static const char *decalBlendModeNames[2];
-  static const char *decalRenderLayerNames[2];
+  static const char *decalRenderLayerNames[3];
   static const char *maskSourceBlenderNames[4];
   static const char *channelNames[4];
   static const char *resolutionSettingNames[4];
@@ -466,6 +505,7 @@ struct CE2Material : public CE2MaterialObject   // object type 1
   const LayeredEdgeFalloff  *layeredEdgeFalloff;
   const WaterSettings   *waterSettings;
   const GlobalLayerData *globalLayerData;
+  const HairSettings  *hairSettings;
   CE2Material();
   inline void setFlags(std::uint32_t m, bool n)
   {
