@@ -3,7 +3,7 @@
 #include "material.hpp"
 #include "zlib.hpp"
 
-#define ENABLE_UNKNOWN_MAT_DIRS 1
+#define ENABLE_UNKNOWN_MAT_DIRS 0
 
 static const size_t matDirNamesSize = 97206;
 
