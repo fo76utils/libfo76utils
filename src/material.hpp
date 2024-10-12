@@ -323,6 +323,10 @@ struct CE2Material : public CE2MaterialObject   // object type 1
     // bit 8:    output ambient occlusion
     // bit 9:    output roughness
     // bit 10:   output metalness
+    // bit 20:   output emissive R
+    // bit 21:   output emissive G
+    // bit 22:   output emissive B
+    // bit 23:   output emissive A
     // defaults to 0x0737 (all channels enabled)
     std::uint32_t writeMask;
     bool    isProjected;
