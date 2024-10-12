@@ -204,6 +204,13 @@ const char * CE2Material::physicsMaterialNames[8] =
   "MaterialMat", "MaterialPHYIceDebrisLarge", "Metal", "Wood"
 };
 
+const CE2Material   CE2Material::defaultLayeredMaterial;
+const CE2Material::Blender  CE2Material::defaultBlender;
+const CE2Material::Layer    CE2Material::defaultLayer;
+const CE2Material::Material CE2Material::defaultMaterial;
+const CE2Material::TextureSet   CE2Material::defaultTextureSet;
+const CE2Material::UVStream CE2Material::defaultUVStream;
+
 static
 #ifdef __GNUC__
 __attribute__ ((__format__ (__printf__, 3, 4)))

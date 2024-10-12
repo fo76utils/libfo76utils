@@ -465,6 +465,12 @@ struct CE2Material : public CE2MaterialObject   // object type 1
   static const char *resolutionSettingNames[4];
   static const char *physicsMaterialNames[8];
   static const std::string_view emptyStringView;
+  static const CE2Material  defaultLayeredMaterial;
+  static const CE2Material::Blender defaultBlender;
+  static const CE2Material::Layer   defaultLayer;
+  static const CE2Material::Material    defaultMaterial;
+  static const CE2Material::TextureSet  defaultTextureSet;
+  static const CE2Material::UVStream    defaultUVStream;
   std::uint32_t flags;
   std::uint32_t layerMask;
   const Layer   *layers[maxLayers];
