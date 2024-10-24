@@ -692,46 +692,48 @@ void DDSTexture16::loadTexture(FileBuffer& buf, int mipOffset,
                                bool noSRGBExpand)
 {
   buf.setPosition(0);
-  if (buf.size() < 148 || !FileBuffer::checkType(buf.readUInt32(), "DDS "))
+  if (buf.size() < 128)
     errorMessage("unsupported texture file format");
-  if (buf.readUInt32() != 0x7C)         // size of DDS_HEADER
+  const unsigned char *hdrData = buf.data();
+  // "DDS ", size of DDS_HEADER (124)
+  if (FileBuffer::readUInt64Fast(hdrData) != 0x0000007C20534444ULL)
     errorMessage("unsupported texture file format");
-  unsigned int  flags = buf.readUInt32();
+  unsigned int  flags = FileBuffer::readUInt32Fast(hdrData + 8);
   if ((flags & 0x1006) != 0x1006)       // height, width, pixel format required
     errorMessage("unsupported texture file format");
   maxMipLevel = 0U;
   channelCntFlags = 0;
   maxTextureNum = 0;
   dxgiFormat = 0;
-  yMaskMip0 = buf.readUInt32() - 1U;
-  xMaskMip0 = buf.readUInt32() - 1U;
+  yMaskMip0 = FileBuffer::readUInt32Fast(hdrData + 12) - 1U;
+  xMaskMip0 = FileBuffer::readUInt32Fast(hdrData + 16) - 1U;
   // width and height must be power of two and in the range 1 to 32768
   if (((xMaskMip0 | yMaskMip0) & ~0x7FFFU) ||
       ((xMaskMip0 & (xMaskMip0 + 1U)) | (yMaskMip0 & (yMaskMip0 + 1U))) != 0U)
   {
     errorMessage("invalid or unsupported texture dimensions");
   }
-  buf.setPosition(buf.getPosition() + 8);       // dwPitchOrLinearSize, dwDepth
+  // dwPitchOrLinearSize and dwDepth are ignored
   if (flags & 0x00020000)               // DDSD_MIPMAPCOUNT
   {
-    int     mipLevelCnt = buf.readInt32();
-    if (mipLevelCnt < 1 || mipLevelCnt > 16)
+    maxMipLevel = FileBuffer::readUInt32Fast(hdrData + 28) - 1U;
+    if (maxMipLevel & ~15U)
       errorMessage("invalid mipmap count");
-    maxMipLevel = std::uint32_t(mipLevelCnt - 1);
   }
-  buf.setPosition(0x4C);                // ddspf
-  if (buf.readUInt32() != 0x20)         // size of DDS_PIXELFORMAT
+  // check size of DDS_PIXELFORMAT (must be 32)
+  if (FileBuffer::readUInt32Fast(hdrData + 76) != 0x20)
     errorMessage("unsupported texture file format");
   unsigned int  dataOffs = 128;
-  unsigned int  formatFlags = buf.readUInt32();
-  unsigned int  fourCC = buf.readUInt32();
+  unsigned int  formatFlags = FileBuffer::readUInt32Fast(hdrData + 80);
+  unsigned int  fourCC = FileBuffer::readUInt32Fast(hdrData + 84);
   if (formatFlags & 0x04)               // DDPF_FOURCC
   {
     if (FileBuffer::checkType(fourCC, "DX10"))
     {
       dataOffs = 148;
-      buf.setPosition(0x80);
-      unsigned int  tmp = buf.readUInt32();
+      if (buf.size() < 148)
+        errorMessage("DDS file is shorter than expected");
+      unsigned int  tmp = FileBuffer::readUInt32Fast(hdrData + 128);
       if (tmp && (tmp > 0x79U || !dxgiFormatMap[tmp]))
         throw FO76UtilsError("unsupported DXGI_FORMAT: 0x%08X", tmp);
       dxgiFormat = (unsigned char) tmp;
@@ -740,6 +742,12 @@ void DDSTexture16::loadTexture(FileBuffer& buf, int mipOffset,
     {
       switch (fourCC)
       {
+        case 0x00000024:
+          dxgiFormat = 0x0B;            // DXGI_FORMAT_R16G16B16A16_UNORM
+          break;
+        case 0x00000071:
+          dxgiFormat = 0x0A;            // DXGI_FORMAT_R16G16B16A16_FLOAT
+          break;
         case 0x53344342:                // "BC4S"
           dxgiFormat = 0x51;
           break;
@@ -749,6 +757,7 @@ void DDSTexture16::loadTexture(FileBuffer& buf, int mipOffset,
         case 0x53354342:                // "BC5S"
           dxgiFormat = 0x54;
           break;
+        case 0x32495441:                // "ATI2"
         case 0x55354342:                // "BC5U"
           dxgiFormat = 0x53;
           break;
@@ -771,14 +780,17 @@ void DDSTexture16::loadTexture(FileBuffer& buf, int mipOffset,
   }
   if (!dxgiFormat)
   {
-    buf.setPosition(0x58);
     if (!(formatFlags & 0x40))          // DDPF_RGB
-      errorMessage("unsupported texture file format");
-    unsigned int  bitsPerPixel = buf.readUInt32();
+    {
+      if (!(formatFlags & 0x00080000))
+        errorMessage("unsupported texture file format");
+      formatFlags = formatFlags | 0x41;
+    }
+    unsigned int  bitsPerPixel = FileBuffer::readUInt32Fast(hdrData + 88);
     if ((bitsPerPixel - 8U) & ~24U)     // must be 8, 16, 24 or 32
       errorMessage("unsupported texture file format");
-    unsigned long long  rgMask = buf.readUInt64();
-    unsigned long long  baMask = buf.readUInt64();
+    unsigned long long  rgMask = FileBuffer::readUInt64Fast(hdrData + 92);
+    unsigned long long  baMask = FileBuffer::readUInt64Fast(hdrData + 100);
     if (bitsPerPixel < 32U || !(formatFlags & 0x03))
       baMask = baMask & ~0xFF00000000000000ULL;
     if (rgMask == 0x0000FF00000000FFULL && baMask == 0x0000000000FF0000ULL)
@@ -786,7 +798,7 @@ void DDSTexture16::loadTexture(FileBuffer& buf, int mipOffset,
     else if (rgMask == 0x0000FF0000FF0000ULL && baMask == 0x00000000000000FFULL)
       dxgiFormat = (bitsPerPixel < 32U ? 0x7D : 0x5D);
     else if (rgMask == 0x0000FF00000000FFULL && baMask == 0xFF00000000FF0000ULL)
-      dxgiFormat = 0x1D;
+      dxgiFormat = (!(formatFlags & 0x00080000) ? 0x1D : 0x1F);
     else if (rgMask == 0x0000FF0000FF0000ULL && baMask == 0xFF000000000000FFULL)
       dxgiFormat = 0x5B;
     else if (rgMask == 0x0000FF00000000FFULL && !baMask)
